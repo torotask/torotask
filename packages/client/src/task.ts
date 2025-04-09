@@ -1,46 +1,17 @@
 import { JobsOptions, Job, Queue, QueueEvents, Worker, WorkerOptions } from 'bullmq';
 import { BaseQueue } from './base-queue.js';
-import { SubTask, SubTaskHandler, SubTaskHandlerContext, SubTaskHandlerOptions } from './sub-task.js'; // Import SubTask related types
+import { SubTask } from './sub-task.js';
 import type { TaskGroup } from './task-group.js';
-import type { ToroTaskClient } from './client.js';
-import { Logger } from 'pino';
-
-/**
- * Options for defining a Task, extending BullMQ's JobsOptions.
- * Similar to ManagedFunctionOptions.
- */
-export interface TaskOptions extends JobsOptions {
-  /**
-   * If true, jobs with names that don't match the main task name
-   * or any defined subtask names will be routed to the main task handler.
-   * Defaults to false (unrecognized job names will throw an error).
-   */
-  allowCatchAll?: boolean;
-  // Task-specific default options if needed
-}
-
-/** Handler details passed to the task handler */
-export interface TaskHandlerOptions<T = unknown> {
-  id?: string; // Job ID
-  name: string; // Task name
-  data: T;
-}
-
-/** Context passed to the task handler */
-export interface TaskHandlerContext {
-  logger: Logger;
-  client: ToroTaskClient;
-  group: TaskGroup;
-  task: Task<any, any>; // Reference to the Task instance
-  job: Job;
-  queue: Queue; // The queue instance (from BaseQueue)
-}
-
-/** Task handler function type */
-export type TaskHandler<T = unknown, R = unknown> = (
-  options: TaskHandlerOptions<T>,
-  context: TaskHandlerContext
-) => Promise<R>;
+import type { Logger } from 'pino';
+import type {
+  TaskOptions,
+  TaskHandlerOptions,
+  TaskHandlerContext,
+  TaskHandler,
+  SubTaskHandlerOptions,
+  SubTaskHandlerContext,
+  SubTaskHandler,
+} from './types.js';
 
 /**
  * Represents a defined task associated with a TaskGroup.
@@ -135,14 +106,12 @@ export class Task<T = unknown, R = unknown> extends BaseQueue {
    */
   async process(job: Job): Promise<any> {
     const { id, name: jobName } = job;
-    // Treat empty or __default__ job names as targeting the main task
     const effectiveJobName = jobName === '' || jobName === '__default__' ? this.name : jobName;
     const jobLogger = this.logger.child({ jobId: id, jobName: effectiveJobName });
 
     const subTask = this.subTasks.get(effectiveJobName);
 
     try {
-      // --- Route to SubTask Handler ---
       if (subTask) {
         jobLogger.info(`Routing job to SubTask handler: ${effectiveJobName}`);
         const typedJob = job as Job<unknown, unknown>;
@@ -159,11 +128,7 @@ export class Task<T = unknown, R = unknown> extends BaseQueue {
         const result = await subTask.handler(handlerOptions, handlerContext);
         jobLogger.info(`SubTask job completed successfully`);
         return result;
-      }
-      // --- Route to Main Task Handler ---
-      // Check if the (potentially modified) job name matches the main task name
-      // OR if catchAll is enabled and it wasn't handled by a subtask
-      else if (effectiveJobName === this.name || this.allowCatchAll) {
+      } else if (effectiveJobName === this.name || this.allowCatchAll) {
         if (this.allowCatchAll && effectiveJobName !== this.name) {
           jobLogger.info(`Routing job to main Task handler (catchAll enabled): ${effectiveJobName}`);
         } else {
@@ -182,9 +147,7 @@ export class Task<T = unknown, R = unknown> extends BaseQueue {
         const result = await this.handler(handlerOptions, handlerContext);
         jobLogger.info(`Main task job completed successfully`);
         return result;
-      }
-      // --- Job Name Not Recognized (and catchAll is false) ---
-      else {
+      } else {
         jobLogger.error(
           `Job name "${effectiveJobName}" does not match main task or subtasks, and catchAll is disabled.`
         );
@@ -197,7 +160,7 @@ export class Task<T = unknown, R = unknown> extends BaseQueue {
         { err: error instanceof Error ? error : new Error(String(error)) },
         `Job processing failed for job name "${effectiveJobName}"`
       );
-      throw error; // Re-throw error for BullMQ
+      throw error;
     }
   }
 }

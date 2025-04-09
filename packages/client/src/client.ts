@@ -3,14 +3,13 @@ import { Redis, RedisOptions } from 'ioredis';
 import { getConfigFromEnv } from './utils/get-config-from-env.js';
 import { TaskGroup } from './task-group.js';
 import { pino, type Logger } from 'pino';
+import type { BaseQueue } from './base-queue.js';
+import type { ConnectionOptions as BullMQConnectionOptions } from 'bullmq'; // Import ConnectionOptions if needed
 
 const LOGGER_NAME = 'BullMQ';
 
-/**
- * Options for configuring the ToroTaskClient.
- * Extends BullMQ's ConnectionOptions (as Partial).
- */
-export type ToroTaskClientOptions = Partial<ConnectionOptions> & {
+/** BullMQ Client Options using intersection */
+export type ToroTaskClientOptions = Partial<BullMQConnectionOptions> & {
   /**
    * A Pino logger instance or configuration options for creating one.
    * If not provided, a default logger will be created.
@@ -19,7 +18,7 @@ export type ToroTaskClientOptions = Partial<ConnectionOptions> & {
   loggerName?: string;
 };
 
-/** Interface for filtering workers in start/stop operations */
+/** Worker Filter defined here */
 export interface WorkerFilter {
   /** Array of group names to target. If omitted, targets all groups. */
   groups?: string[];
@@ -244,10 +243,11 @@ export class ToroTaskClient {
   }
 }
 
-export { Task, TaskOptions, TaskHandler, TaskHandlerContext, TaskHandlerOptions } from './task.js';
-export { TaskGroup } from './task-group.js';
+// --- Exports ---
 export { BaseQueue } from './base-queue.js';
-export { SubTask, SubTaskHandler, SubTaskHandlerContext, SubTaskHandlerOptions } from './sub-task.js';
+// Only export SubTask class itself from sub-task.ts
+export { SubTask } from './sub-task.js';
+// Other types (SubTaskHandler etc.) are handled by index.ts exporting from types.ts
 
 // Re-export core BullMQ types users might need
 export { ConnectionOptions, JobsOptions, Job, Queue } from 'bullmq';

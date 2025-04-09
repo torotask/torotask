@@ -1,34 +1,18 @@
 import { JobsOptions, Job, Queue } from 'bullmq';
-import type { Task } from './task.js'; // Use type import for Task
+import type { Task } from './task.js';
 import type { ToroTaskClient } from './client.js';
 import type { TaskGroup } from './task-group.js';
-import { Logger } from 'pino';
+import type { Logger } from 'pino';
+// Import types from the types file
+import type { SubTaskHandlerOptions, SubTaskHandlerContext, SubTaskHandler } from './types.js';
 
 // --- SubTask Types ---
 
-/** Handler details passed to the subtask handler */
-export interface SubTaskHandlerOptions<ST = unknown> {
-  id?: string; // Job ID
-  name: string; // SubTask name
-  data: ST;
-}
+// Removed SubTaskHandlerOptions interface
 
-/** Context passed to the subtask handler */
-export interface SubTaskHandlerContext {
-  logger: Logger; // Job-specific logger
-  client: ToroTaskClient;
-  group: TaskGroup; // From parent task
-  parentTask: Task<any, any>; // Reference to the parent Task instance
-  subTaskName: string; // The name of this subtask
-  job: Job; // The underlying BullMQ job
-  queue: Queue; // The queue instance (from parent Task -> BaseQueue)
-}
+// Removed SubTaskHandlerContext interface
 
-/** SubTask handler function type */
-export type SubTaskHandler<ST = unknown, SR = unknown> = (
-  options: SubTaskHandlerOptions<ST>,
-  context: SubTaskHandlerContext
-) => Promise<SR>;
+// Removed SubTaskHandler type
 
 // --- SubTask Class ---
 
@@ -43,7 +27,7 @@ export type SubTaskHandler<ST = unknown, SR = unknown> = (
 export class SubTask<ST = unknown, SR = unknown> {
   public readonly parentTask: Task<any, any>; // Keep less specific for simplicity
   public readonly name: string;
-  public readonly handler: SubTaskHandler<ST, SR>;
+  public readonly handler: SubTaskHandler<ST, SR>; // Uses imported type
   public readonly logger: Logger;
 
   constructor(parentTask: Task<any, any>, name: string, handler: SubTaskHandler<ST, SR>) {

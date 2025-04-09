@@ -1,31 +1,18 @@
-// Explicitly re-export to avoid ambiguity
+// Export Classes/Functions directly
 export { BaseQueue } from './base-queue.js';
-export {
-  ToroTaskClient,
-  ToroTaskClientOptions,
-  WorkerFilter,
-  // Avoid re-exporting types already exported by other files below
-  // Task, TaskOptions, TaskHandler, TaskHandlerContext, TaskHandlerOptions,
-  // TaskGroup,
-  // BaseQueue, (already exported above)
-  // SubTask, SubTaskHandler, SubTaskHandlerContext, SubTaskHandlerOptions,
-} from './client.js';
-export {
-  SubTask,
-  SubTaskHandler,
-  SubTaskHandlerContext,
-  SubTaskHandlerOptions,
-} from './sub-task.js';
+export { ToroTaskClient } from './client.js';
+export { Task } from './task.js';
 export { TaskGroup } from './task-group.js';
-export {
-  Task,
-  TaskHandler,
-  TaskHandlerContext,
-  TaskHandlerOptions,
-  TaskOptions,
-} from './task.js';
+export { SubTask } from './sub-task.js'; // Only export the SubTask class
 export { getConfigFromEnv } from './utils/get-config-from-env.js';
 
-// Re-export core BullMQ types users might need from client.ts instead
-// export { ConnectionOptions, JobsOptions, Job } from 'bullmq';
+// Export specific types defined in client.ts
+export type { ToroTaskClientOptions, WorkerFilter } from './client.js';
+
+// Export all types defined in types.ts
+// This includes TaskOptions, TaskHandler, TaskHandlerContext, TaskHandlerOptions,
+// SubTaskHandlerOptions, SubTaskHandlerContext, SubTaskHandler
+export * from './types.js';
+
+// Re-export core BullMQ types
 export type { ConnectionOptions, JobsOptions, Job } from 'bullmq';
