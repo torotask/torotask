@@ -10,6 +10,12 @@ import { Logger } from 'pino';
  * Similar to ManagedFunctionOptions.
  */
 export interface TaskOptions extends JobsOptions {
+  /**
+   * If true, jobs with names that don't match the main task name
+   * or any defined subtask names will be routed to the main task handler.
+   * Defaults to false (unrecognized job names will throw an error).
+   */
+  allowCatchAll?: boolean;
   // Task-specific default options if needed
 }
 
@@ -51,6 +57,7 @@ export class Task<T = unknown, R = unknown> extends BaseQueue {
   public readonly defaultJobOptions: TaskOptions;
   public readonly handler: TaskHandler<T, R>;
   private readonly subTasks: Map<string, SubTask<any, any>>;
+  private readonly allowCatchAll: boolean;
 
   constructor(
     taskGroup: TaskGroup,
@@ -80,8 +87,9 @@ export class Task<T = unknown, R = unknown> extends BaseQueue {
     this.handler = handler;
     this.defaultJobOptions = options ?? {};
     this.subTasks = new Map();
+    this.allowCatchAll = this.defaultJobOptions.allowCatchAll ?? false;
 
-    this.logger.info('Task initialized (extending BaseQueue)');
+    this.logger.info({ allowCatchAll: this.allowCatchAll }, 'Task initialized (extending BaseQueue)');
   }
 
   defineSubTask<ST = T, SR = R>(subTaskName: string, subTaskHandler: SubTaskHandler<ST, SR>): SubTask<ST, SR> {
@@ -121,19 +129,24 @@ export class Task<T = unknown, R = unknown> extends BaseQueue {
 
   /**
    * Routes the job to the appropriate handler (main task or subtask) based on job name.
+   * - `__default__` or empty string routes to the main handler.
+   * - Matching subtask name routes to the subtask handler.
+   * - Other names route to main handler if `allowCatchAll` is true, otherwise error.
    */
   async process(job: Job): Promise<any> {
     const { id, name: jobName } = job;
-    const jobLogger = this.logger.child({ jobId: id, jobName });
+    // Treat empty or __default__ job names as targeting the main task
+    const effectiveJobName = jobName === '' || jobName === '__default__' ? this.name : jobName;
+    const jobLogger = this.logger.child({ jobId: id, jobName: effectiveJobName });
 
-    const subTask = this.subTasks.get(jobName);
+    const subTask = this.subTasks.get(effectiveJobName);
 
     try {
       // --- Route to SubTask Handler ---
       if (subTask) {
-        jobLogger.info(`Routing job to SubTask handler: ${jobName}`);
+        jobLogger.info(`Routing job to SubTask handler: ${effectiveJobName}`);
         const typedJob = job as Job<unknown, unknown>;
-        const handlerOptions: SubTaskHandlerOptions<unknown> = { id, name: jobName, data: typedJob.data };
+        const handlerOptions: SubTaskHandlerOptions<unknown> = { id, name: effectiveJobName, data: typedJob.data };
         const handlerContext: SubTaskHandlerContext = {
           logger: jobLogger,
           client: this.client,
@@ -148,8 +161,14 @@ export class Task<T = unknown, R = unknown> extends BaseQueue {
         return result;
       }
       // --- Route to Main Task Handler ---
-      else if (jobName === this.name) {
-        jobLogger.info(`Routing job to main Task handler: ${jobName}`);
+      // Check if the (potentially modified) job name matches the main task name
+      // OR if catchAll is enabled and it wasn't handled by a subtask
+      else if (effectiveJobName === this.name || this.allowCatchAll) {
+        if (this.allowCatchAll && effectiveJobName !== this.name) {
+          jobLogger.info(`Routing job to main Task handler (catchAll enabled): ${effectiveJobName}`);
+        } else {
+          jobLogger.info(`Routing job to main Task handler: ${effectiveJobName}`);
+        }
         const typedJob = job as Job<T, R>;
         const handlerOptions: TaskHandlerOptions<T> = { id, name: this.name, data: typedJob.data };
         const handlerContext: TaskHandlerContext = {
@@ -164,17 +183,21 @@ export class Task<T = unknown, R = unknown> extends BaseQueue {
         jobLogger.info(`Main task job completed successfully`);
         return result;
       }
-      // --- Job Name Not Recognized ---
+      // --- Job Name Not Recognized (and catchAll is false) ---
       else {
-        jobLogger.error(`Job name "${jobName}" does not match the main task or any defined subtasks.`);
-        throw new Error(`Job name "${jobName}" on queue "${this.queueName}" not recognized by task "${this.name}".`);
+        jobLogger.error(
+          `Job name "${effectiveJobName}" does not match main task or subtasks, and catchAll is disabled.`
+        );
+        throw new Error(
+          `Job name "${effectiveJobName}" on queue "${this.queueName}" not recognized by task "${this.name}".`
+        );
       }
     } catch (error) {
       jobLogger.error(
         { err: error instanceof Error ? error : new Error(String(error)) },
-        `Job processing failed for job name "${jobName}"`
+        `Job processing failed for job name "${effectiveJobName}"`
       );
-      throw error;
+      throw error; // Re-throw error for BullMQ
     }
   }
 }
