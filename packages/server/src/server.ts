@@ -1,4 +1,11 @@
-import { ToroTaskClient, TaskGroup, WorkerFilter } from '@torotask/client';
+import {
+  ToroTaskClient,
+  TaskGroup,
+  WorkerFilter,
+  TaskHandler,
+  TaskOptions,
+  TaskTrigger,
+} from '@torotask/client';
 import { pino, type Logger, type DestinationStream, type LoggerOptions } from 'pino';
 import { WorkerOptions, Job } from 'bullmq';
 import { glob } from 'glob';
@@ -158,45 +165,50 @@ export class TaskServer {
         const groupName = path.dirname(relativePath);
         const fileName = path.basename(relativePath);
         const taskNameMatch = fileName.match(/^(.+?)\.task\.(js|ts)$/);
-
-        if (!groupName || groupName === '.' || !taskNameMatch?.[1]) {
-          this.logger.warn({ filePath, relativePath }, 'Could not determine group/task name from file path. Skipping.');
+        let derivedTaskName: string = '';
+        if (taskNameMatch?.[1]) {
+          derivedTaskName = taskNameMatch[1];
+        } else {
           continue;
         }
-        const taskName = taskNameMatch[1];
 
-        this.logger.debug({ groupName, taskName, filePath }, 'Loading task definition...');
+        this.logger.debug({ groupName, derivedTaskName, filePath }, 'Loading task definition...');
 
-        // Use dynamic import() with correct file URL conversion
         const fileUrl = pathToFileURL(filePath).href;
-        const taskModule = (await import(fileUrl)) as { default?: TaskModule };
+        const taskModule = (await import(fileUrl)) as {
+          default?: TaskModule & { trigger?: TaskTrigger; triggers?: TaskTrigger[] };
+        };
 
-        // Validate the export (import() handles default export correctly)
-        if (!taskModule.default || typeof taskModule.default.handler !== 'function') {
-          // Check if handler is exported directly (for non-default exports, less common for this pattern)
-          if (typeof (taskModule as unknown as TaskModule).handler === 'function') {
-            this.logger.warn(
-              { filePath },
-              'Task file uses direct export instead of default export. Consider using default export { handler, options }.'
-            );
-            const directExport = taskModule as unknown as TaskModule;
-            const group = this.client.createTaskGroup(groupName);
-            this.managedGroups.add(group);
-            group.defineTask(taskName, directExport.handler, directExport.options);
-          } else {
-            throw new Error(
-              `Invalid or missing default export in task file. Expected { handler: function, options?: object } via default export.`
-            );
-          }
+        let finalTaskName: string = derivedTaskName;
+        let moduleToUse: TaskModule & { trigger?: TaskTrigger; triggers?: TaskTrigger[] };
+
+        if (taskModule.default?.handler && typeof taskModule.default.handler === 'function') {
+          moduleToUse = taskModule.default;
+        } else if (typeof (taskModule as any).handler === 'function') {
+          moduleToUse = taskModule as any;
+          this.logger.warn(
+            { filePath },
+            'Task file uses direct export instead of default export. Consider using default export { handler, options?, trigger/triggers? }.'
+          );
         } else {
-          // Handle the default export
-          const defaultExport = taskModule.default;
-          const group = this.client.createTaskGroup(groupName);
-          this.managedGroups.add(group);
-          group.defineTask(taskName, defaultExport.handler, defaultExport.options);
+          throw new Error(
+            `Invalid or missing export. Expected { handler: function, options?:..., trigger/triggers?:... } via default or module.exports.`
+          );
         }
 
-        this.logger.info({ groupName, taskName }, 'Successfully loaded and defined task.');
+        const { name: explicitName, ...optionsToUse } = moduleToUse.options || {};
+        if (explicitName) {
+          finalTaskName = explicitName;
+          this.logger.debug({ derivedTaskName, explicitName: finalTaskName }, 'Using explicit task name from options.');
+        }
+
+        const triggerOrTriggers = moduleToUse.triggers ?? moduleToUse.trigger;
+
+        const group = this.client.createTaskGroup(groupName);
+        this.managedGroups.add(group);
+        group.defineTask(finalTaskName, optionsToUse, triggerOrTriggers, moduleToUse.handler);
+
+        this.logger.info({ groupName, taskName: finalTaskName }, 'Successfully loaded and defined task.');
         loadedCount++;
       } catch (error) {
         this.logger.error({ filePath, err: error }, 'Failed to load or define task from file.');

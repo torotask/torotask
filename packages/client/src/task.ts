@@ -11,6 +11,7 @@ import type {
   SubTaskHandlerOptions,
   SubTaskHandlerContext,
   SubTaskHandler,
+  TaskTrigger,
 } from './types.js';
 
 /**
@@ -29,12 +30,14 @@ export class Task<T = unknown, R = unknown> extends BaseQueue {
   public readonly handler: TaskHandler<T, R>;
   private readonly subTasks: Map<string, SubTask<any, any>>;
   private readonly allowCatchAll: boolean;
+  public readonly triggers: TaskTrigger<T>[];
 
   constructor(
     taskGroup: TaskGroup,
     name: string,
-    handler: TaskHandler<T, R>,
     options: TaskOptions | undefined,
+    triggerOrTriggers: TaskTrigger<T> | TaskTrigger<T>[] | undefined,
+    handler: TaskHandler<T, R>,
     groupLogger: Logger
   ) {
     if (!taskGroup) {
@@ -60,7 +63,18 @@ export class Task<T = unknown, R = unknown> extends BaseQueue {
     this.subTasks = new Map();
     this.allowCatchAll = this.defaultJobOptions.allowCatchAll ?? false;
 
-    this.logger.info({ allowCatchAll: this.allowCatchAll }, 'Task initialized (extending BaseQueue)');
+    if (!triggerOrTriggers) {
+      this.triggers = [];
+    } else if (Array.isArray(triggerOrTriggers)) {
+      this.triggers = triggerOrTriggers;
+    } else {
+      this.triggers = [triggerOrTriggers];
+    }
+
+    this.logger.info(
+      { allowCatchAll: this.allowCatchAll, triggerCount: this.triggers.length },
+      'Task initialized (extending BaseQueue)'
+    );
   }
 
   defineSubTask<ST = T, SR = R>(subTaskName: string, subTaskHandler: SubTaskHandler<ST, SR>): SubTask<ST, SR> {

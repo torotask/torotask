@@ -39,6 +39,20 @@ export type TaskHandler<T = unknown, R = unknown> = (
   context: TaskHandlerContext
 ) => Promise<R>;
 
+/** Defines a potential trigger condition for a Task */
+export interface TaskTrigger<TData = Record<string, any>> {
+  /** Event name that could trigger the task */
+  event?: string;
+  /** Conditional logic string (interpretation TBD) */
+  if?: string;
+  /** CRON string for scheduled triggering - uses BullMQ's cron syntax (cron-parser) */
+  cron?: string;
+  /** Repeat interval in milliseconds for recurring jobs based on this trigger. */
+  every?: number;
+  /** Data payload to associate with jobs created by this trigger. */
+  data?: TData;
+}
+
 // --- SubTask Types ---
 
 /** Handler details passed to the subtask handler */

@@ -1,6 +1,6 @@
 import type { ToroTaskClient } from './client.js';
 import { Task } from './task.js';
-import type { TaskHandler, TaskOptions } from './types.js';
+import type { TaskHandler, TaskOptions, TaskTrigger } from './types.js';
 import type { WorkerOptions } from 'bullmq';
 import { Logger } from 'pino';
 
@@ -34,18 +34,23 @@ export class TaskGroup {
    * @template T Data type for the task.
    * @template R Return type for the task.
    * @param name The name of the task (unique within the group).
+   * @param options Optional default job options for this task.
+   * @param triggerOrTriggers Optional TaskTrigger or array of TaskTriggers.
    * @param handler The function to execute when the task runs.
-   * @param options Default job options for this task.
    * @returns The created Task instance.
    */
-  defineTask<T = unknown, R = unknown>(name: string, handler: TaskHandler<T, R>, options?: TaskOptions): Task<T, R> {
+  defineTask<T = unknown, R = unknown>(
+    name: string,
+    options: TaskOptions | undefined,
+    triggerOrTriggers: TaskTrigger<T> | TaskTrigger<T>[] | undefined,
+    handler: TaskHandler<T, R>
+  ): Task<T, R> {
     if (this.tasks.has(name)) {
       this.logger.warn({ taskName: name }, 'Task already defined in this group. Overwriting.');
-      // Or throw an error? Depending on desired behavior.
-      // throw new Error(`Task "${name}" already defined in TaskGroup "${this.name}"`);
     }
 
-    const newTask = new Task<T, R>(this, name, handler, options, this.logger);
+    // Pass all parameters to Task constructor
+    const newTask = new Task<T, R>(this, name, options, triggerOrTriggers, handler, this.logger);
     this.tasks.set(name, newTask);
     this.logger.info({ taskName: name }, 'Task defined');
     return newTask;
