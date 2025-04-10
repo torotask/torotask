@@ -6,9 +6,9 @@
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "scripts": {
-    "build": "tsc -b",
-    "build:dev": "tsc -b --declarationMap",
-    "dev": "pnpm run build:dev --watch --preserveWatchOutput",
+    "build": "tsc",
+    "build:dev": "tsc",
+    "dev": "tsc --watch --preserveWatchOutput",
     "lint": "eslint src/**/*.ts",
     "lint:fix": "eslint src/**/*.ts --fix"
   },

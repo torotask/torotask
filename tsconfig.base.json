@@ -1,17 +1,26 @@
 {
   "compilerOptions": {
-    "module": "Node16",
+    "module": "NodeNext",
     "target": "ES2022",
-    "composite": true,
-    "esModuleInterop": true,
-    "incremental": true,
-    "forceConsistentCasingInFileNames": true,
-    "moduleResolution": "Node16",
+    "moduleResolution": "NodeNext",
     "strict": true,
+    "esModuleInterop": true,
     "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
     "declaration": true,
     "sourceMap": true,
-    "outDir": "./dist"
+    "outDir": "./dist",
+    "types": ["node"],
+    "lib": ["ES2022"],
+    "composite": true,
+    "declarationMap": true,
+    "baseUrl": "."
   },
+  "references": [
+    { "path": "./packages/client/tsconfig.json" },
+    { "path": "./packages/server/tsconfig.json" },
+    { "path": "./apps/tester/tsconfig.json" }
+  ],
+  "include": [],
   "exclude": ["node_modules", "dist"]
 }
