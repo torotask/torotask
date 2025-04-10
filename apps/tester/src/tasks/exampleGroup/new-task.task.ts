@@ -1,4 +1,4 @@
-import { defineTask } from '@torotask/server';
+import { defineTask } from 'server';
 
 // Define the data type the handler expects
 interface SayHelloData {
@@ -8,7 +8,6 @@ interface SayHelloData {
 // Use the factory function for the default export
 export default defineTask<SayHelloData, string>(
   {
-    name: 'test-task',
     attempts: 3,
     backoff: {
       type: 'exponential',
@@ -16,8 +15,8 @@ export default defineTask<SayHelloData, string>(
     },
   },
   {
-    type: 'cron',
-    cron: '27 */1 * * *',
+    type: 'every',
+    every: 20000,
   },
   async (options, context) => {
     const { data } = options;

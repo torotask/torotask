@@ -4,6 +4,7 @@ const main = async () => {
   const tasks = await server.loadTasksFromDirectory('./tasks');
   logger.info({ tasks }, 'Loaded tasks');
 
+  server.start();
   // Start the worker AFTER defining functions
   /*  logger.info({ queueName: queue.name }, 'Worker starting');
 
