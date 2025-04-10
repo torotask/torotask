@@ -5,6 +5,16 @@ import type { TaskGroup } from './task-group.js';
 import type { Task } from './task.js'; // Needed for TaskHandlerContext
 
 /**
+ * Returns generic as either itself or an array of itself.
+ */
+export type SingleOrArray<T> = T | T[];
+
+/**
+ * With type `T`, return it as an array even if not already an array.
+ */
+export type AsArray<T> = T extends any[] ? T : [T];
+
+/**
  * Options for defining a Task, extending BullMQ's JobsOptions.
  */
 export interface TaskOptions extends JobsOptions {
@@ -39,19 +49,41 @@ export type TaskHandler<T = unknown, R = unknown> = (
   context: TaskHandlerContext
 ) => Promise<R>;
 
-/** Defines a potential trigger condition for a Task */
-export interface TaskTrigger<TData = Record<string, any>> {
+export interface TaskTriggerBase<TData> {
+  /** Data payload to associate with jobs created by this trigger. */
+  data?: TData;
+}
+
+/** Defines a potential event trigger condition for a Task */
+export interface TaskTriggerEvent<TData> extends TaskTriggerBase<TData> {
+  type: 'event';
   /** Event name that could trigger the task */
   event?: string;
   /** Conditional logic string (interpretation TBD) */
   if?: string;
+}
+
+/** Defines a potential cron trigger condition for a Task */
+export interface TaskTriggerCron<TData> extends TaskTriggerBase<TData> {
+  type: 'cron';
+  name?: string;
   /** CRON string for scheduled triggering - uses BullMQ's cron syntax (cron-parser) */
   cron?: string;
+}
+
+/** Defines a potential repeat trigger condition for a Task */
+export interface TaskTriggerEvery<TData> extends TaskTriggerBase<TData> {
+  type: 'every';
+  name?: string;
   /** Repeat interval in milliseconds for recurring jobs based on this trigger. */
   every?: number;
-  /** Data payload to associate with jobs created by this trigger. */
-  data?: TData;
 }
+
+/** Defines a potential trigger condition for a Task */
+export type TaskTrigger<TData = Record<string, any>> =
+  | TaskTriggerEvent<TData>
+  | TaskTriggerCron<TData>
+  | TaskTriggerEvery<TData>;
 
 export type RepeatOptionsWithoutKey = Omit<RepeatOptions, 'key'>;
 

@@ -1,5 +1,5 @@
-import type { TaskHandler, TaskOptions } from '@torotask/client';
-import type { TaskModule } from './types.js'; // Added .js extension
+import type { SingleOrArray, TaskHandler, TaskTrigger } from '@torotask/client';
+import type { TaskModule, TaskModuleOptions } from './types.js'; // Added .js extension
 
 /**
  * Factory function to create a valid TaskModule definition.
@@ -12,11 +12,12 @@ import type { TaskModule } from './types.js'; // Added .js extension
  * @returns A TaskModule object.
  */
 export function defineTask<T = unknown, R = unknown>(
-  options: TaskOptions,
+  options: TaskModuleOptions,
+  trigger: SingleOrArray<TaskTrigger<T>>,
   handler: TaskHandler<T, R>
 ): TaskModule<T, R> {
   if (!handler || typeof handler !== 'function') {
     throw new Error('defineTask requires a valid handler function.');
   }
-  return { handler, options };
+  return { options, trigger, handler };
 }

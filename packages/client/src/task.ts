@@ -13,6 +13,7 @@ import type {
   SubTaskHandlerContext,
   SubTaskHandler,
   TaskTrigger,
+  SingleOrArray,
 } from './types.js';
 import { randomUUID } from 'crypto';
 import type { ToroTaskClient } from './client.js';
@@ -39,7 +40,7 @@ export class Task<T = unknown, R = unknown> extends BaseQueue {
     taskGroup: TaskGroup,
     name: string,
     options: TaskOptions | undefined,
-    triggerOrTriggers: TaskTrigger<T> | TaskTrigger<T>[] | undefined,
+    trigger: SingleOrArray<TaskTrigger<T>> | undefined,
     handler: TaskHandler<T, R>,
     groupLogger: Logger
   ) {
@@ -66,7 +67,7 @@ export class Task<T = unknown, R = unknown> extends BaseQueue {
     this.subTasks = new Map();
     this.allowCatchAll = this.defaultJobOptions.allowCatchAll ?? false;
 
-    this._initializeTriggers(triggerOrTriggers);
+    this._initializeTriggers(trigger);
     this.on('ready', () => {
       this.logger.info('Task is ready. Synchronizing schedulers...');
       this.synchronizeSchedulers();
@@ -191,52 +192,49 @@ export class Task<T = unknown, R = unknown> extends BaseQueue {
     try {
       // 1. Get existing job schedulers potentially related to this task
       const allSchedulers = await queue.getJobSchedulers();
-      const prefix = `${this.name}:trigger:`;
-      const taskSchedulers = allSchedulers.filter((s) => s.id?.startsWith(prefix));
-      const existingSchedulerIds = new Set(taskSchedulers.map((s) => s.id).filter(Boolean) as string[]);
-      this.logger.info(`${logPrefix} Found ${existingSchedulerIds.size} existing job schedulers for this task.`);
+      const prefix = `trigger:`;
+      this.logger.info('schedulers', allSchedulers);
+      const taskSchedulers = allSchedulers.filter((s) => s.key?.startsWith(prefix));
+      const existingSchedulerKeys = new Set(taskSchedulers.map((s) => s.key).filter(Boolean) as string[]);
+      this.logger.info(`${logPrefix} Found ${existingSchedulerKeys.size} existing job schedulers for this task.`);
 
       // 2. Process current triggers and upsert job schedulers
-      const desiredSchedulerIds = new Set<string>();
+      const desiredSchedulerKeys = new Set<string>();
       const upsertPromises: Promise<Job | void>[] = [];
 
       this.triggers.forEach((trigger, index) => {
-        const hasCron = typeof trigger.cron === 'string' && trigger.cron.length > 0;
-        const hasEvery = typeof trigger.every === 'number' && trigger.every > 0;
+        const schedulerKey = `trigger:${trigger.type}:${index}`;
+        const repeatOpts: RepeatOptionsWithoutKey = {};
 
-        if (hasCron || hasEvery) {
-          const schedulerId = `${this.name}:trigger:${index}`;
-          desiredSchedulerIds.add(schedulerId);
-
-          const repeatOpts: RepeatOptionsWithoutKey = {};
-          if (hasCron) {
-            repeatOpts.pattern = trigger.cron;
-          } else if (hasEvery) {
-            repeatOpts.every = trigger.every;
-          } else {
-            this.logger.warn(`${logPrefix} Trigger ${index} has invalid cron/every. Skipping.`);
+        switch (trigger.type) {
+          case 'event':
             return;
-          }
-
-          const jobOptions: Omit<JobsOptions, 'repeat' | 'jobId'> = {
-            removeOnComplete: true,
-            removeOnFail: true,
-            ...(this.defaultJobOptions ?? {}),
-          };
-
-          this.logger.info(
-            `${logPrefix} Upserting scheduler '${schedulerId}' with repeat: ${JSON.stringify(repeatOpts)}`
-          );
-
-          // Cast queue to any to bypass persistent incorrect linter error about argument count
-          upsertPromises.push(
-            queue.upsertJobScheduler(schedulerId, repeatOpts, {
-              name: this.name,
-              data: trigger.data,
-              opts: jobOptions,
-            })
-          );
+          case 'cron':
+            repeatOpts.pattern = trigger.cron;
+            break;
+          case 'every':
+            repeatOpts.every = trigger.every;
+            break;
         }
+
+        desiredSchedulerKeys.add(schedulerKey);
+
+        const jobOptions: Omit<JobsOptions, 'repeat' | 'jobId'> = {
+          ...(this.defaultJobOptions ?? {}),
+        };
+
+        this.logger.info(
+          `${logPrefix} Upserting scheduler '${schedulerKey}' with repeat: ${JSON.stringify(repeatOpts)}`
+        );
+
+        // Cast queue to any to bypass persistent incorrect linter error about argument count
+        upsertPromises.push(
+          queue.upsertJobScheduler(schedulerKey, repeatOpts, {
+            name: this.name,
+            data: trigger.data,
+            opts: jobOptions,
+          })
+        );
       });
 
       await Promise.all(upsertPromises);
@@ -244,11 +242,11 @@ export class Task<T = unknown, R = unknown> extends BaseQueue {
 
       // 3. Remove obsolete job schedulers
       const removePromises: Promise<void>[] = [];
-      existingSchedulerIds.forEach((id) => {
-        if (!desiredSchedulerIds.has(id)) {
-          this.logger.info(`${logPrefix} Removing obsolete scheduler '${id}'`);
+      existingSchedulerKeys.forEach((key) => {
+        if (!desiredSchedulerKeys.has(key)) {
+          this.logger.info(`${logPrefix} Removing obsolete scheduler '${key}'`);
           // @ts-ignore - Linter incorrect about return type for removeJobScheduler
-          removePromises.push(queue.removeJobScheduler(id));
+          removePromises.push(queue.removeJobScheduler(key));
         }
       });
 
@@ -268,10 +266,10 @@ export class Task<T = unknown, R = unknown> extends BaseQueue {
    * Updates the task's default job options and triggers.
    * After updating, it re-synchronizes the BullMQ job schedulers.
    * @param options New default job options (optional).
-   * @param triggerOrTriggers New triggers (optional). Replaces existing triggers.
+   * @param triggers New triggers (optional). Replaces existing triggers.
    */
-  async update(options?: TaskOptions, triggerOrTriggers?: TaskTrigger<T> | TaskTrigger<T>[]): Promise<void> {
-    this.logger.info({ hasNewOptions: !!options, hasNewTriggers: !!triggerOrTriggers }, 'Updating task...');
+  async update(options?: TaskOptions, triggers?: SingleOrArray<TaskTrigger<T>>): Promise<void> {
+    this.logger.info({ hasNewOptions: !!options, hasNewTriggers: !!triggers }, 'Updating task...');
 
     // Update default job options if provided (should work now)
     if (options !== undefined) {
@@ -280,8 +278,8 @@ export class Task<T = unknown, R = unknown> extends BaseQueue {
     }
 
     // Update triggers if provided (should work now)
-    if (triggerOrTriggers !== undefined) {
-      this._initializeTriggers(triggerOrTriggers);
+    if (triggers !== undefined) {
+      this._initializeTriggers(triggers);
       this.logger.info(`Updated triggers. New count: ${this.triggers.length}.`);
       this.logger.info('Re-synchronizing schedulers due to trigger update...');
       await this.synchronizeSchedulers();
@@ -305,21 +303,21 @@ export class Task<T = unknown, R = unknown> extends BaseQueue {
 
     try {
       const allSchedulers = await queue.getJobSchedulers();
-      const prefix = `${this.name}:trigger:`;
-      const taskSchedulers = allSchedulers.filter((s) => s.id?.startsWith(prefix));
-      const schedulerIdsToRemove = taskSchedulers.map((s) => s.id).filter(Boolean) as string[];
+      const prefix = `trigger:`;
+      const taskSchedulers = allSchedulers.filter((s) => s.key?.startsWith(prefix));
+      const schedulerKeysToRemove = taskSchedulers.map((s) => s.key).filter(Boolean) as string[];
 
-      if (schedulerIdsToRemove.length === 0) {
+      if (schedulerKeysToRemove.length === 0) {
         this.logger.info(`${logPrefix} No schedulers found for this task to remove.`);
         return;
       }
 
-      this.logger.info(`${logPrefix} Found ${schedulerIdsToRemove.length} schedulers to remove.`);
+      this.logger.info(`${logPrefix} Found ${schedulerKeysToRemove.length} schedulers to remove.`);
 
-      const removePromises: Promise<boolean | void>[] = schedulerIdsToRemove.map((id) => {
-        this.logger.info(`${logPrefix} Removing scheduler '${id}'`);
+      const removePromises: Promise<boolean | void>[] = schedulerKeysToRemove.map((key) => {
+        this.logger.info(`${logPrefix} Removing scheduler '${key}'`);
         // @ts-ignore - Linter incorrect about return type for removeJobScheduler
-        return queue.removeJobScheduler(id);
+        return queue.removeJobScheduler(key);
       });
 
       await Promise.all(removePromises);
@@ -332,13 +330,13 @@ export class Task<T = unknown, R = unknown> extends BaseQueue {
   }
 
   /** Helper method to normalize and set triggers */
-  private _initializeTriggers(triggerOrTriggers?: TaskTrigger<T> | TaskTrigger<T>[]): void {
-    if (!triggerOrTriggers) {
+  private _initializeTriggers(triggers?: SingleOrArray<TaskTrigger<T>>): void {
+    if (!triggers) {
       this.triggers = [];
-    } else if (Array.isArray(triggerOrTriggers)) {
-      this.triggers = triggerOrTriggers;
+    } else if (Array.isArray(triggers)) {
+      this.triggers = triggers;
     } else {
-      this.triggers = [triggerOrTriggers];
+      this.triggers = [triggers];
     }
   }
 }
