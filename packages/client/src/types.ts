@@ -50,6 +50,8 @@ export type TaskHandler<T = unknown, R = unknown> = (
 ) => Promise<R>;
 
 export interface TaskTriggerBase<TData> {
+  /** Optional name for the this trigger */
+  name?: string;
   /** Data payload to associate with jobs created by this trigger. */
   data?: TData;
 }
@@ -66,7 +68,6 @@ export interface TaskTriggerEvent<TData> extends TaskTriggerBase<TData> {
 /** Defines a potential cron trigger condition for a Task */
 export interface TaskTriggerCron<TData> extends TaskTriggerBase<TData> {
   type: 'cron';
-  name?: string;
   /** CRON string for scheduled triggering - uses BullMQ's cron syntax (cron-parser) */
   cron?: string;
 }
@@ -74,7 +75,6 @@ export interface TaskTriggerCron<TData> extends TaskTriggerBase<TData> {
 /** Defines a potential repeat trigger condition for a Task */
 export interface TaskTriggerEvery<TData> extends TaskTriggerBase<TData> {
   type: 'every';
-  name?: string;
   /** Repeat interval in milliseconds for recurring jobs based on this trigger. */
   every?: number;
 }

@@ -1,8 +1,11 @@
 import { JobsOptions, Job, Worker, WorkerOptions } from 'bullmq';
+import cronstrue from 'cronstrue';
+import type { Logger } from 'pino';
+import prettyMilliseconds from 'pretty-ms';
+import slugify from '@sindresorhus/slugify';
 import { BaseQueue } from './base-queue.js';
 import { SubTask } from './sub-task.js';
 import type { TaskGroup } from './task-group.js';
-import type { Logger } from 'pino';
 import type {
   RepeatOptionsWithoutKey,
   TaskOptions,
@@ -15,8 +18,6 @@ import type {
   TaskTrigger,
   SingleOrArray,
 } from './types.js';
-import { randomUUID } from 'crypto';
-import type { ToroTaskClient } from './client.js';
 
 /**
  * Represents a defined task associated with a TaskGroup.
@@ -203,20 +204,24 @@ export class Task<T = unknown, R = unknown> extends BaseQueue {
       const upsertPromises: Promise<Job | void>[] = [];
 
       this.triggers.forEach((trigger, index) => {
-        const schedulerKey = `trigger:${trigger.type}:${index}`;
+        const logPrefix = `[Scheduler Sync: ${this.name}] [Trigger ${index}]`;
         const repeatOpts: RepeatOptionsWithoutKey = {};
+        let description = '';
 
         switch (trigger.type) {
           case 'event':
             return;
           case 'cron':
             repeatOpts.pattern = trigger.cron;
+            description = cronstrue.toString(trigger.cron ?? '');
             break;
           case 'every':
             repeatOpts.every = trigger.every;
+            description = prettyMilliseconds(trigger.every ?? 0);
             break;
         }
-
+        const slug = slugify(trigger.name || description);
+        const schedulerKey = `trigger:${index}:${trigger.type}-${slug}`;
         desiredSchedulerKeys.add(schedulerKey);
 
         const jobOptions: Omit<JobsOptions, 'repeat' | 'jobId'> = {
