@@ -1,4 +1,4 @@
-import type { Job, JobsOptions, Queue } from 'bullmq';
+import type { Job, JobsOptions, Queue, RepeatOptions } from 'bullmq';
 import type { Logger } from 'pino';
 import type { ToroTaskClient } from './client.js'; // Assuming client export is in client.ts
 import type { TaskGroup } from './task-group.js';
@@ -52,6 +52,8 @@ export interface TaskTrigger<TData = Record<string, any>> {
   /** Data payload to associate with jobs created by this trigger. */
   data?: TData;
 }
+
+export type RepeatOptionsWithoutKey = Omit<RepeatOptions, 'key'>;
 
 // --- SubTask Types ---
 

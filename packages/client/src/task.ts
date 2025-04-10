@@ -1,9 +1,10 @@
-import { JobsOptions, Job, Queue, QueueEvents, Worker, WorkerOptions } from 'bullmq';
+import { JobsOptions, Job } from 'bullmq';
 import { BaseQueue } from './base-queue.js';
 import { SubTask } from './sub-task.js';
 import type { TaskGroup } from './task-group.js';
 import type { Logger } from 'pino';
 import type {
+  RepeatOptionsWithoutKey,
   TaskOptions,
   TaskHandlerOptions,
   TaskHandlerContext,
@@ -13,6 +14,8 @@ import type {
   SubTaskHandler,
   TaskTrigger,
 } from './types.js';
+import { randomUUID } from 'crypto';
+import type { ToroTaskClient } from './client.js';
 
 /**
  * Represents a defined task associated with a TaskGroup.
@@ -175,6 +178,91 @@ export class Task<T = unknown, R = unknown> extends BaseQueue {
         `Job processing failed for job name "${effectiveJobName}"`
       );
       throw error;
+    }
+  }
+
+  /**
+   * Synchronizes BullMQ Job Schedulers based on the task's triggers with cron/every.
+   * Uses queue.upsertJobScheduler() and queue.removeJobScheduler().
+   */
+  async synchronizeSchedulers(): Promise<void> {
+    const queue = this.queue;
+    const logPrefix = `[Scheduler Sync: ${this.name}]`;
+    this.logger.info(`${logPrefix} Starting synchronization...`);
+
+    try {
+      // 1. Get existing job schedulers potentially related to this task
+      const allSchedulers = await queue.getJobSchedulers();
+      const prefix = `${this.name}:trigger:`;
+      const taskSchedulers = allSchedulers.filter((s) => s.id?.startsWith(prefix));
+      const existingSchedulerIds = new Set(taskSchedulers.map((s) => s.id).filter(Boolean) as string[]);
+      this.logger.info(`${logPrefix} Found ${existingSchedulerIds.size} existing job schedulers for this task.`);
+
+      // 2. Process current triggers and upsert job schedulers
+      const desiredSchedulerIds = new Set<string>();
+      const upsertPromises: Promise<Job | void>[] = [];
+
+      this.triggers.forEach((trigger, index) => {
+        const hasCron = typeof trigger.cron === 'string' && trigger.cron.length > 0;
+        const hasEvery = typeof trigger.every === 'number' && trigger.every > 0;
+
+        if (hasCron || hasEvery) {
+          const schedulerId = `${this.name}:trigger:${index}`;
+          desiredSchedulerIds.add(schedulerId);
+
+          const repeatOpts: RepeatOptionsWithoutKey = {};
+          if (hasCron) {
+            repeatOpts.pattern = trigger.cron;
+          } else if (hasEvery) {
+            repeatOpts.every = trigger.every;
+          } else {
+            this.logger.warn(`${logPrefix} Trigger ${index} has invalid cron/every. Skipping.`);
+            return;
+          }
+
+          const jobOptions: Omit<JobsOptions, 'repeat' | 'jobId'> = {
+            removeOnComplete: true,
+            removeOnFail: true,
+            ...(this.defaultJobOptions ?? {}),
+          };
+
+          this.logger.info(
+            `${logPrefix} Upserting scheduler '${schedulerId}' with repeat: ${JSON.stringify(repeatOpts)}`
+          );
+
+          // Cast queue to any to bypass persistent incorrect linter error about argument count
+          upsertPromises.push(
+            queue.upsertJobScheduler(schedulerId, repeatOpts, {
+              name: this.name,
+              data: trigger.data,
+              opts: jobOptions,
+            })
+          );
+        }
+      });
+
+      await Promise.all(upsertPromises);
+      this.logger.info(`${logPrefix} Upserted ${upsertPromises.length} schedulers.`);
+
+      // 3. Remove obsolete job schedulers
+      const removePromises: Promise<void>[] = [];
+      existingSchedulerIds.forEach((id) => {
+        if (!desiredSchedulerIds.has(id)) {
+          this.logger.info(`${logPrefix} Removing obsolete scheduler '${id}'`);
+          // @ts-ignore - Linter incorrect about return type for removeJobScheduler
+          removePromises.push(queue.removeJobScheduler(id));
+        }
+      });
+
+      await Promise.all(removePromises);
+      const removedCount = removePromises.length;
+      if (removedCount > 0) {
+        this.logger.info(`${logPrefix} Removed ${removedCount} obsolete schedulers.`);
+      }
+
+      this.logger.info(`${logPrefix} Synchronization complete.`);
+    } catch (error: any) {
+      this.logger.error(`${logPrefix} Error during scheduler synchronization: ${error?.message || error}`, error);
     }
   }
 }
