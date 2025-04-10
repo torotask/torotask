@@ -1,4 +1,4 @@
-import { JobsOptions, Job } from 'bullmq';
+import { JobsOptions, Job, Worker, WorkerOptions } from 'bullmq';
 import { BaseQueue } from './base-queue.js';
 import { SubTask } from './sub-task.js';
 import type { TaskGroup } from './task-group.js';
@@ -29,11 +29,11 @@ import type { ToroTaskClient } from './client.js';
 export class Task<T = unknown, R = unknown> extends BaseQueue {
   public readonly name: string;
   public readonly group: TaskGroup;
-  public readonly defaultJobOptions: TaskOptions;
+  public defaultJobOptions: TaskOptions;
   public readonly handler: TaskHandler<T, R>;
   private readonly subTasks: Map<string, SubTask<any, any>>;
   private readonly allowCatchAll: boolean;
-  public readonly triggers: TaskTrigger<T>[];
+  public triggers: TaskTrigger<T>[] = [];
 
   constructor(
     taskGroup: TaskGroup,
@@ -66,13 +66,11 @@ export class Task<T = unknown, R = unknown> extends BaseQueue {
     this.subTasks = new Map();
     this.allowCatchAll = this.defaultJobOptions.allowCatchAll ?? false;
 
-    if (!triggerOrTriggers) {
-      this.triggers = [];
-    } else if (Array.isArray(triggerOrTriggers)) {
-      this.triggers = triggerOrTriggers;
-    } else {
-      this.triggers = [triggerOrTriggers];
-    }
+    this._initializeTriggers(triggerOrTriggers);
+    this.on('ready', () => {
+      this.logger.info('Task is ready. Synchronizing schedulers...');
+      this.synchronizeSchedulers();
+    });
 
     this.logger.info(
       { allowCatchAll: this.allowCatchAll, triggerCount: this.triggers.length },
@@ -263,6 +261,84 @@ export class Task<T = unknown, R = unknown> extends BaseQueue {
       this.logger.info(`${logPrefix} Synchronization complete.`);
     } catch (error: any) {
       this.logger.error(`${logPrefix} Error during scheduler synchronization: ${error?.message || error}`, error);
+    }
+  }
+
+  /**
+   * Updates the task's default job options and triggers.
+   * After updating, it re-synchronizes the BullMQ job schedulers.
+   * @param options New default job options (optional).
+   * @param triggerOrTriggers New triggers (optional). Replaces existing triggers.
+   */
+  async update(options?: TaskOptions, triggerOrTriggers?: TaskTrigger<T> | TaskTrigger<T>[]): Promise<void> {
+    this.logger.info({ hasNewOptions: !!options, hasNewTriggers: !!triggerOrTriggers }, 'Updating task...');
+
+    // Update default job options if provided (should work now)
+    if (options !== undefined) {
+      this.defaultJobOptions = options;
+      this.logger.info('Updated default job options.');
+    }
+
+    // Update triggers if provided (should work now)
+    if (triggerOrTriggers !== undefined) {
+      this._initializeTriggers(triggerOrTriggers);
+      this.logger.info(`Updated triggers. New count: ${this.triggers.length}.`);
+      this.logger.info('Re-synchronizing schedulers due to trigger update...');
+      await this.synchronizeSchedulers();
+    } else {
+      if (options !== undefined) {
+        this.logger.info('Only options updated, triggers remain unchanged. No scheduler sync needed.');
+      }
+    }
+
+    this.logger.info('Task update complete.');
+  }
+
+  /**
+   * Removes all BullMQ job schedulers associated with this task.
+   * Useful when dynamically removing or disabling a task.
+   */
+  async removeAllSchedulers(): Promise<void> {
+    const queue = this.queue;
+    const logPrefix = `[Remove Schedulers: ${this.name}]`;
+    this.logger.info(`${logPrefix} Starting removal of all schedulers...`);
+
+    try {
+      const allSchedulers = await queue.getJobSchedulers();
+      const prefix = `${this.name}:trigger:`;
+      const taskSchedulers = allSchedulers.filter((s) => s.id?.startsWith(prefix));
+      const schedulerIdsToRemove = taskSchedulers.map((s) => s.id).filter(Boolean) as string[];
+
+      if (schedulerIdsToRemove.length === 0) {
+        this.logger.info(`${logPrefix} No schedulers found for this task to remove.`);
+        return;
+      }
+
+      this.logger.info(`${logPrefix} Found ${schedulerIdsToRemove.length} schedulers to remove.`);
+
+      const removePromises: Promise<boolean | void>[] = schedulerIdsToRemove.map((id) => {
+        this.logger.info(`${logPrefix} Removing scheduler '${id}'`);
+        // @ts-ignore - Linter incorrect about return type for removeJobScheduler
+        return queue.removeJobScheduler(id);
+      });
+
+      await Promise.all(removePromises);
+      this.logger.info(`${logPrefix} Successfully removed ${removePromises.length} schedulers.`);
+    } catch (error: any) {
+      this.logger.error(`${logPrefix} Error removing schedulers: ${error?.message || error}`, error);
+      // Re-throw or handle as needed
+      throw error;
+    }
+  }
+
+  /** Helper method to normalize and set triggers */
+  private _initializeTriggers(triggerOrTriggers?: TaskTrigger<T> | TaskTrigger<T>[]): void {
+    if (!triggerOrTriggers) {
+      this.triggers = [];
+    } else if (Array.isArray(triggerOrTriggers)) {
+      this.triggers = triggerOrTriggers;
+    } else {
+      this.triggers = [triggerOrTriggers];
     }
   }
 }
