@@ -8,7 +8,7 @@ const SYNC_QUEUE_NAME = 'events.sync';
 
 // Define Redis key prefixes
 const EVENT_BY_EVENT_PREFIX = 'events:by-event:';
-const EVENT_BY_TASK_PREFIX = 'events:by-task:';
+const TASK_INDEX_PREFIX = 'events:task-index:'; // New prefix for task index sets
 
 interface SyncJobPayload {
   taskGroup: string;
@@ -55,15 +55,37 @@ export class EventManager extends BaseQueue {
     return `${EVENT_BY_EVENT_PREFIX}${eventName}`;
   }
 
-  getTaskKey(info: EventSubscriptionInfo): string {
+  /**
+   * Gets the Redis key for the Set containing event names a task is subscribed to.
+   * @param taskGroup Task group name.
+   * @param taskName Task name.
+   * @returns The Redis key string.
+   */
+  private getTaskIndexKey(taskGroup: string, taskName: string): string {
+    return `${TASK_INDEX_PREFIX}${taskGroup}:${taskName}`;
+  }
+
+  /**
+   * Generates a unique identifier string for a subscription to be used as a field key in Redis Hashes.
+   * @param info The EventSubscriptionInfo object.
+   * @returns A string identifier (e.g., "group:task:trigger:123" or "group:task:event:abc").
+   */
+  private getSubscriptionIdentifier(info: EventSubscriptionInfo): string {
     const { taskGroup, taskName, triggerId, eventId } = info;
     let suffix = '';
-    if (triggerId) {
+    if (triggerId !== undefined) {
       suffix = `:trigger:${triggerId}`;
-    } else if (eventId) {
+    } else if (eventId !== undefined) {
+      // Use eventId if triggerId is not present (for non-trigger subscriptions)
       suffix = `:event:${eventId}`;
+    } else {
+      // Fallback or error needed if neither is defined?
+      this.logger.warn({ info }, 'Subscription info lacks both triggerId and eventId for identifier generation');
+      // Using a generic suffix, but this might cause collisions if multiple non-id event subs exist per task
+      suffix = ':event:unidentified';
     }
-    return `${EVENT_BY_TASK_PREFIX}${taskGroup}:${taskName}${suffix}`;
+    // Consistent identifier format
+    return `${taskGroup}:${taskName}${suffix}`;
   }
 
   /**
@@ -112,40 +134,102 @@ export class EventManager extends BaseQueue {
   async process(job: Job<SyncJobPayload>): Promise<SyncJobReturn> {
     const { taskGroup, taskName, desiredSubscriptions } = job.data;
     const logPrefix = `[Sync Process: ${taskGroup}:${taskName} (Job ${job.id})]`;
-    this.logger.info(`${logPrefix} Starting synchronization.`);
+    this.logger.info(`${logPrefix} Starting synchronization using Hash strategy.`);
 
+    // --- Prepare desired state map (triggers only for now) ---
     const desiredSubMap = new Map<number, EventSubscriptionInfo>();
+    const desiredEventNames = new Set<string>();
     desiredSubscriptions.forEach((sub) => {
       if (sub.triggerId !== undefined) {
-        // Only process trigger-based subscriptions here
         desiredSubMap.set(sub.triggerId, sub);
+        if (sub.eventId) {
+          desiredEventNames.add(sub.eventId);
+        }
       }
     });
-    this.logger.debug(`${logPrefix} Desired trigger subscription count: ${desiredSubMap.size}`);
+    this.logger.debug(
+      { desiredCount: desiredSubMap.size, desiredEvents: Array.from(desiredEventNames) },
+      `${logPrefix} Desired trigger subscriptions prepared.`
+    );
 
     let registeredCount = 0;
     let unregisteredCount = 0;
     let errorCount = 0;
-    const registrationPromises: Promise<void>[] = [];
-    const unregistrationPromises: Promise<void>[] = [];
+    const promises: Promise<void>[] = [];
 
     try {
-      // 1. Get currently registered state from Redis
-      const currentlyRegisteredEvents = await this.getRegisteredTaskEvents(taskGroup, taskName, 'trigger');
-      const currentlyRegisteredMap = new Map<number, { eventName: string; type: string; id: string }>();
-      currentlyRegisteredEvents.forEach((ev) => {
-        const triggerId = parseInt(ev.id, 10);
-        if (!isNaN(triggerId)) {
-          currentlyRegisteredMap.set(triggerId, ev);
+      // --- 1. Get currently registered state for this task from relevant Redis Hashes ---
+      const currentlyRegisteredMap = new Map<number, EventSubscriptionInfo>();
+      const redis = await this.getRedisClient();
+      const taskIndexKey = this.getTaskIndexKey(taskGroup, taskName);
+      let knownEventNames: string[] = [];
+      try {
+        // Fetch event names associated with this task from the index set
+        knownEventNames = await redis.smembers(taskIndexKey);
+        this.logger.debug({ taskIndexKey, knownEventNames }, `${logPrefix} Fetched known event names from task index.`);
+      } catch (indexError) {
+        this.logger.error(
+          { err: indexError, taskIndexKey },
+          `${logPrefix} Failed to fetch event names from task index.`
+        );
+        // Decide if we should proceed? If index is missing, we might miss stale entries.
+        // For now, we'll proceed but log the error.
+        errorCount++;
+      }
+
+      // Combine known event names from index with names from desired state
+      const relevantEventNames = new Set([...knownEventNames, ...desiredEventNames]);
+      this.logger.debug(
+        { relevantEvents: Array.from(relevantEventNames) },
+        `${logPrefix} Combined list of relevant event names to check.`
+      );
+
+      const fetchPromises = Array.from(relevantEventNames).map(async (eventName) => {
+        const eventKey = this.getEventKey(eventName);
+        try {
+          const subscriptionJsonStrings = await redis.hvals(eventKey);
+          this.logger.debug(
+            { eventName, count: subscriptionJsonStrings.length, key: eventKey },
+            `${logPrefix} Fetched subscription JSONs from Hash.`
+          );
+          subscriptionJsonStrings.forEach((jsonString) => {
+            try {
+              const info = JSON.parse(jsonString) as EventSubscriptionInfo;
+              // Filter for the specific task and ensure it's a trigger we are tracking
+              if (info.taskGroup === taskGroup && info.taskName === taskName && info.triggerId !== undefined) {
+                currentlyRegisteredMap.set(info.triggerId, info);
+              }
+            } catch (parseError) {
+              this.logger.warn(
+                { err: parseError, eventName, key: eventKey, jsonString },
+                `${logPrefix} Failed to parse subscription JSON from Hash.`
+              );
+            }
+          });
+        } catch (fetchError) {
+          this.logger.error(
+            { err: fetchError, eventName, key: eventKey },
+            `${logPrefix} Failed to fetch subscriptions from Hash.`
+          );
+          // Decide how to handle: continue with partial data, or abort? We'll log and continue.
+          errorCount++; // Increment error count if fetch fails
         }
       });
-      this.logger.debug(`${logPrefix} Found ${currentlyRegisteredMap.size} triggers currently registered in Redis.`);
 
-      // 2. Identify triggers to register
+      await Promise.all(fetchPromises);
+      this.logger.debug(
+        { currentCount: currentlyRegisteredMap.size },
+        `${logPrefix} Current trigger registrations for this task identified from Hashes.`
+      );
+
+      // --- 2. Identify triggers to register or update ---
       desiredSubMap.forEach((desiredInfo, triggerId) => {
-        if (!currentlyRegisteredMap.has(triggerId)) {
-          this.logger.info({ eventName: desiredInfo.eventId, triggerId }, `${logPrefix} Registering trigger...`);
-          registrationPromises.push(
+        const registeredInfo = currentlyRegisteredMap.get(triggerId);
+
+        if (!registeredInfo) {
+          // Case 1: Trigger ID is new -> Register it
+          this.logger.info({ eventName: desiredInfo.eventId, triggerId }, `${logPrefix} Registering new trigger...`);
+          promises.push(
             this.registerTaskEvent(desiredInfo.eventId!, desiredInfo)
               .then(() => {
                 registeredCount++;
@@ -158,36 +242,65 @@ export class EventManager extends BaseQueue {
                 errorCount++;
               })
           );
+        } else {
+          // Case 2: Trigger ID exists -> Check if content differs
+          // Compare based on eventId. Add more checks (e.g., data deep compare) if needed.
+          if (desiredInfo.eventId !== registeredInfo.eventId) {
+            this.logger.info(
+              { newEvent: desiredInfo.eventId, oldEvent: registeredInfo.eventId, triggerId },
+              `${logPrefix} Updating existing trigger registration...`
+            );
+            // Schedule unregister of old, then register of new
+            promises.push(
+              this.unregisterTaskEvent(registeredInfo.eventId!, registeredInfo) // Use old info for unregister
+                .then(() => this.registerTaskEvent(desiredInfo.eventId!, desiredInfo)) // Use new info for register
+                .then(() => {
+                  /* Count as modification? */ registeredCount++;
+                  unregisteredCount++;
+                }) // Increment both for now
+                .catch((err) => {
+                  this.logger.error({ err, eventName: desiredInfo.eventId, triggerId }, `${logPrefix} Failed update.`);
+                  errorCount++;
+                })
+            );
+            // Remove from currentlyRegisteredMap so it's not processed in the unregister loop below
+            currentlyRegisteredMap.delete(triggerId);
+          } else {
+            // Trigger exists and is the same, do nothing. Log for debug?
+            this.logger.debug(
+              { eventName: desiredInfo.eventId, triggerId },
+              `${logPrefix} Trigger already registered and unchanged.`
+            );
+            // Also remove from map as it's accounted for.
+            currentlyRegisteredMap.delete(triggerId);
+          }
         }
       });
 
-      // 3. Identify triggers to unregister
-      currentlyRegisteredMap.forEach((redisInfo, triggerId) => {
-        if (!desiredSubMap.has(triggerId)) {
-          const eventName = redisInfo.eventName;
-          this.logger.info({ eventName, triggerId }, `${logPrefix} Unregistering stale trigger...`);
-          // Reconstruct minimal info needed for unregistration
-          const subscriptionInfo: EventSubscriptionInfo = {
-            taskGroup: taskGroup,
-            taskName: taskName,
-            triggerId: triggerId,
-            eventId: eventName,
-          };
-          unregistrationPromises.push(
-            this.unregisterTaskEvent(eventName, subscriptionInfo)
-              .then(() => {
-                unregisteredCount++;
-              })
-              .catch((err) => {
-                this.logger.error({ err, eventName: eventName, triggerId }, `${logPrefix} Failed unregistration.`);
-                errorCount++;
-              })
-          );
-        }
+      // --- 3. Identify and unregister remaining stale triggers ---
+      // Any triggerId still in currentlyRegisteredMap was not in desiredSubMap *at all*.
+      currentlyRegisteredMap.forEach((registeredInfo, triggerId) => {
+        this.logger.info(
+          { eventName: registeredInfo.eventId, triggerId },
+          `${logPrefix} Unregistering stale trigger (not in desired state)...`
+        );
+        promises.push(
+          this.unregisterTaskEvent(registeredInfo.eventId!, registeredInfo)
+            .then(() => {
+              unregisteredCount++;
+            })
+            .catch((err) => {
+              this.logger.error(
+                { err, eventName: registeredInfo.eventId, triggerId },
+                `${logPrefix} Failed stale unregistration.`
+              );
+              errorCount++;
+            })
+        );
       });
 
-      // 4. Wait for all operations to settle
-      await Promise.allSettled([...registrationPromises, ...unregistrationPromises]);
+      // --- 4. Wait for all operations to settle ---
+      await Promise.allSettled(promises);
 
       this.logger.info(
         { registered: registeredCount, unregistered: unregisteredCount, errors: errorCount },
@@ -215,161 +328,176 @@ export class EventManager extends BaseQueue {
   }
 
   /**
-   * Registers a task trigger for a specific event.
+   * Registers a task trigger/event subscription for a specific event.
    * Persists the relationship in Redis using:
-   * - events:by-event:<eventName> -> Set<JSONString<{ groupName, taskName, triggerId }>>
-   * - events:by-task:<taskName> -> Set<eventName>
+   * - events:by-event:<eventName> (Hash) -> { <subscriptionId>: JSONString<EventSubscriptionInfo> }
    * @param eventName The name of the event to subscribe to.
-   * @param info The EventSubscriptionInfo object containing task group, name, and optional triggerId and data.
+   * @param info The EventSubscriptionInfo object containing task group, name, and optional triggerId/eventId and data.
    */
   async registerTaskEvent(eventName: string, info: EventSubscriptionInfo): Promise<void> {
-    // Assuming task.group.name exists
-    const { taskName, triggerId } = info;
-
-    this.logger.debug(info, 'Registering task trigger for event in Redis');
+    this.logger.debug(info, 'Registering task subscription for event in Redis Hash');
     const subscriptionJson = JSON.stringify(info);
+    const fieldKey = this.getSubscriptionIdentifier(info);
 
     // --- Redis Persistence ---
     try {
       const redis = await this.getRedisClient();
       const eventKey = this.getEventKey(eventName);
-      const taskKey = this.getTaskKey(info);
+      const taskIndexKey = this.getTaskIndexKey(info.taskGroup, info.taskName);
 
-      const [eventAddResult, taskAddResult] = await Promise.all([
-        redis.sadd(eventKey, subscriptionJson), // Add JSON string to event's set
-        redis.sadd(taskKey, eventName), // Add event name to task's set
-      ]);
+      // Use HSET to add/update the subscription in the Hash
+      // Use SADD to add the event name to the task's index set
+      // Run in a MULTI transaction for atomicity
+      const multi = redis.multi();
+      multi.hset(eventKey, fieldKey, subscriptionJson);
+      multi.sadd(taskIndexKey, eventName);
+      const results = await multi.exec();
 
-      if (eventAddResult > 0) {
+      // Check HSET result (index 0 of results array)
+      const hsetResult = results?.[0]?.[1]; // [1] accesses the value part of [error, value]
+      if (hsetResult === 1) {
+        // Note: ioredis returns number for HSET
         this.logger.info(
-          { eventName, taskName, triggerId, redisKey: eventKey },
-          'Task trigger added to event set in Redis'
+          { eventName, fieldKey, redisKey: eventKey },
+          'Task subscription added to event Hash in Redis (new field)'
+        );
+      } else if (hsetResult === 0) {
+        this.logger.debug(
+          { eventName, fieldKey, redisKey: eventKey },
+          'Task subscription updated in event Hash in Redis (existing field)'
         );
       } else {
-        this.logger.debug(
-          { eventName, taskName, triggerId, redisKey: eventKey },
-          'Task trigger was already in event set in Redis'
+        // Log if HSET result is unexpected (e.g., error in multi)
+        this.logger.warn(
+          { eventName, fieldKey, redisKey: eventKey, hsetResult: results?.[0] },
+          'Unexpected result from HSET within MULTI'
         );
       }
-      if (taskAddResult > 0) {
-        this.logger.info({ eventName, taskName, redisKey: taskKey }, 'Event added to task set in Redis');
+
+      // Check SADD result (index 1 of results array)
+      const saddResult = results?.[1]?.[1]; // [1] accesses the value part of [error, value]
+      if (saddResult === 1) {
+        // Note: ioredis returns number for SADD
+        this.logger.info({ eventName, taskIndexKey }, 'Event name added to task index set');
+      } else if (saddResult === 0) {
+        this.logger.debug({ eventName, taskIndexKey }, 'Event name was already in task index set');
       } else {
-        this.logger.debug({ eventName, taskName, redisKey: taskKey }, 'Event was already in task set in Redis');
+        this.logger.warn(
+          { eventName, taskIndexKey, saddResult: results?.[1] },
+          'Unexpected result from SADD within MULTI'
+        );
       }
     } catch (error) {
       this.logger.error(
-        { err: error, eventName, taskName, triggerId },
-        'Failed to register event task trigger relationship in Redis'
+        { err: error, eventName, taskGroup: info.taskGroup, taskName: info.taskName },
+        'Failed to register event task subscription in Redis Hash'
       );
       throw error;
     }
   }
 
   /**
-   * Unregisters a specific task trigger from an event in Redis.
-   * Removes JSON string from events:by-event:<eventName> set.
-   * Removes event name from events:by-task:<taskName> set.
+   * Unregisters a specific task trigger/event subscription from an event Hash in Redis.
+   * Removes the field corresponding to the subscription identifier from the events:by-event:<eventName> Hash.
    * @param eventName The name of the event.
-   * @param info The EventSubscriptionInfo object containing task group, name, and optional triggerId and eventId.
+   * @param info The EventSubscriptionInfo object containing task group, name, and optional triggerId/eventId.
    */
   async unregisterTaskEvent(eventName: string, info: EventSubscriptionInfo): Promise<void> {
-    // Assuming task.group.name exists
-    const { taskGroup, taskName, triggerId } = info;
-    this.logger.debug(info, 'Unregistering task trigger from event in Redis');
-
-    const subscriptionInfo: EventSubscriptionInfo = { taskGroup, taskName, triggerId };
-    const subscriptionJson = JSON.stringify(subscriptionInfo);
+    const fieldKey = this.getSubscriptionIdentifier(info);
+    const { taskGroup, taskName } = info;
+    this.logger.debug({ eventName, fieldKey, info }, 'Unregistering task subscription from event Hash in Redis');
 
     try {
       const redis = await this.getRedisClient();
       const eventKey = this.getEventKey(eventName);
-      const taskKey = this.getTaskKey(info);
+      const taskIndexKey = this.getTaskIndexKey(taskGroup, taskName);
 
-      // Use Promise.all to remove from both sets concurrently
-      // Note: We only remove the specific trigger JSON from the event set.
-      // We remove the event name from the task set, but only if no other triggers for this task listen to the same event.
-      const [eventRemResult, isTaskStillListening] = await Promise.all([
-        redis.srem(eventKey, subscriptionJson), // Remove specific JSON trigger info
-        // Check if the task has other triggers for the *same event* before removing from taskKey
-        redis
-          .smembers(eventKey)
-          .then((members) =>
-            members
-              .map((m) => JSON.parse(m) as EventSubscriptionInfo)
-              .some((info) => info.taskName === taskName && info.triggerId !== triggerId)
-          ),
-        // Alternative simpler approach for taskKey: Remove it, and let register add it back if needed.
-        // redis.srem(taskKey, eventName) // Remove event name from task's set (simpler, maybe less accurate if >1 trigger)
-      ]);
+      // 1. Use HDEL to remove the specific field (subscription) from the Hash
+      const hashDelResult = await redis.hdel(eventKey, fieldKey);
 
-      // srem returns the number of members removed (0 or 1 in this case)
-      if (eventRemResult > 0) {
+      // HDEL returns the number of fields removed (0 or 1 in this case)
+      if (hashDelResult > 0) {
         this.logger.info(
-          { eventName, taskName, triggerId, redisKey: eventKey },
-          'Task trigger removed from event set in Redis'
+          { eventName, fieldKey, redisKey: eventKey },
+          'Task subscription removed from event Hash in Redis'
         );
-      } else {
-        this.logger.warn(
-          { eventName, taskName, triggerId, redisKey: eventKey },
-          'Task trigger not found in event set in Redis during unregistration'
-        );
-      }
 
-      // Only remove eventName from taskKey if this was the last trigger for that event on this task
-      if (!isTaskStillListening && eventRemResult > 0) {
-        // Only proceed if the trigger was actually found and removed
-        const taskRemResult = await redis.srem(taskKey, eventName);
-        if (taskRemResult > 0) {
+        // 2. Check if any other subscriptions for this task remain for this event
+        const remainingValues = await redis.hvals(eventKey); // Get remaining JSON strings in the hash
+        const taskHasOtherSubscriptionsForEvent = remainingValues.some((jsonString) => {
+          try {
+            const otherInfo = JSON.parse(jsonString) as EventSubscriptionInfo;
+            // Check if any remaining entry belongs to the same task
+            return otherInfo.taskGroup === taskGroup && otherInfo.taskName === taskName;
+          } catch (parseError) {
+            this.logger.warn(
+              { err: parseError, eventKey, jsonString },
+              'Failed to parse remaining member during unregisterTaskEvent check'
+            );
+            return false;
+          }
+        });
+
+        // 3. If no other subscriptions for this task remain for this event, remove event from task index
+        if (!taskHasOtherSubscriptionsForEvent) {
           this.logger.info(
-            { eventName, taskName, redisKey: taskKey },
-            'Event removed from task set in Redis (last trigger)'
+            { eventName, taskIndexKey },
+            'Last subscription for this task to this event removed. Removing event from task index.'
           );
+          const sremResult = await redis.srem(taskIndexKey, eventName);
+          if (sremResult === 0) {
+            this.logger.warn(
+              { eventName, taskIndexKey },
+              'Attempted to remove event from task index, but it was not found.'
+            );
+          }
         } else {
-          // This could happen if taskKey was somehow already cleaned up
-          this.logger.warn(
-            { eventName, taskName, redisKey: taskKey },
-            'Event not found in task set in Redis during final trigger unregistration'
+          this.logger.debug(
+            { eventName, taskIndexKey },
+            'Other subscriptions for this task still exist for this event. Task index unchanged.'
           );
         }
-      } else if (isTaskStillListening) {
-        this.logger.debug(
-          { eventName, taskName, redisKey: taskKey },
-          'Task still listening to event via other triggers, not removing event from task set.'
+      } else {
+        // This is not necessarily an error, the subscription might have already been removed or never existed.
+        this.logger.warn(
+          { eventName, fieldKey, redisKey: eventKey },
+          'Task subscription field not found in event Hash during unregistration'
         );
       }
     } catch (error) {
       this.logger.error(
-        { err: error, eventName, taskName, triggerId },
-        'Failed to unregister event task trigger relationship in Redis'
+        { err: error, eventName, taskGroup: info.taskGroup, taskName: info.taskName, fieldKey },
+        'Failed to unregister event task subscription from Redis Hash'
       );
       throw error;
     }
   }
 
   /**
-   * Retrieves all registered event subscriptions for a specific event name from Redis.
-   * Fetches members from the events:by-event:<eventName> set and parses them.
+   * Retrieves all registered event subscriptions for a specific event name from the Redis Hash.
+   * Fetches values (JSON strings) from the events:by-event:<eventName> Hash and parses them.
    * @param eventName The name of the event.
    * @returns A promise that resolves with an array of EventSubscriptionInfo objects.
    */
   async getRegisteredSubscriptionsForEvent(eventName: string): Promise<EventSubscriptionInfo[]> {
     const logPrefix = '[getRegisteredSubscriptionsForEvent]';
-    this.logger.debug({ eventName }, `${logPrefix} Fetching subscriptions from Redis...`);
+    this.logger.debug({ eventName }, `${logPrefix} Fetching subscriptions from Hash...`);
     const subscriptions: EventSubscriptionInfo[] = [];
-    const eventKey = this.getEventKey(eventName); // Use static helper
+    const eventKey = this.getEventKey(eventName); // Gets events:by-event:<eventName>
 
     try {
       const redis = await this.getRedisClient();
-      const jsonStrings = await redis.smembers(eventKey);
+      // Use HVALS to get all subscription JSON strings from the Hash
+      const jsonStrings = await redis.hvals(eventKey);
 
       if (!jsonStrings || jsonStrings.length === 0) {
-        this.logger.debug({ eventName, eventKey }, `${logPrefix} No subscriptions found in Redis set.`);
+        this.logger.debug({ eventName, eventKey }, `${logPrefix} No subscriptions found in Redis Hash.`);
         return []; // No subscriptions found
       }
 
       this.logger.debug(
         { eventName, count: jsonStrings.length },
-        `${logPrefix} Found potential subscriptions, parsing...`
+        `${logPrefix} Found potential subscriptions in Hash, parsing...`
       );
 
       jsonStrings.forEach((jsonString) => {
@@ -381,92 +509,29 @@ export class EventManager extends BaseQueue {
           } else {
             this.logger.warn(
               { eventName, jsonString },
-              `${logPrefix} Skipping invalid/incomplete subscription JSON found in set.`
+              `${logPrefix} Skipping invalid/incomplete subscription JSON found in Hash.`
             );
           }
         } catch (parseError) {
           this.logger.error(
             { err: parseError, eventName, jsonString },
-            `${logPrefix} Failed to parse subscription JSON from set.`
+            `${logPrefix} Failed to parse subscription JSON from Hash.`
           );
           // Decide whether to skip or throw. Skipping is safer for overall processing.
         }
       });
 
-      this.logger.debug({ eventName, count: subscriptions.length }, `${logPrefix} Finished parsing subscriptions.`);
+      this.logger.debug(
+        { eventName, count: subscriptions.length },
+        `${logPrefix} Finished parsing subscriptions from Hash.`
+      );
       return subscriptions;
     } catch (error) {
       this.logger.error(
         { err: error, eventName },
-        `${logPrefix} Failed to retrieve subscriptions from Redis for event.`
+        `${logPrefix} Failed to retrieve subscriptions from Redis Hash for event.`
       );
       throw error; // Re-throw error
-    }
-  }
-
-  /**
-   * Retrieves all registered event subscriptions associated with a specific task name and type.
-   * Scans for keys matching events:by-task:<taskGroup>:<taskName>:<type>:*
-   * NOTE: This uses SCAN and might be less performant for a very large number of triggers per task.
-   * @param taskGroup The task group name.
-   * @param taskName The task name.
-   * @param type The type of event subscription ('trigger', 'event', etc.).
-   * @returns A promise resolving to an array of objects { eventName: string, type: string, id: string }.
-   */
-  async getRegisteredTaskEvents(
-    taskGroup: string,
-    taskName: string,
-    type: string // e.g., 'trigger', 'event'
-  ): Promise<{ eventName: string; type: string; id: string }[]> {
-    const logPrefix = '[getRegisteredTaskEvents]';
-    const redis = await this.getRedisClient();
-    // Construct the pattern based on the provided type
-    const matchPattern = `${EVENT_BY_TASK_PREFIX}${taskGroup}:${taskName}:${type}:*`;
-    const prefixToRemove = `${EVENT_BY_TASK_PREFIX}${taskGroup}:${taskName}:${type}:`; // For extracting the ID
-    const events: { eventName: string; type: string; id: string }[] = [];
-    let cursor = '0';
-
-    this.logger.debug({ taskGroup, taskName, type, pattern: matchPattern }, `${logPrefix} Scanning for task events...`);
-
-    try {
-      do {
-        const [nextCursor, keys] = await redis.scan(cursor, 'MATCH', matchPattern, 'COUNT', 100);
-        cursor = nextCursor;
-
-        if (keys.length > 0) {
-          // Extract ID and get eventName for each key found
-          const multi = redis.multi();
-          const eventDetails: { key: string; id: string }[] = [];
-
-          keys.forEach((key) => {
-            // Extract the ID part (everything after the prefix)
-            const id = key.substring(prefixToRemove.length);
-            if (id) {
-              eventDetails.push({ key, id });
-            } else {
-              this.logger.warn({ key, type }, `${logPrefix} Could not extract ID from scanned key.`);
-            }
-          });
-
-          if (eventDetails.length > 0) {
-            const results = await multi.exec();
-            results?.forEach(([err, eventName], index) => {
-              const detail = eventDetails[index];
-              if (!err && typeof eventName === 'string') {
-                events.push({ eventName, type, id: detail.id });
-              } else {
-                this.logger.warn({ key: detail.key, err }, `${logPrefix} Failed to get event name for key.`);
-              }
-            });
-          }
-        }
-      } while (cursor !== '0');
-
-      this.logger.debug({ taskGroup, taskName, type, count: events.length }, `${logPrefix} Finished scan.`);
-      return events;
-    } catch (error) {
-      this.logger.error({ err: error, taskGroup, taskName, type }, `${logPrefix} Failed during SCAN operation.`);
-      throw error;
     }
   }
 }
