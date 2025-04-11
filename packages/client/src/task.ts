@@ -6,7 +6,9 @@ import slugify from '@sindresorhus/slugify';
 import { BaseQueue } from './base-queue.js';
 import { SubTask } from './sub-task.js';
 import type { TaskGroup } from './task-group.js';
+import type { EventDispatcher } from './event-dispatcher.js';
 import type {
+  EventSubscriptionInfo,
   RepeatOptionsWithoutKey,
   TaskOptions,
   TaskHandlerOptions,
@@ -16,8 +18,13 @@ import type {
   SubTaskHandlerContext,
   SubTaskHandler,
   TaskTrigger,
+  TaskTriggerEvent,
   SingleOrArray,
 } from './types.js';
+
+// Add internalId to TaskTrigger type for tracking purposes within the Task class
+type InternalTaskTrigger<T> = TaskTrigger<T> & { internalId: number };
+type InternalTaskTriggerEvent<T> = TaskTriggerEvent<T> & { internalId: number };
 
 /**
  * Represents a defined task associated with a TaskGroup.
@@ -35,8 +42,12 @@ export class Task<T = unknown, R = unknown> extends BaseQueue {
   public readonly handler: TaskHandler<T, R>;
   private readonly subTasks: Map<string, SubTask<any, any>>;
   private readonly allowCatchAll: boolean;
-  public triggers: TaskTrigger<T>[] = [];
-  private currentEventTriggers: Map<string, TaskTrigger<T>> = new Map();
+  // Store the normalized triggers with an internal ID
+  public triggers: InternalTaskTrigger<T>[] = [];
+  // Map for easy lookup of *current* event triggers by their internalId
+  private currentEventTriggers: Map<number, InternalTaskTriggerEvent<T>> = new Map();
+  // Map to track successfully registered event triggers (internalId -> subscriptionInfo)
+  private _registeredEventTriggers: Map<number, EventSubscriptionInfo> = new Map();
 
   constructor(
     taskGroup: TaskGroup,
@@ -222,12 +233,13 @@ export class Task<T = unknown, R = unknown> extends BaseQueue {
       const desiredSchedulerKeys = new Set<string>();
       const upsertPromises: Promise<Job | void>[] = [];
 
-      this.triggers.forEach((trigger, index) => {
+      this.triggers.forEach((trigger) => {
+        // Iterate internal triggers
         if (trigger.type === 'event') {
           return; // Skip event triggers
         }
 
-        const logSuffix = `[Trigger ${index}]`;
+        const logSuffix = `[Trigger ${trigger.internalId}]`; // Use internalId for logging
         const repeatOpts: RepeatOptionsWithoutKey = {};
         let description = '';
 
@@ -258,14 +270,12 @@ export class Task<T = unknown, R = unknown> extends BaseQueue {
         }
 
         const slug = slugify(trigger.name || description);
-        const schedulerKey = `trigger:${index}:${trigger.type}-${slug}`;
+        const schedulerKey = `trigger:${trigger.internalId}:${trigger.type}-${slug}`;
         desiredSchedulerKeys.add(schedulerKey);
 
         const jobOptions: Omit<JobsOptions, 'repeat' | 'jobId'> = { ...(this.defaultJobOptions ?? {}) };
 
-        this.logger.info(
-          `${logPrefix} ${logSuffix} Upserting scheduler '${schedulerKey}' with repeat: ${JSON.stringify(repeatOpts)}`
-        );
+        this.logger.info(`${logPrefix} ${logSuffix} Upserting scheduler '${schedulerKey}'`);
         upsertPromises.push(
           queue.upsertJobScheduler(schedulerKey, repeatOpts, {
             name: this.name,
@@ -297,182 +307,239 @@ export class Task<T = unknown, R = unknown> extends BaseQueue {
       this.logger.info(`${logPrefix} Synchronization complete.`);
     } catch (error: any) {
       this.logger.error({ err: error }, `${logPrefix} Error during synchronization.`);
-      throw error; // Re-throw
+      throw error;
     }
   }
 
   /**
    * Synchronizes event trigger registrations with the EventDispatcher.
-   * Compares current event triggers with the previously registered state (if tracked)
-   * and calls register/unregister on the dispatcher as needed.
+   * Compares current event triggers with the previously registered state and
+   * calls register/unregister on the dispatcher as needed.
    */
   private async _synchronizeEventTriggers(): Promise<void> {
     const logPrefix = `[Event Sync: ${this.name}]`;
     this.logger.info(`${logPrefix} Starting event trigger synchronization...`);
+    const dispatcher = this.group.client.eventDispatcher;
+    const registrationPromises: Promise<void>[] = [];
+    const unregistrationPromises: Promise<void>[] = [];
 
-    // TODO: Implement the core logic:
-    // 1. Get the current desired state (this.currentEventTriggers map).
-    // 2. Get the previously registered state (Need a way to track this, maybe another map `this.registeredEventTriggers`).
-    // 3. Compare the two states:
-    //    - Find triggers to register (in desired, not in registered).
-    //    - Find triggers to unregister (in registered, not in desired).
-    // 4. Call `this.group.client.eventDispatcher.registerTaskEvent(eventName, this, triggerId)` for new ones.
-    // 5. Call `this.group.client.eventDispatcher.unregisterTaskEvent(eventName, this, triggerId)` for removed ones.
-    // 6. Update the `this.registeredEventTriggers` map to reflect the new state.
-    // 7. Handle potential errors during registration/unregistration.
+    // --- Registration ---
+    const triggersToRegister = new Map<number, EventSubscriptionInfo>();
+    this.currentEventTriggers.forEach((trigger) => {
+      // Iterate current event triggers map
+      const triggerId = trigger.internalId;
+      if (!this._registeredEventTriggers.has(triggerId)) {
+        // Check if NOT already registered
+        const eventName = trigger.event; // Use 'event' field
+        this.logger.debug({ eventName, triggerId }, `${logPrefix} Found event trigger to register.`);
+        const subscriptionInfo: EventSubscriptionInfo = {
+          taskGroup: this.group.name,
+          taskName: this.name,
+          triggerId: triggerId,
+          ...(trigger.data && { data: trigger.data }), // Include optional data
+        };
+        triggersToRegister.set(triggerId, subscriptionInfo);
+        registrationPromises.push(dispatcher.registerTaskEvent(eventName!, subscriptionInfo));
+      }
+    });
 
-    try {
-      // Placeholder implementation
-      this.logger.debug(`${logPrefix} Current event triggers map size: ${this.currentEventTriggers.size}`);
-      // --- Example placeholder logic ---
-      // const dispatcher = this.group.client.eventDispatcher;
-      // const previousTriggers = this.registeredEventTriggers; // Assuming this exists
-      // const currentTriggers = this.currentEventTriggers;
-      // // ... comparison logic ...
-      // await Promise.all([ ... register calls ..., ... unregister calls ... ]);
-      // this.registeredEventTriggers = new Map(currentTriggers); // Update tracked state
-      // --- End Example ---
-
-      this.logger.info(`${logPrefix} Event trigger synchronization complete (Placeholder).`);
-    } catch (error) {
-      this.logger.error({ err: error }, `${logPrefix} Error during synchronization.`);
-      throw error; // Re-throw
+    if (registrationPromises.length > 0) {
+      this.logger.info(`${logPrefix} Attempting to register ${registrationPromises.length} event triggers...`);
+      try {
+        const results = await Promise.allSettled(registrationPromises);
+        let successfulRegistrations = 0;
+        results.forEach((result, index) => {
+          const triggerId = Array.from(triggersToRegister.keys())[index];
+          const info = triggersToRegister.get(triggerId)!;
+          if (result.status === 'fulfilled') {
+            this.logger.info(
+              { eventName: info.eventId, triggerId },
+              `${logPrefix} Successfully registered event trigger.`
+            );
+            this._registeredEventTriggers.set(triggerId, info); // Track successful registration
+            successfulRegistrations++;
+          } else {
+            this.logger.error(
+              { err: result.reason, eventName: info.eventId, triggerId },
+              `${logPrefix} Failed to register event trigger.`
+            );
+          }
+        });
+        this.logger.info(
+          `${logPrefix} Registration phase complete. ${successfulRegistrations}/${registrationPromises.length} successful.`
+        );
+      } catch (error) {
+        this.logger.error({ err: error }, `${logPrefix} Unexpected error during event trigger registration batch.`);
+      }
+    } else {
+      this.logger.info(`${logPrefix} No new event triggers found to register.`);
     }
+
+    // --- Unregistration ---
+    const triggersToUnregister = new Map<number, EventSubscriptionInfo>();
+    this._registeredEventTriggers.forEach((info, triggerId) => {
+      if (!this.currentEventTriggers.has(triggerId)) {
+        // Check if previously registered trigger is NO LONGER current
+        this.logger.debug(
+          { eventName: info.eventId, triggerId },
+          `${logPrefix} Found stale event trigger to unregister.`
+        );
+        triggersToUnregister.set(triggerId, info);
+        // Assuming info.eventId holds the original event name needed for unregistration
+        unregistrationPromises.push(
+          dispatcher.unregisterTaskEvent(info.eventId!, info) // Pass full info needed by dispatcher
+        );
+      }
+    });
+
+    if (unregistrationPromises.length > 0) {
+      this.logger.info(
+        `${logPrefix} Attempting to unregister ${unregistrationPromises.length} stale event triggers...`
+      );
+      try {
+        const results = await Promise.allSettled(unregistrationPromises);
+        let successfulUnregistrations = 0;
+        results.forEach((result, index) => {
+          const triggerId = Array.from(triggersToUnregister.keys())[index];
+          const info = triggersToUnregister.get(triggerId)!;
+          if (result.status === 'fulfilled') {
+            this.logger.info(
+              { eventName: info.eventId, triggerId },
+              `${logPrefix} Successfully unregistered stale event trigger.`
+            );
+            this._registeredEventTriggers.delete(triggerId); // Remove from tracking on success
+            successfulUnregistrations++;
+          } else {
+            this.logger.error(
+              { err: result.reason, eventName: info.eventId, triggerId },
+              `${logPrefix} Failed to unregister stale event trigger.`
+            );
+            // Keep in _registeredEventTriggers map to retry next time? Or handle differently?
+          }
+        });
+        this.logger.info(
+          `${logPrefix} Unregistration phase complete. ${successfulUnregistrations}/${unregistrationPromises.length} successful.`
+        );
+      } catch (error) {
+        this.logger.error({ err: error }, `${logPrefix} Unexpected error during event trigger unregistration batch.`);
+      }
+    } else {
+      this.logger.info(`${logPrefix} No stale event triggers found to unregister.`);
+    }
+
+    this.logger.info(`${logPrefix} Event trigger synchronization complete.`);
   }
 
   /**
    * Updates the task's default job options and triggers.
-   * After updating, it re-synchronizes the BullMQ job schedulers.
-   * @param options New default job options (optional).
-   * @param triggers New triggers (optional). Replaces existing triggers.
    */
   async update(options?: TaskOptions, triggers?: SingleOrArray<TaskTrigger<T>>): Promise<void> {
     const logPrefix = `[Task Update: ${this.name}]`;
     this.logger.info({ hasNewOptions: !!options, hasNewTriggers: !!triggers }, `${logPrefix} Starting update...`);
-
     let needsTriggerSync = false;
-
-    // Update default job options if provided
     if (options !== undefined) {
       this.defaultJobOptions = options;
       this.logger.info(`${logPrefix} Updated default job options.`);
-      // Options update might affect scheduled jobs, safer to sync triggers if options change
       needsTriggerSync = true;
     }
-
-    // Update triggers if provided
     if (triggers !== undefined) {
-      this._initializeTriggers(triggers); // Normalize triggers and update internal state
+      this._initializeTriggers(triggers); // Re-initializes internal maps and cleans _registeredEventTriggers map
       this.logger.info(
         `${logPrefix} Processed triggers. New total count: ${this.triggers.length}, Event triggers: ${this.currentEventTriggers.size}.`
       );
-      needsTriggerSync = true; // Always sync if triggers explicitly change
+      needsTriggerSync = true;
     }
-
-    // Perform synchronization if needed
     if (needsTriggerSync) {
       this.logger.info(`${logPrefix} Changes detected, synchronizing triggers...`);
-      await this.synchronizeTriggers(); // Call the main sync method
+      await this.synchronizeTriggers();
     } else {
       this.logger.info(`${logPrefix} No changes requiring trigger synchronization.`);
     }
-
     this.logger.info(`${logPrefix} Task update complete.`);
   }
 
   /**
-   * Removes all BullMQ job schedulers (cron/every) and event trigger registrations
-   * associated with this task.
+   * Removes all BullMQ job schedulers (cron/every) and attempts to unregister event triggers.
+   * Note: Event unregistration relies on the current state before clearing.
    */
   async removeAllTriggers(): Promise<void> {
     const logPrefix = `[Remove Triggers: ${this.name}]`;
-    this.logger.info(`${logPrefix} Starting removal of all triggers (schedulers and event registrations)...`);
-    let schedulerError: Error | null = null;
-    let eventError: Error | null = null;
+    this.logger.info(`${logPrefix} Starting removal of all triggers...`);
+    // Create a temporary empty trigger list to sync against
+    //const originalTriggers = this.triggers;
+    this._initializeTriggers([]); // Clear internal trigger state temporarily
 
-    // 1. Remove Cron/Every Schedulers (Using the private method)
     try {
-      await this._synchronizeCronEverySchedulers(); // Syncing with empty desired state removes all
-      this.logger.info(`${logPrefix} Cron/every schedulers removed via sync.`);
-    } catch (error: any) {
-      this.logger.error({ err: error }, `${logPrefix} Error removing cron/every schedulers.`);
-      schedulerError = error instanceof Error ? error : new Error(String(error));
-    }
-
-    // 2. Unregister Event Triggers
-    try {
-      // TODO: Implement logic to call unregisterTaskEvent for all currentEventTriggers
-      // Example:
-      // const dispatcher = this.group.client.eventDispatcher;
-      // const unregisterPromises = [];
-      // for (const [eventName, trigger] of this.currentEventTriggers.entries()) {
-      //    // Assuming trigger object has an id or we use index as id
-      //    const triggerId = trigger.id || /* get index */;
-      //    unregisterPromises.push(dispatcher.unregisterTaskEvent(eventName, this, triggerId));
-      // }
-      // await Promise.allSettled(unregisterPromises);
-      // this.currentEventTriggers.clear(); // Clear internal map
-      this.logger.info(`${logPrefix} Event trigger registrations cleared (Placeholder).`);
-    } catch (error: any) {
-      this.logger.error({ err: error }, `${logPrefix} Error unregistering event triggers.`);
-      eventError = error instanceof Error ? error : new Error(String(error));
-    }
-
-    this.logger.info(`${logPrefix} Trigger removal process finished.`);
-
-    // Rethrow if any part failed
-    if (schedulerError || eventError) {
-      const combinedMessage = [
-        schedulerError ? `Scheduler removal error: ${schedulerError.message}` : '',
-        eventError ? `Event unregistration error: ${eventError.message}` : '',
-      ]
-        .filter(Boolean)
-        .join('; ');
-      throw new Error(combinedMessage || 'Unknown error during trigger removal.');
+      // Syncing against empty state should remove/unregister everything
+      await this.synchronizeTriggers();
+      this.logger.info(`${logPrefix} All trigger types synchronized to empty state.`);
+    } catch (error) {
+      this.logger.error({ err: error }, `${logPrefix} Error during trigger removal synchronization.`);
+      // Restore original triggers if removal sync failed? Or leave empty?
+      // For now, leave empty, assuming close/shutdown follows.
+      throw error; // Re-throw the error
+    } finally {
+      // Optional: Restore original trigger list if needed, though likely closing after this.
+      // this._initializeTriggers(originalTriggers);
+      // Clear the registered map as we attempted removal
+      this._registeredEventTriggers.clear();
     }
   }
 
   /** Helper method to normalize trigger input and update internal state */
   private _initializeTriggers(triggersInput?: SingleOrArray<TaskTrigger<T>>): void {
     const logPrefix = `[Init Triggers: ${this.name}]`;
-    this.logger.debug(`${logPrefix} Normalizing triggers and updating internal event trigger map...`);
+    this.logger.debug(`${logPrefix} Normalizing triggers and updating internal trigger maps...`);
+    const normalizedTriggers: InternalTaskTrigger<T>[] = [];
 
-    // 1. Normalize input to this.triggers array
-    if (!triggersInput) {
-      this.triggers = [];
-    } else if (Array.isArray(triggersInput)) {
-      this.triggers = [...triggersInput];
-    } else {
-      this.triggers = [triggersInput];
-    }
+    // 1. Normalize input and assign internalId
+    const inputArray = !triggersInput ? [] : Array.isArray(triggersInput) ? [...triggersInput] : [triggersInput];
+    inputArray.forEach((trigger, index) => {
+      normalizedTriggers.push({ ...trigger, internalId: index }); // Assign index as internalId
+    });
+    this.triggers = normalizedTriggers; // Store normalized triggers with internalId
 
-    // 2. Update the internal map of current event triggers based on the normalized array
-    const newEventTriggers = new Map<string, TaskTrigger<T>>();
-    this.triggers.forEach((trigger, index) => {
-      // Use index as a potential triggerId if none provided
+    // 2. Rebuild the internal map of current event triggers keyed by internalId
+    const newEventTriggers = new Map<number, InternalTaskTriggerEvent<T>>();
+    this.triggers.forEach((trigger) => {
       if (trigger.type === 'event') {
         if (!trigger.event || typeof trigger.event !== 'string' || trigger.event.trim() === '') {
-          this.logger.warn(`${logPrefix} Trigger ${index} has type 'event' but is missing a valid 'name'. Skipping.`);
+          this.logger.warn(
+            `${logPrefix} Trigger ${trigger.internalId} has type 'event' but is missing 'event' field. Skipping.`
+          );
           return;
         }
-        const eventName = trigger.event.trim();
-        if (newEventTriggers.has(eventName)) {
-          // If allowing multiple triggers for the same event, this check needs adjustment
-          // For now, assume last one wins for simplicity, but log warning
-          this.logger.warn(
-            `${logPrefix} Duplicate event trigger name "${eventName}" found (Trigger ${index}). Overwriting previous definition in internal map.`
-          );
-        }
-        // Store the trigger definition itself, keyed by event name
-        // We might need a different structure if multiple triggers per event are allowed
-        // e.g., Map<string, TaskTrigger<T>[]> or Map<string, Map<number, TaskTrigger<T>>>
-        newEventTriggers.set(eventName, trigger);
+        newEventTriggers.set(trigger.internalId, trigger);
       }
     });
-    this.currentEventTriggers = newEventTriggers; // Update the task's internal tracking map
+    this.currentEventTriggers = newEventTriggers; // Update the map of *current* event triggers
 
     this.logger.debug(
-      `${logPrefix} Processed ${this.triggers.length} total triggers. Found ${this.currentEventTriggers.size} unique event triggers to manage.`
+      `${logPrefix} Processed ${this.triggers.length} total triggers. Found ${this.currentEventTriggers.size} event triggers.`
     );
+
+    // 3. Clean up registered state for triggers that no longer exist in the input
+    const currentTriggerIds = new Set(this.triggers.map((t) => t.internalId));
+    const triggersToRemoveFromTracking = new Map<number, EventSubscriptionInfo>();
+    for (const [id, info] of this._registeredEventTriggers.entries()) {
+      if (!currentTriggerIds.has(id)) {
+        // This trigger ID was previously registered but is no longer in the current config
+        triggersToRemoveFromTracking.set(id, info);
+      }
+    }
+
+    // Remove stale entries from the *tracking* map immediately.
+    // The actual unregistration call happens in _synchronizeEventTriggers.
+    triggersToRemoveFromTracking.forEach((info, id) => {
+      this._registeredEventTriggers.delete(id);
+      this.logger.debug(
+        `${logPrefix} Removed stale trigger registration tracking for internalId: ${id}, event: ${info.eventId}`
+      );
+    });
+    if (triggersToRemoveFromTracking.size > 0) {
+      this.logger.info(
+        `${logPrefix} Marked ${triggersToRemoveFromTracking.size} previously registered event triggers as stale.`
+      );
+    }
   }
 }

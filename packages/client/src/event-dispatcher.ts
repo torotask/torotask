@@ -34,9 +34,9 @@ export class EventDispatcher extends BaseQueue {
     const { taskGroup, taskName, triggerId, eventId } = info;
     let suffix = '';
     if (triggerId) {
-      suffix = `:${triggerId}`;
+      suffix = `:trigger:${triggerId}`;
     } else if (eventId) {
-      suffix = `:${eventId}`;
+      suffix = `:event:${eventId}`;
     }
     return `${EVENT_BY_TASK_PREFIX}${taskGroup}:${taskName}${suffix}`;
   }
