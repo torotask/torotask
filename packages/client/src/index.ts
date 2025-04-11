@@ -1,6 +1,7 @@
 // Export Classes/Functions directly
 export { BaseQueue } from './base-queue.js';
 export { ToroTaskClient } from './client.js';
+export { EventDispatcher } from './event-dispatcher.js';
 export { Task } from './task.js';
 export { TaskGroup } from './task-group.js';
 export { SubTask } from './sub-task.js'; // Only export the SubTask class

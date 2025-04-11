@@ -5,6 +5,7 @@ import { TaskGroup } from './task-group.js';
 import { pino, type Logger } from 'pino';
 import type { BaseQueue } from './base-queue.js';
 import type { ConnectionOptions as BullMQConnectionOptions } from 'bullmq'; // Import ConnectionOptions if needed
+import { EventDispatcher } from './event-dispatcher.js'; // Import EventDispatcher
 
 const LOGGER_NAME = 'BullMQ';
 
@@ -27,12 +28,13 @@ export interface WorkerFilter {
 }
 
 /**
- * A client class to manage BullMQ connection settings and TaskGroups.
+ * A client class to manage BullMQ connection settings, TaskGroups, and an EventDispatcher.
  */
 export class ToroTaskClient {
   public readonly connectionOptions: ConnectionOptions;
   public readonly logger: Logger;
   private readonly taskGroups: Record<string, TaskGroup> = {};
+  private _eventDispatcher: EventDispatcher | null = null; // Backing field for lazy loading
 
   constructor(options?: ToroTaskClientOptions) {
     const bullmqEnvConfig = getConfigFromEnv('BULLMQ_REDIS_');
@@ -50,6 +52,20 @@ export class ToroTaskClient {
 
     this.logger = (logger ?? pino()).child({ name: loggerName ?? LOGGER_NAME });
     this.logger.info('ToroTaskClient initialized');
+  }
+
+  /**
+   * Gets the lazily-initialized EventDispatcher instance.
+   * Creates the instance on first access.
+   */
+  public get eventDispatcher(): EventDispatcher {
+    if (!this._eventDispatcher) {
+      this.logger.info('Initializing EventDispatcher...');
+      // Pass 'this' (the client instance) and its logger
+      this._eventDispatcher = new EventDispatcher(this, this.logger);
+      this.logger.info('EventDispatcher initialized successfully.');
+    }
+    return this._eventDispatcher;
   }
 
   /**
@@ -223,21 +239,34 @@ export class ToroTaskClient {
   }
 
   /**
-   * Closes all managed TaskGroups and their associated Tasks gracefully.
-   * Iterates through each task and calls its close() method,
-   * which handles closing the worker, queue, and queueEvents.
+   * Closes all managed TaskGroups, their Tasks, and the EventDispatcher gracefully.
    */
   async close(): Promise<void> {
-    this.logger.info('Closing ToroTaskClient resources (Tasks and TaskGroups)...');
+    this.logger.info('Closing ToroTaskClient resources (Tasks, TaskGroups, EventDispatcher)...');
+    const closePromises: Promise<void>[] = [];
 
     // Close all task resources (worker, queue, events) via task.close()
     const taskClosePromises = Object.values(this.taskGroups).flatMap((group) =>
       Array.from(group.getTasks().values()).map((task) => task.close())
     );
+    closePromises.push(...taskClosePromises);
 
-    // Wait for all tasks to close
-    await Promise.all(taskClosePromises);
-    this.logger.info('All task resources closed.');
+    // Close EventDispatcher if it was initialized
+    if (this._eventDispatcher) {
+      this.logger.info('Closing EventDispatcher...');
+      closePromises.push(this._eventDispatcher.close());
+    } else {
+      this.logger.debug('EventDispatcher was not initialized, skipping closure.');
+    }
+
+    // Wait for all tasks and the event dispatcher to close
+    try {
+      await Promise.all(closePromises);
+      this.logger.info('All managed resources (tasks, event dispatcher) closed.');
+    } catch (error) {
+      this.logger.error({ err: error }, 'Error during ToroTaskClient resource closure.');
+      // Potentially re-throw or handle aggregate error
+    }
 
     this.logger.info('ToroTaskClient resources closed successfully.');
   }
@@ -251,3 +280,4 @@ export { SubTask } from './sub-task.js';
 
 // Re-export core BullMQ types users might need
 export { ConnectionOptions, JobsOptions, Job, Queue } from 'bullmq';
+export { EventDispatcher } from './event-dispatcher.js'; // Re-export EventDispatcher
