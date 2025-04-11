@@ -6,7 +6,7 @@ import path from 'path';
 import fs from 'fs';
 import { pathToFileURL } from 'url';
 import type { TaskServerOptions, TaskModule } from './types.js';
-
+import { EventDispatcher } from '@torotask/client';
 const LOGGER_NAME = 'TaskServer';
 
 /**
@@ -21,6 +21,7 @@ export class TaskServer {
   private readonly options: Required<Pick<TaskServerOptions, 'handleGlobalErrors'>>;
   private readonly managedGroups: Set<TaskGroup> = new Set();
   private readonly ownClient: boolean = false; // Did we create the client?
+  public readonly eventDispatcher: EventDispatcher;
 
   // Store bound handlers to remove them later
   private unhandledRejectionListener?: (...args: any[]) => void;
@@ -75,6 +76,9 @@ export class TaskServer {
     } else {
       throw new Error('TaskServer requires either a `client` instance or `clientOptions`.');
     }
+
+    // Create / fetch eventDispatcher
+    this.eventDispatcher = this.client.eventDispatcher;
 
     // Store other options with defaults
     this.options = {
@@ -232,6 +236,9 @@ export class TaskServer {
     if (this.options.handleGlobalErrors) {
       this.attachGlobalErrorHandlers();
     }
+
+    // TODO Add event dispatcher options somewhere, possibly create dedicated method on client
+    this.eventDispatcher.startWorker();
 
     // Start workers using the client's method, targeting managed groups
     const groupNames = Array.from(this.managedGroups).map((g) => g.name);
