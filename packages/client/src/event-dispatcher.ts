@@ -317,4 +317,127 @@ export class EventDispatcher extends BaseQueue {
       throw error;
     }
   }
+  /**
+   * Retrieves all registered event subscriptions for a specific event name from Redis.
+   * Fetches members from the events:by-event:<eventName> set and parses them.
+   * @param eventName The name of the event.
+   * @returns A promise that resolves with an array of EventSubscriptionInfo objects.
+   */
+  async getRegisteredSubscriptionsForEvent(eventName: string): Promise<EventSubscriptionInfo[]> {
+    const logPrefix = '[getRegisteredSubscriptionsForEvent]';
+    this.logger.debug({ eventName }, `${logPrefix} Fetching subscriptions from Redis...`);
+    const subscriptions: EventSubscriptionInfo[] = [];
+    const eventKey = EventDispatcher.getEventKey(eventName); // Use static helper
+
+    try {
+      const redis = await this.getRedisClient();
+      const jsonStrings = await redis.smembers(eventKey);
+
+      if (!jsonStrings || jsonStrings.length === 0) {
+        this.logger.debug({ eventName, eventKey }, `${logPrefix} No subscriptions found in Redis set.`);
+        return []; // No subscriptions found
+      }
+
+      this.logger.debug(
+        { eventName, count: jsonStrings.length },
+        `${logPrefix} Found potential subscriptions, parsing...`
+      );
+
+      jsonStrings.forEach((jsonString) => {
+        try {
+          const info = JSON.parse(jsonString) as EventSubscriptionInfo;
+          // Basic validation - adjust as needed based on required fields
+          if (info && info.taskGroup && info.taskName) {
+            subscriptions.push(info);
+          } else {
+            this.logger.warn(
+              { eventName, jsonString },
+              `${logPrefix} Skipping invalid/incomplete subscription JSON found in set.`
+            );
+          }
+        } catch (parseError) {
+          this.logger.error(
+            { err: parseError, eventName, jsonString },
+            `${logPrefix} Failed to parse subscription JSON from set.`
+          );
+          // Decide whether to skip or throw. Skipping is safer for overall processing.
+        }
+      });
+
+      this.logger.debug({ eventName, count: subscriptions.length }, `${logPrefix} Finished parsing subscriptions.`);
+      return subscriptions;
+    } catch (error) {
+      this.logger.error(
+        { err: error, eventName },
+        `${logPrefix} Failed to retrieve subscriptions from Redis for event.`
+      );
+      throw error; // Re-throw error
+    }
+  }
+
+  /**
+   * Retrieves all registered event subscriptions associated with a specific task name and type.
+   * Scans for keys matching events:by-task:<taskGroup>:<taskName>:<type>:*
+   * NOTE: This uses SCAN and might be less performant for a very large number of triggers per task.
+   * @param taskGroup The task group name.
+   * @param taskName The task name.
+   * @param type The type of event subscription ('trigger', 'event', etc.).
+   * @returns A promise resolving to an array of objects { eventName: string, type: string, id: string }.
+   */
+  async getRegisteredTaskEvents(
+    taskGroup: string,
+    taskName: string,
+    type: string // e.g., 'trigger', 'event'
+  ): Promise<{ eventName: string; type: string; id: string }[]> {
+    const logPrefix = '[getRegisteredTaskEvents]';
+    const redis = await this.getRedisClient();
+    // Construct the pattern based on the provided type
+    const matchPattern = `${EVENT_BY_TASK_PREFIX}${taskGroup}:${taskName}:${type}:*`;
+    const prefixToRemove = `${EVENT_BY_TASK_PREFIX}${taskGroup}:${taskName}:${type}:`; // For extracting the ID
+    const events: { eventName: string; type: string; id: string }[] = [];
+    let cursor = '0';
+
+    this.logger.debug({ taskGroup, taskName, type, pattern: matchPattern }, `${logPrefix} Scanning for task events...`);
+
+    try {
+      do {
+        const [nextCursor, keys] = await redis.scan(cursor, 'MATCH', matchPattern, 'COUNT', 100);
+        cursor = nextCursor;
+
+        if (keys.length > 0) {
+          // Extract ID and get eventName for each key found
+          const multi = redis.multi();
+          const eventDetails: { key: string; id: string }[] = [];
+
+          keys.forEach((key) => {
+            // Extract the ID part (everything after the prefix)
+            const id = key.substring(prefixToRemove.length);
+            if (id) {
+              eventDetails.push({ key, id });
+            } else {
+              this.logger.warn({ key, type }, `${logPrefix} Could not extract ID from scanned key.`);
+            }
+          });
+
+          if (eventDetails.length > 0) {
+            const results = await multi.exec();
+            results?.forEach(([err, eventName], index) => {
+              const detail = eventDetails[index];
+              if (!err && typeof eventName === 'string') {
+                events.push({ eventName, type, id: detail.id });
+              } else {
+                this.logger.warn({ key: detail.key, err }, `${logPrefix} Failed to get event name for key.`);
+              }
+            });
+          }
+        }
+      } while (cursor !== '0');
+
+      this.logger.debug({ taskGroup, taskName, type, count: events.length }, `${logPrefix} Finished scan.`);
+      return events;
+    } catch (error) {
+      this.logger.error({ err: error, taskGroup, taskName, type }, `${logPrefix} Failed during SCAN operation.`);
+      throw error;
+    }
+  }
 }
