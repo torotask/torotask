@@ -14,6 +14,15 @@ export type SingleOrArray<T> = T | T[];
  */
 export type AsArray<T> = T extends any[] ? T : [T];
 
+// Interface for the data stored in the event set
+export interface EventSubscriptionInfo {
+  taskGroup: string;
+  taskName: string;
+  triggerId?: number;
+  eventId?: string;
+  data?: Record<string, any>;
+}
+
 /**
  * Options for defining a Task, extending BullMQ's JobsOptions.
  */

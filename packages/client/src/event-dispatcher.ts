@@ -1,10 +1,9 @@
+import type { JobsOptions, Job, WorkerOptions } from 'bullmq'; // Added missing imports
 import type { Logger } from 'pino';
-import type { Redis } from 'ioredis';
-import { Queue, Worker } from 'bullmq'; // Import Worker
 import { BaseQueue } from './base-queue.js';
 import type { ToroTaskClient } from './client.js'; // Assuming client path
 import type { Task } from './task.js'; // Assuming task path
-import type { JobsOptions, Job, WorkerOptions } from 'bullmq'; // Added missing imports
+import type { EventSubscriptionInfo } from './types.js';
 
 // Define a default queue name for events, easily configurable if needed
 const DEFAULT_EVENT_QUEUE_NAME = 'events';
@@ -12,15 +11,6 @@ const DEFAULT_EVENT_QUEUE_NAME = 'events';
 // Define Redis key prefixes
 const EVENT_BY_EVENT_PREFIX = 'events:by-event:';
 const EVENT_BY_TASK_PREFIX = 'events:by-task:';
-
-// Interface for the data stored in the event set
-interface EventSubscriptionInfo {
-  taskGroup: string;
-  taskName: string;
-  triggerId?: number;
-  eventId?: string;
-  data?: Record<string, any>;
-}
 
 /**
  * Manages the registration and dispatching of events to subscribed Tasks.
