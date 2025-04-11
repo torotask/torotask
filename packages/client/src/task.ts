@@ -36,6 +36,7 @@ export class Task<T = unknown, R = unknown> extends BaseQueue {
   private readonly subTasks: Map<string, SubTask<any, any>>;
   private readonly allowCatchAll: boolean;
   public triggers: TaskTrigger<T>[] = [];
+  private currentEventTriggers: Map<string, TaskTrigger<T>> = new Map();
 
   constructor(
     taskGroup: TaskGroup,
@@ -70,14 +71,13 @@ export class Task<T = unknown, R = unknown> extends BaseQueue {
 
     this._initializeTriggers(trigger);
     this.on('ready', () => {
-      this.logger.info('Task is ready. Synchronizing schedulers...');
-      this.synchronizeSchedulers();
+      this.logger.info('Task is ready. Synchronizing triggers...');
+      this.synchronizeTriggers().catch((err) =>
+        this.logger.error({ err }, 'Error during initial trigger synchronization')
+      );
     });
 
-    this.logger.info(
-      { allowCatchAll: this.allowCatchAll, triggerCount: this.triggers.length },
-      'Task initialized (extending BaseQueue)'
-    );
+    this.logger.info({ allowCatchAll: this.allowCatchAll, triggerCount: this.triggers.length }, 'Task initialized');
   }
 
   defineSubTask<ST = T, SR = R>(subTaskName: string, subTaskHandler: SubTaskHandler<ST, SR>): SubTask<ST, SR> {
@@ -182,57 +182,90 @@ export class Task<T = unknown, R = unknown> extends BaseQueue {
   }
 
   /**
-   * Synchronizes BullMQ Job Schedulers based on the task's triggers with cron/every.
-   * Uses queue.upsertJobScheduler() and queue.removeJobScheduler().
+   * Orchestrates the synchronization of all trigger types (cron/every schedulers and event registrations).
    */
-  async synchronizeSchedulers(): Promise<void> {
+  public async synchronizeTriggers(): Promise<void> {
+    const logPrefix = `[Trigger Sync: ${this.name}]`;
+    this.logger.info(`${logPrefix} Starting full trigger synchronization...`);
+    try {
+      // Run sync operations concurrently
+      await Promise.all([this._synchronizeCronEverySchedulers(), this._synchronizeEventTriggers()]);
+      this.logger.info(`${logPrefix} Full trigger synchronization complete.`);
+    } catch (error) {
+      this.logger.error({ err: error }, `${logPrefix} Error during full trigger synchronization.`);
+      // Decide if errors from individual syncs should propagate here or be handled within them
+      throw error; // Re-throw by default
+    }
+  }
+
+  /**
+   * Synchronizes BullMQ Job Schedulers based on the task's triggers with cron/every.
+   * (Previously synchronizeSchedulers)
+   */
+  private async _synchronizeCronEverySchedulers(): Promise<void> {
     const queue = this.queue;
-    const logPrefix = `[Scheduler Sync: ${this.name}]`;
+    // Add distinct log prefix
+    const logPrefix = `[Cron/Every Sync: ${this.name}]`;
     this.logger.info(`${logPrefix} Starting synchronization...`);
 
     try {
-      // 1. Get existing job schedulers potentially related to this task
+      // 1. Get existing job schedulers potentially related to this task (CRON/EVERY only)
       const allSchedulers = await queue.getJobSchedulers();
-      const prefix = `trigger:`;
-      this.logger.info('schedulers', allSchedulers);
-      const taskSchedulers = allSchedulers.filter((s) => s.key?.startsWith(prefix));
+      const schedulerPrefix = `trigger:`;
+      const taskSchedulers = allSchedulers.filter((s) => s.key?.startsWith(schedulerPrefix));
       const existingSchedulerKeys = new Set(taskSchedulers.map((s) => s.key).filter(Boolean) as string[]);
-      this.logger.info(`${logPrefix} Found ${existingSchedulerKeys.size} existing job schedulers for this task.`);
+      this.logger.info(
+        `${logPrefix} Found ${existingSchedulerKeys.size} existing cron/every job schedulers for this task.`
+      );
 
-      // 2. Process current triggers and upsert job schedulers
+      // 2. Process current CRON/EVERY triggers and upsert job schedulers
       const desiredSchedulerKeys = new Set<string>();
       const upsertPromises: Promise<Job | void>[] = [];
 
       this.triggers.forEach((trigger, index) => {
-        const logPrefix = `[Scheduler Sync: ${this.name}] [Trigger ${index}]`;
+        if (trigger.type === 'event') {
+          return; // Skip event triggers
+        }
+
+        const logSuffix = `[Trigger ${index}]`;
         const repeatOpts: RepeatOptionsWithoutKey = {};
         let description = '';
 
         switch (trigger.type) {
-          case 'event':
-            return;
           case 'cron':
+            if (!trigger.cron) {
+              this.logger.warn(`${logPrefix} ${logSuffix} Skipping cron trigger due to missing pattern.`);
+              return;
+            }
             repeatOpts.pattern = trigger.cron;
-            description = cronstrue.toString(trigger.cron ?? '');
+            try {
+              description = cronstrue.toString(trigger.cron);
+            } catch (_e) {
+              description = trigger.cron;
+            }
             break;
           case 'every':
+            if (!trigger.every || trigger.every <= 0) {
+              this.logger.warn(`${logPrefix} ${logSuffix} Skipping every trigger due to invalid 'every' value.`);
+              return;
+            }
             repeatOpts.every = trigger.every;
-            description = prettyMilliseconds(trigger.every ?? 0);
+            description = prettyMilliseconds(trigger.every);
             break;
+          default:
+            this.logger.warn(`${logPrefix} ${logSuffix} Skipping trigger with unknown type: ${(trigger as any).type}`);
+            return;
         }
+
         const slug = slugify(trigger.name || description);
         const schedulerKey = `trigger:${index}:${trigger.type}-${slug}`;
         desiredSchedulerKeys.add(schedulerKey);
 
-        const jobOptions: Omit<JobsOptions, 'repeat' | 'jobId'> = {
-          ...(this.defaultJobOptions ?? {}),
-        };
+        const jobOptions: Omit<JobsOptions, 'repeat' | 'jobId'> = { ...(this.defaultJobOptions ?? {}) };
 
         this.logger.info(
-          `${logPrefix} Upserting scheduler '${schedulerKey}' with repeat: ${JSON.stringify(repeatOpts)}`
+          `${logPrefix} ${logSuffix} Upserting scheduler '${schedulerKey}' with repeat: ${JSON.stringify(repeatOpts)}`
         );
-
-        // Cast queue to any to bypass persistent incorrect linter error about argument count
         upsertPromises.push(
           queue.upsertJobScheduler(schedulerKey, repeatOpts, {
             name: this.name,
@@ -243,14 +276,14 @@ export class Task<T = unknown, R = unknown> extends BaseQueue {
       });
 
       await Promise.all(upsertPromises);
-      this.logger.info(`${logPrefix} Upserted ${upsertPromises.length} schedulers.`);
+      this.logger.info(`${logPrefix} Upserted ${upsertPromises.length} cron/every schedulers.`);
 
-      // 3. Remove obsolete job schedulers
+      // 3. Remove obsolete job schedulers (CRON/EVERY only)
       const removePromises: Promise<void>[] = [];
       existingSchedulerKeys.forEach((key) => {
         if (!desiredSchedulerKeys.has(key)) {
-          this.logger.info(`${logPrefix} Removing obsolete scheduler '${key}'`);
-          // @ts-ignore - Linter incorrect about return type for removeJobScheduler
+          this.logger.info(`${logPrefix} Removing obsolete cron/every scheduler '${key}'`);
+          // @ts-expect-error Linter incorrect about return type for removeJobScheduler
           removePromises.push(queue.removeJobScheduler(key));
         }
       });
@@ -258,12 +291,52 @@ export class Task<T = unknown, R = unknown> extends BaseQueue {
       await Promise.all(removePromises);
       const removedCount = removePromises.length;
       if (removedCount > 0) {
-        this.logger.info(`${logPrefix} Removed ${removedCount} obsolete schedulers.`);
+        this.logger.info(`${logPrefix} Removed ${removedCount} obsolete cron/every schedulers.`);
       }
 
       this.logger.info(`${logPrefix} Synchronization complete.`);
     } catch (error: any) {
-      this.logger.error(`${logPrefix} Error during scheduler synchronization: ${error?.message || error}`, error);
+      this.logger.error({ err: error }, `${logPrefix} Error during synchronization.`);
+      throw error; // Re-throw
+    }
+  }
+
+  /**
+   * Synchronizes event trigger registrations with the EventDispatcher.
+   * Compares current event triggers with the previously registered state (if tracked)
+   * and calls register/unregister on the dispatcher as needed.
+   */
+  private async _synchronizeEventTriggers(): Promise<void> {
+    const logPrefix = `[Event Sync: ${this.name}]`;
+    this.logger.info(`${logPrefix} Starting event trigger synchronization...`);
+
+    // TODO: Implement the core logic:
+    // 1. Get the current desired state (this.currentEventTriggers map).
+    // 2. Get the previously registered state (Need a way to track this, maybe another map `this.registeredEventTriggers`).
+    // 3. Compare the two states:
+    //    - Find triggers to register (in desired, not in registered).
+    //    - Find triggers to unregister (in registered, not in desired).
+    // 4. Call `this.group.client.eventDispatcher.registerTaskEvent(eventName, this, triggerId)` for new ones.
+    // 5. Call `this.group.client.eventDispatcher.unregisterTaskEvent(eventName, this, triggerId)` for removed ones.
+    // 6. Update the `this.registeredEventTriggers` map to reflect the new state.
+    // 7. Handle potential errors during registration/unregistration.
+
+    try {
+      // Placeholder implementation
+      this.logger.debug(`${logPrefix} Current event triggers map size: ${this.currentEventTriggers.size}`);
+      // --- Example placeholder logic ---
+      // const dispatcher = this.group.client.eventDispatcher;
+      // const previousTriggers = this.registeredEventTriggers; // Assuming this exists
+      // const currentTriggers = this.currentEventTriggers;
+      // // ... comparison logic ...
+      // await Promise.all([ ... register calls ..., ... unregister calls ... ]);
+      // this.registeredEventTriggers = new Map(currentTriggers); // Update tracked state
+      // --- End Example ---
+
+      this.logger.info(`${logPrefix} Event trigger synchronization complete (Placeholder).`);
+    } catch (error) {
+      this.logger.error({ err: error }, `${logPrefix} Error during synchronization.`);
+      throw error; // Re-throw
     }
   }
 
@@ -274,74 +347,132 @@ export class Task<T = unknown, R = unknown> extends BaseQueue {
    * @param triggers New triggers (optional). Replaces existing triggers.
    */
   async update(options?: TaskOptions, triggers?: SingleOrArray<TaskTrigger<T>>): Promise<void> {
-    this.logger.info({ hasNewOptions: !!options, hasNewTriggers: !!triggers }, 'Updating task...');
+    const logPrefix = `[Task Update: ${this.name}]`;
+    this.logger.info({ hasNewOptions: !!options, hasNewTriggers: !!triggers }, `${logPrefix} Starting update...`);
 
-    // Update default job options if provided (should work now)
+    let needsTriggerSync = false;
+
+    // Update default job options if provided
     if (options !== undefined) {
       this.defaultJobOptions = options;
-      this.logger.info('Updated default job options.');
+      this.logger.info(`${logPrefix} Updated default job options.`);
+      // Options update might affect scheduled jobs, safer to sync triggers if options change
+      needsTriggerSync = true;
     }
 
-    // Update triggers if provided (should work now)
+    // Update triggers if provided
     if (triggers !== undefined) {
-      this._initializeTriggers(triggers);
-      this.logger.info(`Updated triggers. New count: ${this.triggers.length}.`);
-      this.logger.info('Re-synchronizing schedulers due to trigger update...');
-      await this.synchronizeSchedulers();
-    } else {
-      if (options !== undefined) {
-        this.logger.info('Only options updated, triggers remain unchanged. No scheduler sync needed.');
-      }
+      this._initializeTriggers(triggers); // Normalize triggers and update internal state
+      this.logger.info(
+        `${logPrefix} Processed triggers. New total count: ${this.triggers.length}, Event triggers: ${this.currentEventTriggers.size}.`
+      );
+      needsTriggerSync = true; // Always sync if triggers explicitly change
     }
 
-    this.logger.info('Task update complete.');
+    // Perform synchronization if needed
+    if (needsTriggerSync) {
+      this.logger.info(`${logPrefix} Changes detected, synchronizing triggers...`);
+      await this.synchronizeTriggers(); // Call the main sync method
+    } else {
+      this.logger.info(`${logPrefix} No changes requiring trigger synchronization.`);
+    }
+
+    this.logger.info(`${logPrefix} Task update complete.`);
   }
 
   /**
-   * Removes all BullMQ job schedulers associated with this task.
-   * Useful when dynamically removing or disabling a task.
+   * Removes all BullMQ job schedulers (cron/every) and event trigger registrations
+   * associated with this task.
    */
-  async removeAllSchedulers(): Promise<void> {
-    const queue = this.queue;
-    const logPrefix = `[Remove Schedulers: ${this.name}]`;
-    this.logger.info(`${logPrefix} Starting removal of all schedulers...`);
+  async removeAllTriggers(): Promise<void> {
+    const logPrefix = `[Remove Triggers: ${this.name}]`;
+    this.logger.info(`${logPrefix} Starting removal of all triggers (schedulers and event registrations)...`);
+    let schedulerError: Error | null = null;
+    let eventError: Error | null = null;
 
+    // 1. Remove Cron/Every Schedulers (Using the private method)
     try {
-      const allSchedulers = await queue.getJobSchedulers();
-      const prefix = `trigger:`;
-      const taskSchedulers = allSchedulers.filter((s) => s.key?.startsWith(prefix));
-      const schedulerKeysToRemove = taskSchedulers.map((s) => s.key).filter(Boolean) as string[];
-
-      if (schedulerKeysToRemove.length === 0) {
-        this.logger.info(`${logPrefix} No schedulers found for this task to remove.`);
-        return;
-      }
-
-      this.logger.info(`${logPrefix} Found ${schedulerKeysToRemove.length} schedulers to remove.`);
-
-      const removePromises: Promise<boolean | void>[] = schedulerKeysToRemove.map((key) => {
-        this.logger.info(`${logPrefix} Removing scheduler '${key}'`);
-        // @ts-ignore - Linter incorrect about return type for removeJobScheduler
-        return queue.removeJobScheduler(key);
-      });
-
-      await Promise.all(removePromises);
-      this.logger.info(`${logPrefix} Successfully removed ${removePromises.length} schedulers.`);
+      await this._synchronizeCronEverySchedulers(); // Syncing with empty desired state removes all
+      this.logger.info(`${logPrefix} Cron/every schedulers removed via sync.`);
     } catch (error: any) {
-      this.logger.error(`${logPrefix} Error removing schedulers: ${error?.message || error}`, error);
-      // Re-throw or handle as needed
-      throw error;
+      this.logger.error({ err: error }, `${logPrefix} Error removing cron/every schedulers.`);
+      schedulerError = error instanceof Error ? error : new Error(String(error));
+    }
+
+    // 2. Unregister Event Triggers
+    try {
+      // TODO: Implement logic to call unregisterTaskEvent for all currentEventTriggers
+      // Example:
+      // const dispatcher = this.group.client.eventDispatcher;
+      // const unregisterPromises = [];
+      // for (const [eventName, trigger] of this.currentEventTriggers.entries()) {
+      //    // Assuming trigger object has an id or we use index as id
+      //    const triggerId = trigger.id || /* get index */;
+      //    unregisterPromises.push(dispatcher.unregisterTaskEvent(eventName, this, triggerId));
+      // }
+      // await Promise.allSettled(unregisterPromises);
+      // this.currentEventTriggers.clear(); // Clear internal map
+      this.logger.info(`${logPrefix} Event trigger registrations cleared (Placeholder).`);
+    } catch (error: any) {
+      this.logger.error({ err: error }, `${logPrefix} Error unregistering event triggers.`);
+      eventError = error instanceof Error ? error : new Error(String(error));
+    }
+
+    this.logger.info(`${logPrefix} Trigger removal process finished.`);
+
+    // Rethrow if any part failed
+    if (schedulerError || eventError) {
+      const combinedMessage = [
+        schedulerError ? `Scheduler removal error: ${schedulerError.message}` : '',
+        eventError ? `Event unregistration error: ${eventError.message}` : '',
+      ]
+        .filter(Boolean)
+        .join('; ');
+      throw new Error(combinedMessage || 'Unknown error during trigger removal.');
     }
   }
 
-  /** Helper method to normalize and set triggers */
-  private _initializeTriggers(triggers?: SingleOrArray<TaskTrigger<T>>): void {
-    if (!triggers) {
+  /** Helper method to normalize trigger input and update internal state */
+  private _initializeTriggers(triggersInput?: SingleOrArray<TaskTrigger<T>>): void {
+    const logPrefix = `[Init Triggers: ${this.name}]`;
+    this.logger.debug(`${logPrefix} Normalizing triggers and updating internal event trigger map...`);
+
+    // 1. Normalize input to this.triggers array
+    if (!triggersInput) {
       this.triggers = [];
-    } else if (Array.isArray(triggers)) {
-      this.triggers = triggers;
+    } else if (Array.isArray(triggersInput)) {
+      this.triggers = [...triggersInput];
     } else {
-      this.triggers = [triggers];
+      this.triggers = [triggersInput];
     }
+
+    // 2. Update the internal map of current event triggers based on the normalized array
+    const newEventTriggers = new Map<string, TaskTrigger<T>>();
+    this.triggers.forEach((trigger, index) => {
+      // Use index as a potential triggerId if none provided
+      if (trigger.type === 'event') {
+        if (!trigger.event || typeof trigger.event !== 'string' || trigger.event.trim() === '') {
+          this.logger.warn(`${logPrefix} Trigger ${index} has type 'event' but is missing a valid 'name'. Skipping.`);
+          return;
+        }
+        const eventName = trigger.event.trim();
+        if (newEventTriggers.has(eventName)) {
+          // If allowing multiple triggers for the same event, this check needs adjustment
+          // For now, assume last one wins for simplicity, but log warning
+          this.logger.warn(
+            `${logPrefix} Duplicate event trigger name "${eventName}" found (Trigger ${index}). Overwriting previous definition in internal map.`
+          );
+        }
+        // Store the trigger definition itself, keyed by event name
+        // We might need a different structure if multiple triggers per event are allowed
+        // e.g., Map<string, TaskTrigger<T>[]> or Map<string, Map<number, TaskTrigger<T>>>
+        newEventTriggers.set(eventName, trigger);
+      }
+    });
+    this.currentEventTriggers = newEventTriggers; // Update the task's internal tracking map
+
+    this.logger.debug(
+      `${logPrefix} Processed ${this.triggers.length} total triggers. Found ${this.currentEventTriggers.size} unique event triggers to manage.`
+    );
   }
 }
