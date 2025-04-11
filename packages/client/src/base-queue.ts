@@ -80,6 +80,10 @@ export abstract class BaseQueue extends EventEmitter {
    */
   abstract process(job: Job): Promise<any>;
 
+  getDefaultOptions(): Partial<WorkerOptions> {
+    return {};
+  }
+
   /**
    * Starts a dedicated BullMQ Worker for this queue, if one is not already running.
    * Forwards worker events to this BaseQueue instance.
@@ -92,7 +96,12 @@ export abstract class BaseQueue extends EventEmitter {
     // Clear any stale listeners if somehow start is called without stop
     this.removeAllWorkerListeners();
 
-    this.logger.info({ workerOptions: options }, 'Starting worker');
+    const mergedOptions = {
+      ...this.getDefaultOptions(),
+      options,
+    };
+
+    this.logger.info({ workerOptions: mergedOptions }, 'Starting worker');
 
     const workerOptions: WorkerOptions = {
       connection: this.client.connectionOptions,
