@@ -1,12 +1,13 @@
-import type { JobsOptions, Job, WorkerOptions } from 'bullmq'; // Added missing imports
+import type { JobsOptions, Job, WorkerOptions, Worker } from 'bullmq'; // Added missing imports
 import type { Logger } from 'pino';
 import { BaseQueue } from './base-queue.js';
 import type { ToroTaskClient } from './client.js'; // Assuming client path
+import { EventManager } from './event-manager.js';
 import type { Task } from './task.js'; // Assuming task path
 import type { EventSubscriptionInfo } from './types.js';
 
 // Define a default queue name for events, easily configurable if needed
-const DEFAULT_EVENT_QUEUE_NAME = 'events';
+const DEFAULT_EVENT_QUEUE_NAME = 'events.dispatch';
 
 // Define Redis key prefixes
 const EVENT_BY_EVENT_PREFIX = 'events:by-event:';
@@ -18,12 +19,15 @@ const EVENT_BY_TASK_PREFIX = 'events:by-task:';
  * Stores JSON strings in the events:by-event:<eventName> set.
  */
 export class EventDispatcher extends BaseQueue {
+  public manager: EventManager;
+
   constructor(client: ToroTaskClient, parentLogger: Logger, eventQueueName: string = DEFAULT_EVENT_QUEUE_NAME) {
     if (!client) {
       throw new Error('ToroTaskClient instance is required for EventDispatcher.');
     }
     const dispatcherLogger = parentLogger.child({ service: 'EventDispatcher', queue: eventQueueName });
     super(client, eventQueueName, dispatcherLogger);
+    this.manager = new EventManager(this, parentLogger);
   }
 
   static getEventKey(eventName: string): string {
@@ -171,6 +175,14 @@ export class EventDispatcher extends BaseQueue {
       );
       throw error;
     }
+  }
+
+  /**
+   * Starts the event manager before the event dispatcher
+   */
+  startWorker(options?: WorkerOptions): Worker {
+    this.manager.startWorker();
+    return super.startWorker(options);
   }
 
   /**
