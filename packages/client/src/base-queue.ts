@@ -64,6 +64,14 @@ export abstract class BaseQueue extends EventEmitter {
   }
 
   /**
+   * Get the Redis client instance used by the queue.
+   * @returns The Redis client instance.
+   */
+  async getRedisClient() {
+    return this.queue.client;
+  }
+
+  /**
    * Abstract method to process a job.
    * Subclasses must implement this method to define the job handling logic.
    *
