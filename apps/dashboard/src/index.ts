@@ -3,11 +3,22 @@ import { ToroTaskClient } from '@torotask/client';
 import { createBullBoard } from '@bull-board/api';
 import { BullMQAdapter } from '@bull-board/api/bullMQAdapter.js';
 import { ExpressAdapter } from '@bull-board/express';
+import { pino } from 'pino';
 
 //import { createQueueDashExpressMiddleware } from '@queuedash/api';
+export const logger = pino({
+  transport: {
+    target: 'pino-pretty',
+    options: {
+      colorize: true,
+      levelFirst: true,
+      translateTime: 'SYS:standard', // More readable time format
+    },
+  },
+});
 
 async function main() {
-  const client = new ToroTaskClient();
+  const client = new ToroTaskClient({ logger });
   const queueInstances = await client.getAllQueueInstances();
   const queueAdapters = Object.values(queueInstances).map((queue) => new BullMQAdapter(queue) as any);
 
@@ -26,10 +37,14 @@ async function main() {
   // other configurations of your server
 
   app.listen(3000, () => {
-    console.log('Running on 3000...');
-    console.log('For the UI, open http://localhost:3000/admin/queues');
-    console.log('Make sure Redis is running on port 6379 by default');
+    logger.info('Running on 3000...');
+    logger.info('For the UI, open http://localhost:3000/admin/queues');
+    logger.info('Make sure Redis is running on port 6379 by default');
+    logger.info(`Queue list will refresh every ${REFRESH_INTERVAL_MS / 1000} seconds.`);
   });
 }
 
-main();
+main().catch((err) => {
+  logger.error('Failed to start dashboard:', err);
+  process.exit(1);
+});
