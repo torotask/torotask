@@ -1,34 +1,35 @@
 import express from 'express';
 import { ToroTaskClient } from '@torotask/client';
 import { createBullBoard } from '@bull-board/api';
-import { BullMQAdapter } from '@bull-board/api/bullMQAdapter';
+import { BullMQAdapter } from '@bull-board/api/bullMQAdapter.js';
 import { ExpressAdapter } from '@bull-board/express';
 
 //import { createQueueDashExpressMiddleware } from '@queuedash/api';
 
-const client = new ToroTaskClient();
-const reportQueue = client.createQueue('report-queue');
-const testQueue = client.createQueue('test-queue');
+async function main() {
+  const client = new ToroTaskClient();
+  const queueInstances = await client.getAllQueueInstances();
+  const queueAdapters = Object.values(queueInstances).map((queue) => new BullMQAdapter(queue) as any);
 
-const serverAdapter = new ExpressAdapter();
-serverAdapter.setBasePath('/admin/queues');
+  const serverAdapter = new ExpressAdapter();
+  serverAdapter.setBasePath('/admin/queues');
 
-const testAdaptor = new BullMQAdapter(testQueue.queue) as any;
-const reportAdaptor = new BullMQAdapter(reportQueue.queue) as any;
+  const _bullBoard = createBullBoard({
+    queues: queueAdapters,
+    serverAdapter: serverAdapter,
+  });
 
-const _bullBoard = createBullBoard({
-  queues: [testAdaptor, reportAdaptor],
-  serverAdapter: serverAdapter,
-});
+  const app = express();
 
-const app = express();
+  app.use('/admin/queues', serverAdapter.getRouter());
 
-app.use('/admin/queues', serverAdapter.getRouter());
+  // other configurations of your server
 
-// other configurations of your server
+  app.listen(3000, () => {
+    console.log('Running on 3000...');
+    console.log('For the UI, open http://localhost:3000/admin/queues');
+    console.log('Make sure Redis is running on port 6379 by default');
+  });
+}
 
-app.listen(3000, () => {
-  console.log('Running on 3000...');
-  console.log('For the UI, open http://localhost:3000/admin/queues');
-  console.log('Make sure Redis is running on port 6379 by default');
-});
+main();
