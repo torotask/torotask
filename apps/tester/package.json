@@ -1,0 +1,25 @@
+{
+  "name": "@torotask/tester",
+  "version": "0.1.0",
+  "description": "Testing application for torotask packages",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "build": "tsc",
+    "start": "node dist/index.js"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "devDependencies": {
+    "tsx": "^4.16.0",
+    "typescript": "^5.5.2"
+  },
+  "dependencies": {
+    "@torotask/client": "workspace:*",
+    "bullmq": "^5.11.0",
+    "pino": "^9.6.0",
+    "pino-pretty": "^13.0.0"
+  }
+}
