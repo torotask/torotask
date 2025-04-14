@@ -7,16 +7,17 @@
     "build": "pnpm -r build",
     "lint": "biome lint",
     "format": "biome format --write",
-    "prepare": "simple-git-hooks"
+    "prepare": "simple-git-hooks",
+    "watch": "nx watch --all --includeDependentProjects -- nx run-many -t build:dev -p $NX_PROJECT_NAME"
   },
   "devDependencies": {
     "@biomejs/biome": "1.9.4",
     "@types/node": "^22.14.0",
     "dotenv": "^16.4.7",
-    "eslint": "^8.57.0",
     "lint-staged": "^15.5.0",
     "nx": "^20.7.1",
     "simple-git-hooks": "^2.12.1",
+    "tsx": "^4.16.0",
     "typescript": "^5.5.3"
   },
   "simple-git-hooks": {
