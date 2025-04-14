@@ -4,6 +4,7 @@ import { WorkerOptions, Job } from 'bullmq';
 import { glob } from 'glob';
 import path from 'path';
 import fs from 'fs';
+import { pathToFileURL } from 'url';
 
 const LOGGER_NAME = 'TaskServer';
 
@@ -32,6 +33,12 @@ export interface TaskServerOptions {
    * Defaults to true.
    */
   handleGlobalErrors?: boolean;
+  /**
+   * The root directory for resolving relative paths, typically the directory
+   * of the script creating the TaskServer instance (e.g., `__dirname`).
+   * Required if using relative paths in `loadTasksFromDirectory`.
+   */
+  rootDir?: string;
 }
 
 /** Type definition for the expected export from a task file */
@@ -48,6 +55,7 @@ export interface TaskModule<T = unknown, R = unknown> {
 export class TaskServer {
   public readonly client: ToroTaskClient;
   public readonly logger: Logger;
+  private readonly rootDir?: string;
   private readonly options: Required<Pick<TaskServerOptions, 'handleGlobalErrors'>>;
   private readonly managedGroups: Set<TaskGroup> = new Set();
   private readonly ownClient: boolean = false; // Did we create the client?
@@ -78,6 +86,16 @@ export class TaskServer {
     } else {
       // Assume it's LoggerOptions or undefined
       this.logger = pino(loggerOptions as LoggerOptions | undefined).child({ name: loggerName });
+    }
+
+    // Store rootDir if provided
+    this.rootDir = options.rootDir;
+    if (this.rootDir) {
+      this.logger.info({ rootDir: this.rootDir }, 'TaskServer root directory set.');
+    } else {
+      this.logger.warn(
+        'TaskServer `rootDir` not provided. Relative paths in `loadTasksFromDirectory` will be rejected.'
+      );
     }
 
     // Initialize Client
@@ -129,32 +147,41 @@ export class TaskServer {
    * Assumes a structure like `baseDir/groupName/taskName.task.{js,ts}`.
    * Expects task files to have a default export: `{ handler: TaskHandler, options?: TaskOptions }`.
    *
-   * @param baseDir The absolute path to the base directory containing task groups.
+   * @param baseDir The base directory containing task groups. Can be absolute or relative to `rootDir` (if provided during server construction).
    * @param pattern Glob pattern relative to baseDir (defaults to `**\/*.task.{js,ts}`).
    */
   async loadTasksFromDirectory(baseDir: string, pattern?: string): Promise<void> {
     const effectivePattern = pattern ?? '**/*.task.{js,ts}';
+    let absoluteBaseDir: string;
 
-    this.logger.info({ baseDir, pattern: effectivePattern }, 'Loading tasks from directory...');
-
-    if (!path.isAbsolute(baseDir)) {
-      this.logger.warn(
-        { baseDir },
-        'Provided baseDir is not absolute. Resolving relative to CWD. This might be unreliable.'
+    // Resolve baseDir
+    if (path.isAbsolute(baseDir)) {
+      absoluteBaseDir = baseDir;
+    } else {
+      if (!this.rootDir) {
+        throw new Error(
+          `Cannot load tasks from relative path "${baseDir}" because TaskServer was not configured with a 'rootDir'. Provide an absolute path or set 'rootDir' in TaskServerOptions.`
+        );
+      }
+      absoluteBaseDir = path.resolve(this.rootDir, baseDir);
+      this.logger.info(
+        { relativePath: baseDir, resolvedPath: absoluteBaseDir },
+        'Resolved relative baseDir using rootDir'
       );
-      baseDir = path.resolve(baseDir);
     }
 
+    this.logger.info({ baseDir: absoluteBaseDir, pattern: effectivePattern }, 'Loading tasks from directory...');
+
     try {
-      if (!fs.existsSync(baseDir) || !fs.statSync(baseDir).isDirectory()) {
-        throw new Error(`Base directory does not exist or is not a directory: ${baseDir}`);
+      if (!fs.existsSync(absoluteBaseDir) || !fs.statSync(absoluteBaseDir).isDirectory()) {
+        throw new Error(`Base directory does not exist or is not a directory: ${absoluteBaseDir}`);
       }
     } catch (error) {
-      this.logger.error({ baseDir, err: error }, 'Failed to access base task directory.');
+      this.logger.error({ baseDir: absoluteBaseDir, err: error }, 'Failed to access base task directory.');
       throw error; // Re-throw for clarity
     }
 
-    const searchPattern = path.join(baseDir, effectivePattern).replace(/\\/g, '/');
+    const searchPattern = path.join(absoluteBaseDir, effectivePattern).replace(/\\/g, '/');
     const taskFiles = await glob(searchPattern, { absolute: true });
 
     this.logger.info({ count: taskFiles.length }, 'Found potential task files');
@@ -163,10 +190,8 @@ export class TaskServer {
     let errorCount = 0;
 
     for (const filePath of taskFiles) {
-      // Use require instead of dynamic import for broader compatibility
-      // const fileUrl = path.fileURLToPath(filePath); // No longer needed for require
       try {
-        const relativePath = path.relative(baseDir, filePath);
+        const relativePath = path.relative(absoluteBaseDir, filePath);
         const groupName = path.dirname(relativePath);
         const fileName = path.basename(relativePath);
         const taskNameMatch = fileName.match(/^(.+?)\.task\.(js|ts)$/);
@@ -179,26 +204,29 @@ export class TaskServer {
 
         this.logger.debug({ groupName, taskName, filePath }, 'Loading task definition...');
 
-        // Use require to load the task module
-        // eslint-disable-next-line @typescript-eslint/no-var-requires
-        const taskModule = require(filePath) as { default?: TaskModule };
+        // Use dynamic import() with correct file URL conversion
+        const fileUrl = pathToFileURL(filePath).href;
+        const taskModule = (await import(fileUrl)) as { default?: TaskModule };
 
-        // Validate the export (require often puts default under .default)
-        if (!taskModule || typeof taskModule.default?.handler !== 'function') {
-          // Handle cases where module might not use default export
+        // Validate the export (import() handles default export correctly)
+        if (!taskModule.default || typeof taskModule.default.handler !== 'function') {
+          // Check if handler is exported directly (for non-default exports, less common for this pattern)
           if (typeof (taskModule as unknown as TaskModule).handler === 'function') {
-            // Handle commonjs export: module.exports = { handler: ... }
+            this.logger.warn(
+              { filePath },
+              'Task file uses direct export instead of default export. Consider using default export { handler, options }.'
+            );
             const directExport = taskModule as unknown as TaskModule;
             const group = this.client.createTaskGroup(groupName);
             this.managedGroups.add(group);
             group.defineTask(taskName, directExport.handler, directExport.options);
           } else {
             throw new Error(
-              `Invalid or missing export in task file. Expected { handler: function, options?: object } via default or module.exports.`
+              `Invalid or missing default export in task file. Expected { handler: function, options?: object } via default export.`
             );
           }
         } else {
-          // Handle ES Module default export: export default { handler: ... }
+          // Handle the default export
           const defaultExport = taskModule.default;
           const group = this.client.createTaskGroup(groupName);
           this.managedGroups.add(group);
