@@ -12,11 +12,10 @@
   },
   "types": "dist/index.d.ts",
   "scripts": {
-    "build": "tsc",
-    "build:dev": "tsc",
-    "dev": "tsc -p tsconfig.json --watch",
-    "lint": "eslint src/**/*.ts",
-    "lint:fix": "eslint src/**/*.ts --fix"
+    "clean": "tsc --build --clean",
+    "build": "tsc --build",
+    "build:dev": "tsc --build",
+    "dev": "tsc --build --watch"
   },
   "dependencies": {
     "@sindresorhus/slugify": "^2.2.1",

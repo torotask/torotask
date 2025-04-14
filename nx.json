@@ -1,5 +1,11 @@
 {
   "$schema": "./node_modules/nx/schemas/nx-schema.json",
+  "projects": {
+    "client": "packages/client",
+    "server": "packages/server",
+    "tester": "apps/tester",
+    "dashboard": "apps/dashboard"
+  },
   "targetDefaults": {
     "dev": {
       "dependsOn": ["^dev"]

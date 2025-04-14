@@ -4,7 +4,7 @@
   "version": "0.1.0",
   "description": "Monorepo for ToroTask related packages and apps",
   "scripts": {
-    "build": "pnpm -r build",
+    "build": "nx run-many -t build",
     "lint": "biome lint",
     "format": "biome format --write",
     "prepare": "simple-git-hooks",
@@ -12,6 +12,7 @@
   },
   "devDependencies": {
     "@biomejs/biome": "1.9.4",
+    "@nx/js": "^20.8.0",
     "@types/node": "^22.14.0",
     "dotenv": "^16.4.7",
     "lint-staged": "^15.5.0",
