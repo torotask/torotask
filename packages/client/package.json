@@ -1,0 +1,17 @@
+{
+  "name": "@torotask/client",
+  "version": "0.1.0",
+  "description": "A wrapper for creating ToroTask connections",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "lint": "eslint src/**/*.ts",
+    "dev": "tsc --watch"
+  },
+  "dependencies": {
+    "bullmq": "^5.11.0",
+    "camelcase": "^8.0.0"
+  },
+  "files": ["dist"]
+}
