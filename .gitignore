@@ -20,7 +20,6 @@ pids
 
 # IDE files
 .idea
-.vscode/
 *.suo
 *.ntvs*
 *.njsproj
@@ -33,3 +32,7 @@ pids
 # OS generated files
 .DS_Store
 Thumbs.db 
+*.tsbuildinfo
+
+.nx/cache
+.nx/workspace-data
