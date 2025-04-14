@@ -11,7 +11,8 @@
   },
   "dependencies": {
     "bullmq": "^5.11.0",
-    "camelcase": "^8.0.0"
+    "camelcase": "^8.0.0",
+    "ioredis": "^5.4.1"
   },
   "files": ["dist"]
 }
