@@ -1,5 +1,5 @@
-import type { ToroTaskClient } from './index';
-import { Task, type TaskHandler, type TaskOptions } from './task';
+import type { ToroTaskClient } from './client.js';
+import { Task, type TaskHandler, type TaskOptions } from './task.js';
 import type { WorkerOptions } from 'bullmq';
 import { Logger } from 'pino';
 

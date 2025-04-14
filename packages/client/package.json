@@ -2,12 +2,21 @@
   "name": "@torotask/client",
   "version": "0.1.0",
   "description": "A wrapper for creating ToroTask connections",
-  "main": "dist/index.js",
+  "type": "module",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    },
+    "./package.json": "./package.json"
+  },
   "types": "dist/index.d.ts",
   "scripts": {
-    "build": "tsc",
+    "build": "tsc -b --clean",
+    "build:dev": "tsc -b --declarationMap",
+    "dev": "pnpm run build:dev --watch --preserveWatchOutput",
     "lint": "eslint src/**/*.ts",
-    "dev": "tsc --watch"
+    "lint:fix": "eslint src/**/*.ts --fix"
   },
   "dependencies": {
     "@types/pino": "^7.0.5",

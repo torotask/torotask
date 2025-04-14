@@ -1,5 +1,5 @@
 import { Queue, QueueEvents, Worker, WorkerOptions, Job, ConnectionOptions, JobsOptions } from 'bullmq';
-import type { ToroTaskClient } from './index';
+import type { ToroTaskClient } from './client.js';
 import { Logger } from 'pino';
 import { EventEmitter } from 'events';
 

@@ -1,8 +1,8 @@
 import { JobsOptions, Job, Queue, QueueEvents, Worker, WorkerOptions } from 'bullmq';
-import { BaseQueue } from './base-queue';
-import { SubTask, SubTaskHandler, SubTaskHandlerContext, SubTaskHandlerOptions } from './sub-task'; // Import SubTask related types
-import type { TaskGroup } from './task-group';
-import type { ToroTaskClient } from './index';
+import { BaseQueue } from './base-queue.js';
+import { SubTask, SubTaskHandler, SubTaskHandlerContext, SubTaskHandlerOptions } from './sub-task.js'; // Import SubTask related types
+import type { TaskGroup } from './task-group.js';
+import type { ToroTaskClient } from './client.js';
 import { Logger } from 'pino';
 
 /**

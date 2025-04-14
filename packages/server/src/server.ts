@@ -1,5 +1,5 @@
 import { ToroTaskClient, TaskGroup, WorkerFilter, ConnectionOptions, TaskHandler, TaskOptions } from '@torotask/client';
-import pino, { Logger, DestinationStream, LoggerOptions } from 'pino';
+import { pino, type Logger, type DestinationStream, type LoggerOptions } from 'pino';
 import { WorkerOptions, Job } from 'bullmq';
 import { glob } from 'glob';
 import path from 'path';

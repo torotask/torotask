@@ -1,9 +1,12 @@
 {
   "compilerOptions": {
-    "target": "ES2016",
-    "module": "CommonJS",
+    "module": "Node16",
+    "target": "ES2022",
+    "composite": true,
     "esModuleInterop": true,
+    "incremental": true,
     "forceConsistentCasingInFileNames": true,
+    "moduleResolution": "Node16",
     "strict": true,
     "skipLibCheck": true,
     "declaration": true,

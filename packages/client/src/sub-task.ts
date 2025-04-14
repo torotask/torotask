@@ -1,7 +1,7 @@
 import { JobsOptions, Job, Queue } from 'bullmq';
-import type { Task } from './task'; // Use type import for Task
-import type { ToroTaskClient } from './index';
-import type { TaskGroup } from './task-group';
+import type { Task } from './task.js'; // Use type import for Task
+import type { ToroTaskClient } from './client.js';
+import type { TaskGroup } from './task-group.js';
 import { Logger } from 'pino';
 
 // --- SubTask Types ---

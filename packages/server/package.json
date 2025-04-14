@@ -2,12 +2,15 @@
   "name": "@torotask/server",
   "version": "0.1.0",
   "description": "",
-  "main": "index.js",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
   "scripts": {
-    "build": "tsc",
-    "build:dev": "tsup src/ --sourcemap inline",
+    "build": "tsc -b --clean",
+    "build:dev": "tsc -b --declarationMap",
+    "dev": "pnpm run build:dev --watch --preserveWatchOutput",
     "lint": "eslint src/**/*.ts",
-    "dev": "pnpm run build:dev --watch"
+    "lint:fix": "eslint src/**/*.ts --fix"
   },
   "keywords": [],
   "author": "",
