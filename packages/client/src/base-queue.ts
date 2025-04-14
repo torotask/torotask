@@ -108,6 +108,25 @@ export abstract class BaseQueue {
   }
 
   /**
+   * Stops the worker instance associated with this queue, if it is running.
+   * Does not close the queue or queueEvents connections.
+   */
+  async stopWorker(): Promise<void> {
+    if (this.worker) {
+      this.logger.info('Stopping worker...');
+      try {
+        await this.worker.close();
+        this.logger.info('Worker stopped successfully.');
+      } catch (error) {
+        this.logger.error({ err: error instanceof Error ? error : new Error(String(error)) }, 'Error stopping worker');
+        // Decide if we should re-throw or just log
+      } finally {
+        this.worker = undefined;
+      }
+    }
+  }
+
+  /**
    * Closes the underlying BullMQ Worker (if started), Queue, and QueueEvents instances,
    * and removes the instance from the static registry.
    * Should be called during application shutdown.
@@ -120,11 +139,11 @@ export abstract class BaseQueue {
     this.logger.info('Closing BaseQueue resources (worker, queue, events)');
     const closePromises: Promise<void>[] = [];
 
-    if (this.worker) {
-      this.logger.debug('Closing worker...');
-      closePromises.push(this.worker.close());
-    }
+    // Stop the worker first using the new method
+    // Use await here to ensure worker stops before queue closes if order matters
+    await this.stopWorker();
 
+    // Proceed with closing queue and events
     this.logger.debug('Closing queue events...');
     closePromises.push(this.queueEvents.close());
     this.logger.debug('Closing queue...');

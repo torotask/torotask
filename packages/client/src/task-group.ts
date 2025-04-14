@@ -1,5 +1,6 @@
 import type { ToroTaskClient } from './index';
 import { Task, type TaskHandler, type TaskOptions } from './task';
+import type { WorkerOptions } from 'bullmq';
 import { Logger } from 'pino';
 
 /**
@@ -21,7 +22,7 @@ export class TaskGroup {
     this.client = client;
     this.name = name;
     // Create a child logger for this task group
-    this.logger = parentLogger.child({ taskGroup: this.name });
+    this.logger = parentLogger.child({ taskGroupName: this.name });
 
     this.logger.info('TaskGroup initialized');
   }
@@ -66,6 +67,76 @@ export class TaskGroup {
    */
   getTasks(): Map<string, Task<any, any>> {
     return this.tasks;
+  }
+
+  // --- Worker Orchestration ---
+
+  /**
+   * Starts workers for tasks within this group, optionally filtered by task names.
+   *
+   * @param filter Optional filter object. If `filter.tasks` is provided, only starts workers for task names in the array.
+   * @param workerOptions Optional default WorkerOptions to pass to each task's worker.
+   */
+  startWorkers(filter?: { tasks?: string[] }, workerOptions?: WorkerOptions): void {
+    this.logger.info({ filter }, 'Starting workers for task group');
+    const tasksToStart = filter?.tasks
+      ? filter.tasks.map((name) => this.tasks.get(name)).filter((task): task is Task<any, any> => !!task)
+      : Array.from(this.tasks.values());
+
+    if (filter?.tasks) {
+      const requested = filter.tasks.length;
+      const found = tasksToStart.length;
+      if (requested !== found) {
+        this.logger.warn(
+          { requested, found },
+          'Some requested tasks for starting workers were not found in this group.'
+        );
+      }
+    }
+
+    tasksToStart.forEach((task) => {
+      try {
+        task.startWorker(workerOptions);
+      } catch (error) {
+        this.logger.error({ taskName: task.name, err: error }, 'Error starting worker for task');
+        // Continue starting other workers
+      }
+    });
+    this.logger.info({ count: tasksToStart.length }, 'Finished attempting to start workers for task group');
+  }
+
+  /**
+   * Stops workers for tasks within this group, optionally filtered by task names.
+   *
+   * @param filter Optional filter object. If `filter.tasks` is provided, only stops workers for task names in the array.
+   * @returns A promise that resolves when all targeted workers have been requested to stop.
+   */
+  async stopWorkers(filter?: { tasks?: string[] }): Promise<void> {
+    this.logger.info({ filter }, 'Stopping workers for task group');
+    const tasksToStop = filter?.tasks
+      ? filter.tasks.map((name) => this.tasks.get(name)).filter((task): task is Task<any, any> => !!task)
+      : Array.from(this.tasks.values());
+
+    if (filter?.tasks) {
+      const requested = filter.tasks.length;
+      const found = tasksToStop.length;
+      if (requested !== found) {
+        this.logger.warn(
+          { requested, found },
+          'Some requested tasks for stopping workers were not found in this group.'
+        );
+      }
+    }
+
+    const stopPromises = tasksToStop.map((task) =>
+      task.stopWorker().catch((error) => {
+        this.logger.error({ taskName: task.name, err: error }, 'Error stopping worker for task');
+        // Continue stopping other workers, do not reject Promise.all
+      })
+    );
+
+    await Promise.all(stopPromises);
+    this.logger.info({ count: tasksToStop.length }, 'Finished attempting to stop workers for task group');
   }
 
   // --- Potential future methods ---

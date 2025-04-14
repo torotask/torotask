@@ -1,7 +1,8 @@
-import { ConnectionOptions } from 'bullmq';
+import { ConnectionOptions, WorkerOptions } from 'bullmq';
 import { getConfigFromEnv } from './utils/get-config-from-env';
 import { TaskGroup } from './task-group';
 import pino, { Logger } from 'pino';
+import { BaseQueue } from './base-queue';
 
 const LOGGER_NAME = 'BullMQ';
 
@@ -17,6 +18,14 @@ export type ToroTaskClientOptions = Partial<ConnectionOptions> & {
   logger?: Logger;
   loggerName?: string;
 };
+
+/** Interface for filtering workers in start/stop operations */
+export interface WorkerFilter {
+  /** Array of group names to target. If omitted, targets all groups. */
+  groups?: string[];
+  /** Map where keys are group names and values are arrays of task names within that group. */
+  tasks?: { [groupName: string]: string[] };
+}
 
 /**
  * A client class to manage ToroTask connection settings and TaskGroups.
@@ -70,6 +79,81 @@ export class ToroTaskClient {
    */
   public getTaskGroup(name: string): TaskGroup | undefined {
     return this.taskGroups[name];
+  }
+
+  /**
+   * Starts workers based on the provided filter.
+   *
+   * @param filter Optional filter to target specific groups or tasks.
+   * @param workerOptions Optional default WorkerOptions to pass down.
+   */
+  startWorkers(filter?: WorkerFilter, workerOptions?: WorkerOptions): void {
+    this.logger.info({ filter }, 'Starting workers across task groups');
+    let groupsToProcess: TaskGroup[] = [];
+
+    if (filter?.groups) {
+      // Filter by specified group names
+      groupsToProcess = filter.groups
+        .map((name) => this.taskGroups[name])
+        .filter((group): group is TaskGroup => !!group);
+      const requested = filter.groups.length;
+      const found = groupsToProcess.length;
+      if (requested !== found) {
+        this.logger.warn({ requested, found }, 'Some requested groups for starting workers were not found.');
+      }
+    } else {
+      // Process all known groups
+      groupsToProcess = Object.values(this.taskGroups);
+    }
+
+    groupsToProcess.forEach((group) => {
+      // Determine task filter for this specific group
+      const taskFilter = filter?.tasks?.[group.name] ? { tasks: filter.tasks[group.name] } : undefined;
+      if (filter?.tasks && !filter.groups?.includes(group.name) && !taskFilter) {
+        // If task filters exist but don't include this group (and group wasn't explicitly listed),
+        // skip this group entirely.
+        return;
+      }
+      group.startWorkers(taskFilter, workerOptions);
+    });
+    this.logger.info('Finished request to start workers');
+  }
+
+  /**
+   * Stops workers based on the provided filter.
+   *
+   * @param filter Optional filter to target specific groups or tasks.
+   * @returns A promise that resolves when all targeted workers have been requested to stop.
+   */
+  async stopWorkers(filter?: WorkerFilter): Promise<void> {
+    this.logger.info({ filter }, 'Stopping workers across task groups');
+    let groupsToProcess: TaskGroup[] = [];
+
+    if (filter?.groups) {
+      groupsToProcess = filter.groups
+        .map((name) => this.taskGroups[name])
+        .filter((group): group is TaskGroup => !!group);
+      const requested = filter.groups.length;
+      const found = groupsToProcess.length;
+      if (requested !== found) {
+        this.logger.warn({ requested, found }, 'Some requested groups for stopping workers were not found.');
+      }
+    } else {
+      groupsToProcess = Object.values(this.taskGroups);
+    }
+
+    const stopPromises = groupsToProcess.map((group) => {
+      const taskFilter = filter?.tasks?.[group.name] ? { tasks: filter.tasks[group.name] } : undefined;
+      if (filter?.tasks && !filter.groups?.includes(group.name) && !taskFilter) {
+        // If task filters exist but don't include this group (and group wasn't explicitly listed),
+        // skip stopping workers in this group.
+        return Promise.resolve(); // Resolve immediately, nothing to stop here based on filter
+      }
+      return group.stopWorkers(taskFilter);
+    });
+
+    await Promise.all(stopPromises);
+    this.logger.info('Finished request to stop workers');
   }
 
   /**
