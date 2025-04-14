@@ -14,11 +14,13 @@
   "author": "",
   "license": "ISC",
   "devDependencies": {
+    "@types/pino": "^7.0.5",
     "tsx": "^4.16.0",
     "typescript": "^5.5.2"
   },
   "dependencies": {
     "@torotask/client": "workspace:*",
+    "@torotask/server": "workspace:*",
     "bullmq": "^5.11.0",
     "pino": "^9.6.0",
     "pino-pretty": "^13.0.0"

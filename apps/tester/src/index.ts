@@ -1,10 +1,11 @@
-import { testFunction, queue, delay } from './function/test';
-import { logger } from './client';
+import { server, logger } from './server.js';
 
 const main = async () => {
+  const tasks = await server.loadTasksFromDirectory('./tasks');
+  logger.info({ tasks }, 'Loaded tasks');
+
   // Start the worker AFTER defining functions
-  queue.startWorker();
-  logger.info({ queueName: queue.name }, 'Worker starting');
+  /*  logger.info({ queueName: queue.name }, 'Worker starting');
 
   // Wait a moment for the worker to initialize before invoking
   logger.info('Waiting for worker to initialize...');
@@ -16,9 +17,9 @@ const main = async () => {
     logger.info({ result }, 'Invoke Result'); // SUCCESS!
   } catch (error) {
     logger.error({ err: error }, 'Invocation failed');
-  }
+  }*/
 
-  logger.info('Worker process running. Waiting for jobs...');
+  //logger.info('Worker process running. Waiting for jobs...');
   setInterval(
     () => {
       // Optional: Add a heartbeat log or check worker status
