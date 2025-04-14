@@ -85,15 +85,14 @@ export class TaskServer {
       this.client = options.client;
       this.ownClient = false;
       this.logger.info('Using provided ToroTaskClient instance.');
-    } else if (options.clientOptions) {
+    } else {
+      const clientOptions = options.clientOptions ?? {};
       this.client = new ToroTaskClient({
-        ...options.clientOptions,
-        logger: options.clientOptions.logger ?? this.logger.child({ component: 'ToroTaskClient' }),
+        ...clientOptions,
+        logger: clientOptions.logger ?? this.logger.child({ component: 'ToroTaskClient' }),
       });
       this.ownClient = true;
       this.logger.info('Created new ToroTaskClient instance.');
-    } else {
-      throw new Error('TaskServer requires either a `client` instance or `clientOptions`.');
     }
 
     // Store other options with defaults
