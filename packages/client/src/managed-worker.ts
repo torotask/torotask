@@ -1,6 +1,7 @@
 import { Worker, WorkerOptions, Job } from 'bullmq';
 import type { ManagedQueue } from './managed-queue';
 import { Logger } from 'pino';
+import { HandlerOptions, HandlerContext } from './managed-function';
 
 /**
  * Wraps a BullMQ Worker instance.
@@ -29,11 +30,23 @@ export class ManagedWorker {
         throw new Error(`Processor not found for job ${job.name}`);
       }
 
+      // Prepare arguments for the new handler signature
+      const handlerOptions: HandlerOptions = {
+        id: job.id,
+        name: job.name,
+        data: job.data,
+      };
+
+      const handlerContext: HandlerContext = {
+        logger: jobLogger,
+        client: this.managedQueue.client,
+        queue: this.managedQueue,
+      };
+
       try {
-        // Execute the handler
-        // Pass jobLogger to the handler if needed in the future, for now just log
+        // Execute the handler with the new signature
         jobLogger.debug('Executing job handler');
-        const result = await (managedFunction.handler as (job: Job) => Promise<unknown>)(job);
+        const result = await managedFunction.handler(handlerOptions, handlerContext);
         jobLogger.info({ result }, `Completed job`);
         return result;
       } catch (error: unknown) {

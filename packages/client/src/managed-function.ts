@@ -1,6 +1,7 @@
 import { JobsOptions, Job } from 'bullmq';
 import type { ManagedQueue } from './managed-queue';
 import { Logger } from 'pino';
+import type { ToroTaskClient } from './index';
 
 /**
  * Options for defining a ManagedFunction, extending BullMQ's JobsOptions.
@@ -10,8 +11,25 @@ export interface ManagedFunctionOptions extends JobsOptions {
   // e.g., default attempts, backoff strategy?
 }
 
+/** Handler details passed to the handler */
+export interface HandlerOptions<T = unknown> {
+  id?: string; // Job ID might not be available for manually triggered flows
+  name: string;
+  data: T;
+}
+
+/** Context passed to the function handler */
+export interface HandlerContext {
+  logger: Logger;
+  client: ToroTaskClient;
+  queue: ManagedQueue;
+}
+
 /** Function handler type */
-export type FunctionHandler<T = unknown, R = unknown> = (job: Job<T, R>) => Promise<R>;
+export type FunctionHandler<T = unknown, R = unknown> = (
+  options: HandlerOptions<T>,
+  context: HandlerContext
+) => Promise<R>;
 
 /**
  * Represents a defined function or job type associated with a specific ManagedQueue.
