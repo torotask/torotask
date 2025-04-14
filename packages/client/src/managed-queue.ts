@@ -2,6 +2,7 @@ import { Queue, QueueOptions, QueueEvents, WorkerOptions } from 'bullmq';
 import type { ToroTaskClient } from './index';
 import { ManagedWorker } from './managed-worker';
 import { ManagedFunction, ManagedFunctionOptions, FunctionHandler } from './managed-function';
+import { Logger } from 'pino';
 
 /**
  * Wraps a BullMQ Queue instance to provide convenience methods.
@@ -13,12 +14,16 @@ export class ManagedQueue {
   public readonly queueEvents: QueueEvents;
   public readonly name: string;
   public readonly client: ToroTaskClient;
+  public readonly logger: Logger;
   public worker?: ManagedWorker;
   private readonly functions: Record<string, ManagedFunction<unknown, unknown>> = {};
 
-  constructor(client: ToroTaskClient, name: string, opts?: QueueOptions) {
+  constructor(client: ToroTaskClient, name: string, opts: QueueOptions | undefined, parentLogger: Logger) {
     this.client = client;
     this.name = name;
+    this.logger = parentLogger.child({ queueName: this.name });
+
+    this.logger.info(`Initializing ManagedQueue`);
 
     const queueOptions: QueueOptions = {
       connection: this.client.connectionOptions,
@@ -47,9 +52,9 @@ export class ManagedQueue {
     options?: ManagedFunctionOptions
   ): ManagedFunction<T, R> {
     if (this.functions[name]) {
-      console.warn(`Redefining function "${name}" for queue "${this.name}".`);
+      this.logger.warn({ functionName: name }, `Redefining function`);
     }
-    const managedFunction = new ManagedFunction<T, R>(this, name, handler, options);
+    const managedFunction = new ManagedFunction<T, R>(this, name, handler, options, this.logger);
     this.functions[name] = managedFunction as ManagedFunction<unknown, unknown>;
     return managedFunction;
   }
@@ -72,10 +77,11 @@ export class ManagedQueue {
    */
   startWorker(opts?: WorkerOptions): ManagedWorker {
     if (this.worker) {
-      console.warn(`Worker for queue "${this.name}" already started.`);
+      this.logger.warn(`Worker already started, returning existing instance.`);
       return this.worker;
     }
 
+    this.logger.info(`Starting worker`);
     const managedWorker = this.client.createWorker(this.name, opts, this);
 
     this.worker = managedWorker;

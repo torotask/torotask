@@ -1,16 +1,23 @@
-// Basic placeholder - we'll implement the connection logic next.
-// console.log('BullMQ Client Package'); // Removed initial log
-
 import { ConnectionOptions, QueueOptions, WorkerOptions } from 'bullmq';
 import { getConfigFromEnv } from './utils/get-config-from-env';
 import { ManagedQueue } from './managed-queue';
 import { ManagedWorker } from './managed-worker';
+import pino, { Logger } from 'pino';
+
+const LOGGER_NAME = 'BullMQ';
 
 /**
  * Options for configuring the ToroTaskClient.
- * Extends ToroTask's ConnectionOptions (as Partial).
+ * Extends BullMQ's ConnectionOptions (as Partial).
  */
-export type ToroTaskClientOptions = Partial<ConnectionOptions>;
+export type ToroTaskClientOptions = Partial<ConnectionOptions> & {
+  /**
+   * A Pino logger instance or configuration options for creating one.
+   * If not provided, a default logger will be created.
+   */
+  logger?: Logger;
+  loggerName?: string;
+};
 
 // --- ToroTaskClient ---
 
@@ -21,6 +28,7 @@ export type ToroTaskClientOptions = Partial<ConnectionOptions>;
  */
 export class ToroTaskClient {
   public readonly connectionOptions: ConnectionOptions;
+  public readonly logger: Logger;
   // Adjust record type to remove T, R generics
   private readonly queues: Record<string, ManagedQueue> = {};
   private readonly workers: Record<string, ManagedWorker> = {};
@@ -29,14 +37,21 @@ export class ToroTaskClient {
     const toroTaskEnvConfig = getConfigFromEnv('TOROTASK_REDIS_');
     const redisEnvConfig = getConfigFromEnv('REDIS_');
 
-    const mergedConfig: ToroTaskClientOptions = {
+    // Separate logger options from connection options
+    const { logger, loggerName, ...connectionOpts } = options || {};
+
+    const mergedConfig: Partial<ConnectionOptions> = {
       ...redisEnvConfig,
       ...toroTaskEnvConfig,
-      ...options,
+      ...connectionOpts,
     };
 
     // Assigning directly based on previous user edits
     this.connectionOptions = mergedConfig as ConnectionOptions;
+
+    // Initialize logger
+    this.logger = (logger ?? pino()).child({ name: loggerName ?? LOGGER_NAME });
+    this.logger.info('ToroTaskClient initialized');
   }
 
   /**
@@ -62,8 +77,8 @@ export class ToroTaskClient {
       return this.queues[name] as ManagedQueue;
     }
 
-    // Adjust instantiation
-    const newManagedQueue = new ManagedQueue(this, name, opts);
+    // Adjust instantiation, pass the client's logger
+    const newManagedQueue = new ManagedQueue(this, name, opts, this.logger);
 
     // Store the new managed queue instance
     // Adjust cast
@@ -83,7 +98,7 @@ export class ToroTaskClient {
   }
 
   /**
-   * Creates or retrieves a ManagedWorker instance for a specific queue.
+   * Cpwreates or retrieves a ManagedWorker instance for a specific queue.
    * The ManagedWorker uses an internal processor based on functions defined
    * on the associated ManagedQueue.
    * If a worker for the same queue name already exists, the existing instance is returned.
@@ -95,10 +110,12 @@ export class ToroTaskClient {
    */
   public createWorker(name: string, opts: WorkerOptions | undefined, managedQueue: ManagedQueue): ManagedWorker {
     if (this.workers[name]) {
+      this.logger.warn({ queueName: name }, 'Attempted to create worker for queue where one already exists.');
       return this.workers[name] as unknown as ManagedWorker;
     }
 
-    const newManagedWorker = new ManagedWorker(managedQueue, opts);
+    // Pass the queue's logger (which is a child of the client logger)
+    const newManagedWorker = new ManagedWorker(managedQueue, opts, managedQueue.logger);
 
     // Store the new managed worker instance
     this.workers[name] = newManagedWorker as unknown as ManagedWorker;

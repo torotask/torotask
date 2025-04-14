@@ -10,9 +10,11 @@
     "dev": "tsc --watch"
   },
   "dependencies": {
+    "@types/pino": "^7.0.5",
     "bullmq": "^5.11.0",
     "camelcase": "^8.0.0",
-    "ioredis": "^5.4.1"
+    "ioredis": "^5.4.1",
+    "pino": "^9.6.0"
   },
   "files": ["dist"]
 }
