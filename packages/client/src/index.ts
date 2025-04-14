@@ -4,6 +4,7 @@ import { ManagedQueue } from './managed-queue';
 import { ManagedWorker } from './managed-worker';
 import { TaskGroup } from './task-group';
 import pino, { Logger } from 'pino';
+import { BaseQueue } from './base-queue';
 
 const LOGGER_NAME = 'BullMQ';
 

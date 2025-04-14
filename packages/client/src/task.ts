@@ -1,4 +1,5 @@
 import { JobsOptions, Job, Queue, QueueEvents, Worker, WorkerOptions } from 'bullmq';
+import { BaseQueue } from './base-queue';
 import type { TaskGroup } from './task-group';
 import type { ToroTaskClient } from './index';
 import { Logger } from 'pino';
@@ -23,9 +24,9 @@ export interface TaskHandlerContext {
   logger: Logger;
   client: ToroTaskClient;
   group: TaskGroup;
-  task: Task<any, any>;
+  task: Task<any, any>; // Reference to the Task instance
   job: Job;
-  queue: Queue;
+  queue: Queue; // The queue instance (from BaseQueue)
 }
 
 /** Task handler function type */
@@ -36,24 +37,17 @@ export type TaskHandler<T = unknown, R = unknown> = (
 
 /**
  * Represents a defined task associated with a TaskGroup.
- * Each Task manages its own underlying BullMQ Queue instance.
- * Encapsulates the task name, default job options, and execution handler.
- * Provides a `process` method that orchestrates job execution, calling the handler by default.
+ * Extends BaseQueue to manage its own underlying BullMQ queue and worker.
+ * Implements the `process` method by calling the specific task `handler`.
  *
  * @template T The expected type of the data payload for this task.
  * @template R The expected return type of the job associated with this task.
  */
-export class Task<T = unknown, R = unknown> {
+export class Task<T = unknown, R = unknown> extends BaseQueue {
   public readonly name: string;
   public readonly group: TaskGroup;
-  public readonly client: ToroTaskClient;
-  public readonly queue: Queue;
-  public readonly queueEvents: QueueEvents;
-  public readonly queueName: string;
   public readonly defaultJobOptions: TaskOptions;
   public readonly handler: TaskHandler<T, R>;
-  public readonly logger: Logger;
-  private worker?: Worker<T, R>;
 
   constructor(
     taskGroup: TaskGroup,
@@ -71,30 +65,24 @@ export class Task<T = unknown, R = unknown> {
     if (!handler || typeof handler !== 'function') {
       throw new Error('Task handler is required and must be a function.');
     }
+
+    const client = taskGroup.client;
+    const queueName = `${taskGroup.name}.${name}`;
+    const taskLogger = groupLogger.child({ taskName: name });
+
+    super(client, queueName, taskLogger);
+
     this.group = taskGroup;
-    this.client = taskGroup.client;
     this.name = name;
     this.handler = handler;
     this.defaultJobOptions = options ?? {};
 
-    this.queueName = `${this.group.name}.${this.name}`;
-    this.logger = groupLogger.child({ taskName: this.name, queueName: this.queueName });
-
-    this.logger.info('Initializing Task queue and events');
-
-    this.queue = new Queue(this.queueName, {
-      connection: this.client.connectionOptions,
-    });
-
-    this.queueEvents = new QueueEvents(this.queueName, {
-      connection: this.client.connectionOptions,
-    });
-
-    this.logger.info('Task initialized');
+    this.logger.info('Task initialized (extending BaseQueue)');
   }
 
   /**
-   * Adds a job for this task to its dedicated queue without waiting for completion.
+   * Adds a job for this task to its dedicated queue.
+   * Note: This method might be simplified or removed if job adding is handled differently.
    *
    * @param data The data payload for the job.
    * @param overrideOptions Optional JobOptions to override the task's defaults.
@@ -161,25 +149,22 @@ export class Task<T = unknown, R = unknown> {
   }
 
   /**
-   * Processes a job received by a BullMQ Worker.
-   * This is the entry point for worker execution for this task.
-   * The default implementation calls the registered `handler`.
-   * Subclasses can override this method for custom processing logic (e.g., batching).
+   * Implements the abstract process method from BaseQueue.
+   * Calls the registered task handler with the appropriate context.
    *
    * @param job The BullMQ job object.
-   * @returns A promise that resolves with the result of the job handler.
+   * @returns A promise that resolves with the result of the task handler.
    */
-  async process(job: Job<T, R>): Promise<R> {
-    const { id, name: jobNameReceived, data } = job;
+  async process(job: Job): Promise<any> {
+    const typedJob = job as Job<T, R>;
+    const { id, name: jobNameReceived, data } = typedJob;
     const jobLogger = this.logger.child({ jobId: id, jobName: jobNameReceived });
 
-    // Check if the received job name matches the task name (as an optional safeguard)
     if (jobNameReceived !== this.name) {
       jobLogger.warn(
         { expectedJobName: this.name },
         'Worker received job with unexpected name for this task processor. Processing anyway.'
       );
-      // Decide whether to throw an error or proceed
     }
 
     const handlerOptions: TaskHandlerOptions<T> = { id, name: this.name, data };
@@ -187,100 +172,19 @@ export class Task<T = unknown, R = unknown> {
       logger: jobLogger,
       client: this.client,
       group: this.group,
-      task: this, // Provide the task instance itself
-      job: job,
+      task: this,
+      job: typedJob,
       queue: this.queue,
     };
 
     jobLogger.info(`Processing job`);
     try {
-      // Execute the actual handler defined for the Task
-      const result = await this.handler(handlerOptions, handlerContext);
+      const result: R = await this.handler(handlerOptions, handlerContext);
       jobLogger.info(`Job completed successfully`);
       return result;
     } catch (error) {
       jobLogger.error({ err: error instanceof Error ? error : new Error(String(error)) }, `Job processing failed`);
-      // Re-throw error for BullMQ to handle job failure
       throw error;
-    }
-  }
-
-  /**
-   * Starts a dedicated BullMQ Worker for this task, if one is not already running.
-   * The worker will listen to this task's specific queue and use the task's `process` method.
-   *
-   * @param options Optional BullMQ WorkerOptions to configure the worker.
-   * @returns The BullMQ Worker instance.
-   */
-  startWorker(options?: WorkerOptions): Worker<T, R> {
-    if (this.worker) {
-      this.logger.warn('Worker already started for this task. Returning existing instance.');
-      return this.worker;
-    }
-
-    this.logger.info({ workerOptions: options }, 'Starting worker for task');
-
-    const workerOptions: WorkerOptions = {
-      connection: this.client.connectionOptions,
-      ...(options ?? {}),
-      // Ensure concurrency is at least 1 if not specified
-      concurrency: options?.concurrency ?? 1,
-    };
-
-    // Type the worker appropriately
-    const newWorker = new Worker<T, R>(
-      this.queueName,
-      async (job) => this.process(job), // Use the process method as the processor
-      workerOptions
-    );
-
-    // Basic error logging
-    newWorker.on('error', (error) => {
-      this.logger.error({ err: error }, 'Worker encountered an error');
-    });
-    newWorker.on('failed', (job, error) => {
-      // Note: The error here is the one thrown from the process method
-      // Logging is already done within the process method, but we could add more context here if needed.
-      this.logger.warn({ jobId: job?.id, err: error }, 'Worker reported job failed');
-    });
-    newWorker.on('completed', (job) => {
-      this.logger.debug({ jobId: job.id }, 'Worker reported job completed');
-    });
-
-    this.worker = newWorker;
-    this.logger.info('Worker started successfully');
-    return this.worker;
-  }
-
-  /**
-   * Closes the underlying BullMQ Queue, QueueEvents, and the Worker instance (if started).
-   * Should be called during application shutdown.
-   */
-  async close(): Promise<void> {
-    this.logger.info('Closing task resources (worker, queue, events)');
-    const closePromises: Promise<void>[] = [];
-
-    // Close worker first if it exists
-    if (this.worker) {
-      this.logger.debug('Closing task worker...');
-      closePromises.push(this.worker.close());
-    }
-
-    // Close queue events and queue
-    this.logger.debug('Closing task queue events...');
-    closePromises.push(this.queueEvents.close());
-    this.logger.debug('Closing task queue...');
-    closePromises.push(this.queue.close());
-
-    try {
-      await Promise.all(closePromises);
-      this.logger.info('Task resources closed successfully');
-    } catch (error) {
-      this.logger.error(
-        { err: error instanceof Error ? error : new Error(String(error)) },
-        'Error closing task resources'
-      );
-      // Optionally rethrow or handle
     }
   }
 }
