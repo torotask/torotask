@@ -1,4 +1,4 @@
-import { JobsOptions, Job, Queue, QueueEvents } from 'bullmq';
+import { JobsOptions, Job, Queue, QueueEvents, Worker, WorkerOptions } from 'bullmq';
 import type { TaskGroup } from './task-group';
 import type { ToroTaskClient } from './index';
 import { Logger } from 'pino';
@@ -53,6 +53,7 @@ export class Task<T = unknown, R = unknown> {
   public readonly defaultJobOptions: TaskOptions;
   public readonly handler: TaskHandler<T, R>;
   public readonly logger: Logger;
+  private worker?: Worker<T, R>;
 
   constructor(
     taskGroup: TaskGroup,
@@ -205,20 +206,81 @@ export class Task<T = unknown, R = unknown> {
   }
 
   /**
-   * Closes the underlying BullMQ Queue and QueueEvents instances.
+   * Starts a dedicated BullMQ Worker for this task, if one is not already running.
+   * The worker will listen to this task's specific queue and use the task's `process` method.
+   *
+   * @param options Optional BullMQ WorkerOptions to configure the worker.
+   * @returns The BullMQ Worker instance.
+   */
+  startWorker(options?: WorkerOptions): Worker<T, R> {
+    if (this.worker) {
+      this.logger.warn('Worker already started for this task. Returning existing instance.');
+      return this.worker;
+    }
+
+    this.logger.info({ workerOptions: options }, 'Starting worker for task');
+
+    const workerOptions: WorkerOptions = {
+      connection: this.client.connectionOptions,
+      ...(options ?? {}),
+      // Ensure concurrency is at least 1 if not specified
+      concurrency: options?.concurrency ?? 1,
+    };
+
+    // Type the worker appropriately
+    const newWorker = new Worker<T, R>(
+      this.queueName,
+      async (job) => this.process(job), // Use the process method as the processor
+      workerOptions
+    );
+
+    // Basic error logging
+    newWorker.on('error', (error) => {
+      this.logger.error({ err: error }, 'Worker encountered an error');
+    });
+    newWorker.on('failed', (job, error) => {
+      // Note: The error here is the one thrown from the process method
+      // Logging is already done within the process method, but we could add more context here if needed.
+      this.logger.warn({ jobId: job?.id, err: error }, 'Worker reported job failed');
+    });
+    newWorker.on('completed', (job) => {
+      this.logger.debug({ jobId: job.id }, 'Worker reported job completed');
+    });
+
+    this.worker = newWorker;
+    this.logger.info('Worker started successfully');
+    return this.worker;
+  }
+
+  /**
+   * Closes the underlying BullMQ Queue, QueueEvents, and the Worker instance (if started).
    * Should be called during application shutdown.
    */
   async close(): Promise<void> {
-    this.logger.info('Closing task queue and events');
+    this.logger.info('Closing task resources (worker, queue, events)');
+    const closePromises: Promise<void>[] = [];
+
+    // Close worker first if it exists
+    if (this.worker) {
+      this.logger.debug('Closing task worker...');
+      closePromises.push(this.worker.close());
+    }
+
+    // Close queue events and queue
+    this.logger.debug('Closing task queue events...');
+    closePromises.push(this.queueEvents.close());
+    this.logger.debug('Closing task queue...');
+    closePromises.push(this.queue.close());
+
     try {
-      await this.queueEvents.close();
-      await this.queue.close();
-      this.logger.info('Task queue and events closed successfully');
+      await Promise.all(closePromises);
+      this.logger.info('Task resources closed successfully');
     } catch (error) {
       this.logger.error(
         { err: error instanceof Error ? error : new Error(String(error)) },
-        'Error closing task queue or events'
+        'Error closing task resources'
       );
+      // Optionally rethrow or handle
     }
   }
 }
