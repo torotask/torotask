@@ -1,4 +1,4 @@
-import { Queue, QueueOptions, WorkerOptions } from 'bullmq';
+import { Queue, QueueOptions, QueueEvents, WorkerOptions } from 'bullmq';
 import type { ToroTaskClient } from './index';
 import { ManagedWorker } from './managed-worker';
 import { ManagedFunction, ManagedFunctionOptions, FunctionHandler } from './managed-function';
@@ -10,6 +10,7 @@ import { ManagedFunction, ManagedFunctionOptions, FunctionHandler } from './mana
  */
 export class ManagedQueue {
   public readonly queue: Queue;
+  public readonly queueEvents: QueueEvents;
   public readonly name: string;
   public readonly client: ToroTaskClient;
   public worker?: ManagedWorker;
@@ -25,6 +26,9 @@ export class ManagedQueue {
     };
 
     this.queue = new Queue(this.name, queueOptions);
+    this.queueEvents = new QueueEvents(this.name, {
+      connection: this.client.connectionOptions,
+    });
   }
 
   /**
