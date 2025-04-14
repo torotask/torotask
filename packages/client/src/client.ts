@@ -1,4 +1,5 @@
-import { ConnectionOptions, WorkerOptions } from 'bullmq';
+import { ConnectionOptions, WorkerOptions, Queue } from 'bullmq';
+import { Redis, RedisOptions } from 'ioredis';
 import { getConfigFromEnv } from './utils/get-config-from-env.js';
 import { TaskGroup } from './task-group.js';
 import { pino, type Logger } from 'pino';
@@ -78,6 +79,73 @@ export class ToroTaskClient {
    */
   public getTaskGroup(name: string): TaskGroup | undefined {
     return this.taskGroups[name];
+  }
+
+  /**
+   * Fetches all BullMQ queue names from the Redis instance.
+   * This method creates a temporary connection to scan for queue keys.
+   *
+   * @returns A promise that resolves with an array of unique queue names.
+   */
+  async getAllQueueNames(): Promise<string[]> {
+    this.logger.debug('Attempting to fetch all queue names from Redis...');
+    const redis = new Redis(this.connectionOptions as RedisOptions);
+    const queueNames = new Set<string>();
+    const stream = redis.scanStream({
+      match: 'bull:*:meta', // BullMQ uses this pattern for queue metadata
+      count: 100, // Adjust count for performance if needed
+    });
+
+    return new Promise((resolve, reject) => {
+      stream.on('data', (keys: string[]) => {
+        keys.forEach((key) => {
+          const match = key.match(/^bull:(.+):meta$/);
+          if (match && match[1]) {
+            queueNames.add(match[1]);
+          }
+        });
+      });
+
+      stream.on('end', async () => {
+        this.logger.debug({ count: queueNames.size }, 'Finished scanning Redis for queue names.');
+        try {
+          await redis.quit(); // Ensure the temporary connection is closed
+          // Sort the names alphabetically before resolving
+          resolve(Array.from(queueNames).sort());
+        } catch (quitError) {
+          this.logger.error({ err: quitError }, 'Error closing temporary Redis connection');
+          reject(quitError); // Reject if closing fails
+        }
+      });
+
+      stream.on('error', (err: Error) => {
+        this.logger.error({ err }, 'Error scanning Redis for queue names');
+        redis
+          .quit()
+          .catch((quitErr: Error) => this.logger.error({ err: quitErr }, 'Error quitting Redis after scan error'));
+        reject(err);
+      });
+    });
+  }
+
+  /**
+   * Fetches all BullMQ queue names and returns a map of queue names to Queue instances.
+   *
+   * @returns A promise that resolves with a Record mapping queue names to Queue instances.
+   */
+  async getAllQueueInstances(): Promise<Record<string, Queue>> {
+    this.logger.info('Fetching all queue names and creating Queue instances...');
+    const queueNames = await this.getAllQueueNames();
+    const queueInstances: Record<string, Queue> = {};
+
+    for (const queueName of queueNames) {
+      this.logger.debug({ queueName }, 'Creating Queue instance');
+      // Use the client's connection options to instantiate each queue
+      queueInstances[queueName] = new Queue(queueName, { connection: this.connectionOptions });
+    }
+
+    this.logger.info({ count: queueNames.length }, 'Finished creating Queue instances for all found queues.');
+    return queueInstances;
   }
 
   /**
@@ -182,4 +250,4 @@ export { BaseQueue } from './base-queue.js';
 export { SubTask, SubTaskHandler, SubTaskHandlerContext, SubTaskHandlerOptions } from './sub-task.js';
 
 // Re-export core BullMQ types users might need
-export { ConnectionOptions, JobsOptions, Job } from 'bullmq';
+export { ConnectionOptions, JobsOptions, Job, Queue } from 'bullmq';
