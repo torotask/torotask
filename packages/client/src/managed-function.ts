@@ -23,6 +23,7 @@ export interface HandlerContext {
   logger: Logger;
   client: ToroTaskClient;
   queue: ManagedQueue;
+  job: Job;
 }
 
 /** Function handler type */

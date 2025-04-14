@@ -41,6 +41,7 @@ export class ManagedWorker {
         logger: jobLogger,
         client: this.managedQueue.client,
         queue: this.managedQueue,
+        job,
       };
 
       try {
