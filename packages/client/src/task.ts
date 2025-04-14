@@ -1,5 +1,6 @@
 import { JobsOptions, Job, Queue, QueueEvents, Worker, WorkerOptions } from 'bullmq';
 import { BaseQueue } from './base-queue';
+import { SubTask, SubTaskHandler, SubTaskHandlerContext, SubTaskHandlerOptions } from './sub-task'; // Import SubTask related types
 import type { TaskGroup } from './task-group';
 import type { ToroTaskClient } from './index';
 import { Logger } from 'pino';
@@ -38,16 +39,18 @@ export type TaskHandler<T = unknown, R = unknown> = (
 /**
  * Represents a defined task associated with a TaskGroup.
  * Extends BaseQueue to manage its own underlying BullMQ queue and worker.
- * Implements the `process` method by calling the specific task `handler`.
+ * Implements the `process` method by calling the specific task `handler` or a registered subtask handler.
+ * Can define and manage SubTasks.
  *
- * @template T The expected type of the data payload for this task.
- * @template R The expected return type of the job associated with this task.
+ * @template T The expected type of the data payload for this task's main handler.
+ * @template R The expected return type of the job associated with this task's main handler.
  */
 export class Task<T = unknown, R = unknown> extends BaseQueue {
   public readonly name: string;
   public readonly group: TaskGroup;
   public readonly defaultJobOptions: TaskOptions;
   public readonly handler: TaskHandler<T, R>;
+  private readonly subTasks: Map<string, SubTask<any, any>>;
 
   constructor(
     taskGroup: TaskGroup,
@@ -76,114 +79,101 @@ export class Task<T = unknown, R = unknown> extends BaseQueue {
     this.name = name;
     this.handler = handler;
     this.defaultJobOptions = options ?? {};
+    this.subTasks = new Map();
 
     this.logger.info('Task initialized (extending BaseQueue)');
   }
 
-  /**
-   * Adds a job for this task to its dedicated queue.
-   * Note: This method might be simplified or removed if job adding is handled differently.
-   *
-   * @param data The data payload for the job.
-   * @param overrideOptions Optional JobOptions to override the task's defaults.
-   * @returns A promise resolving to the enqueued BullMQ Job object.
-   */
+  defineSubTask<ST = T, SR = R>(subTaskName: string, subTaskHandler: SubTaskHandler<ST, SR>): SubTask<ST, SR> {
+    if (this.subTasks.has(subTaskName)) {
+      this.logger.warn({ subTaskName }, 'SubTask already defined. Overwriting.');
+    }
+    if (subTaskName === this.name) {
+      this.logger.error({ subTaskName }, 'SubTask name cannot be the same as the parent Task name.');
+      throw new Error(`SubTask name "${subTaskName}" cannot be the same as the parent Task name "${this.name}".`);
+    }
+
+    const newSubTask = new SubTask<ST, SR>(this, subTaskName, subTaskHandler);
+    this.subTasks.set(subTaskName, newSubTask);
+    this.logger.info({ subTaskName }, 'SubTask defined');
+    return newSubTask;
+  }
+
+  getSubTask(subTaskName: string): SubTask<any, any> | undefined {
+    return this.subTasks.get(subTaskName);
+  }
+
   async run(data: T, overrideOptions?: JobsOptions): Promise<Job<T, R>> {
     const finalOptions: JobsOptions = {
       ...this.defaultJobOptions,
       ...overrideOptions,
     };
-    const jobName = this.name;
-    this.logger.info({ data, options: finalOptions, jobName }, `Adding job to queue [${this.queueName}]`);
-
-    const job = await this.queue.add(jobName, data, finalOptions);
-    this.logger.info({ jobId: job.id, jobName }, `Job added to queue [${this.queueName}]`);
-    return job as Job<T, R>;
+    return this._runJob<T, R>(this.name, data, finalOptions);
   }
 
-  /**
-   * Adds a job for this task to its dedicated queue and waits for it to complete.
-   *
-   * @param data The data payload for the job.
-   * @param overrideOptions Optional JobOptions to override the task's defaults.
-   * @returns A promise resolving to the return value of the completed job.
-   * @throws Throws an error if the job fails or cannot be awaited.
-   */
   async runAndWait(data: T, overrideOptions?: JobsOptions): Promise<R> {
     const finalOptions: JobsOptions = {
       ...this.defaultJobOptions,
       ...overrideOptions,
     };
-    const jobName = this.name;
-    this.logger.info({ data, options: finalOptions, jobName }, `Adding job to queue [${this.queueName}] and waiting`);
-
-    const job = await this.queue.add(jobName, data, finalOptions);
-    const jobLogger = this.logger.child({ jobId: job.id, jobName });
-
-    try {
-      jobLogger.info('Waiting for job completion...');
-      await job.waitUntilFinished(this.queueEvents);
-
-      if (!job.id) {
-        jobLogger.error('Job ID is missing after adding to the queue. Cannot wait for result.');
-        throw new Error('Job ID is missing after adding to the queue. Cannot wait for result.');
-      }
-
-      jobLogger.debug('Refetching job after completion');
-      const finishedJob = await Job.fromId(this.queue, job.id);
-
-      if (!finishedJob) {
-        jobLogger.error(`Failed to refetch job after completion.`);
-        throw new Error(`Failed to refetch job ${job.id} after completion.`);
-      }
-
-      jobLogger.info({ returnValue: finishedJob.returnvalue }, 'Job completed successfully');
-      return finishedJob.returnvalue as R;
-    } catch (error) {
-      jobLogger.error(
-        { err: error instanceof Error ? error : new Error(String(error)) },
-        `Job failed or could not be waited for`
-      );
-      throw error;
-    }
+    return this._runJobAndWait<T, R>(this.name, data, finalOptions);
   }
 
   /**
-   * Implements the abstract process method from BaseQueue.
-   * Calls the registered task handler with the appropriate context.
-   *
-   * @param job The BullMQ job object.
-   * @returns A promise that resolves with the result of the task handler.
+   * Routes the job to the appropriate handler (main task or subtask) based on job name.
    */
   async process(job: Job): Promise<any> {
-    const typedJob = job as Job<T, R>;
-    const { id, name: jobNameReceived, data } = typedJob;
-    const jobLogger = this.logger.child({ jobId: id, jobName: jobNameReceived });
+    const { id, name: jobName } = job;
+    const jobLogger = this.logger.child({ jobId: id, jobName });
 
-    if (jobNameReceived !== this.name) {
-      jobLogger.warn(
-        { expectedJobName: this.name },
-        'Worker received job with unexpected name for this task processor. Processing anyway.'
-      );
-    }
+    const subTask = this.subTasks.get(jobName);
 
-    const handlerOptions: TaskHandlerOptions<T> = { id, name: this.name, data };
-    const handlerContext: TaskHandlerContext = {
-      logger: jobLogger,
-      client: this.client,
-      group: this.group,
-      task: this,
-      job: typedJob,
-      queue: this.queue,
-    };
-
-    jobLogger.info(`Processing job`);
     try {
-      const result: R = await this.handler(handlerOptions, handlerContext);
-      jobLogger.info(`Job completed successfully`);
-      return result;
+      // --- Route to SubTask Handler ---
+      if (subTask) {
+        jobLogger.info(`Routing job to SubTask handler: ${jobName}`);
+        const typedJob = job as Job<unknown, unknown>;
+        const handlerOptions: SubTaskHandlerOptions<unknown> = { id, name: jobName, data: typedJob.data };
+        const handlerContext: SubTaskHandlerContext = {
+          logger: jobLogger,
+          client: this.client,
+          group: this.group,
+          parentTask: this,
+          subTaskName: subTask.name,
+          job: typedJob,
+          queue: this.queue,
+        };
+        const result = await subTask.handler(handlerOptions, handlerContext);
+        jobLogger.info(`SubTask job completed successfully`);
+        return result;
+      }
+      // --- Route to Main Task Handler ---
+      else if (jobName === this.name) {
+        jobLogger.info(`Routing job to main Task handler: ${jobName}`);
+        const typedJob = job as Job<T, R>;
+        const handlerOptions: TaskHandlerOptions<T> = { id, name: this.name, data: typedJob.data };
+        const handlerContext: TaskHandlerContext = {
+          logger: jobLogger,
+          client: this.client,
+          group: this.group,
+          task: this,
+          job: typedJob,
+          queue: this.queue,
+        };
+        const result = await this.handler(handlerOptions, handlerContext);
+        jobLogger.info(`Main task job completed successfully`);
+        return result;
+      }
+      // --- Job Name Not Recognized ---
+      else {
+        jobLogger.error(`Job name "${jobName}" does not match the main task or any defined subtasks.`);
+        throw new Error(`Job name "${jobName}" on queue "${this.queueName}" not recognized by task "${this.name}".`);
+      }
     } catch (error) {
-      jobLogger.error({ err: error instanceof Error ? error : new Error(String(error)) }, `Job processing failed`);
+      jobLogger.error(
+        { err: error instanceof Error ? error : new Error(String(error)) },
+        `Job processing failed for job name "${jobName}"`
+      );
       throw error;
     }
   }

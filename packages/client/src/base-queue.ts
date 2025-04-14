@@ -1,4 +1,4 @@
-import { Queue, QueueEvents, Worker, WorkerOptions, Job, ConnectionOptions } from 'bullmq';
+import { Queue, QueueEvents, Worker, WorkerOptions, Job, ConnectionOptions, JobsOptions } from 'bullmq';
 import type { ToroTaskClient } from './index';
 import { Logger } from 'pino';
 
@@ -113,6 +113,66 @@ export abstract class BaseQueue {
         { err: error instanceof Error ? error : new Error(String(error)) },
         'Error closing BaseQueue resources'
       );
+    }
+  }
+
+  // --- Public Job Execution Helper Methods ---
+
+  /**
+   * Core logic to add a job to the queue.
+   * Public method intended for use by subclasses or related classes (e.g., SubTask).
+   */
+  public async _runJob<JobData, JobReturn>(
+    jobName: string,
+    data: JobData,
+    options: JobsOptions
+  ): Promise<Job<JobData, JobReturn>> {
+    this.logger.info({ data, options, jobName }, `Adding job "${jobName}" to queue [${this.queueName}]`);
+    const job = await this.queue.add(jobName, data, options);
+    this.logger.info({ jobId: job.id, jobName }, `Job "${jobName}" added to queue [${this.queueName}]`);
+    return job as Job<JobData, JobReturn>;
+  }
+
+  /**
+   * Core logic to add a job and wait for its completion.
+   * Public method intended for use by subclasses or related classes.
+   */
+  public async _runJobAndWait<JobData, JobReturn>(
+    jobName: string,
+    data: JobData,
+    options: JobsOptions
+  ): Promise<JobReturn> {
+    const waitLogger = this.logger.child({ jobName, action: 'runAndWait' });
+    waitLogger.info({ data, options }, `Adding job and waiting for completion`);
+
+    const job = await this._runJob<JobData, JobReturn>(jobName, data, options);
+    const jobLogger = this.logger.child({ jobId: job.id, jobName });
+
+    try {
+      jobLogger.info('Waiting for job completion...');
+      await job.waitUntilFinished(this.queueEvents);
+
+      if (!job.id) {
+        jobLogger.error('Job ID is missing after waiting. Cannot get result.');
+        throw new Error('Job ID is missing after waiting. Cannot get result.');
+      }
+
+      jobLogger.debug('Refetching job after completion');
+      const finishedJob = await Job.fromId<JobData, JobReturn>(this.queue, job.id);
+
+      if (!finishedJob) {
+        jobLogger.error(`Failed to refetch job after completion.`);
+        throw new Error(`Failed to refetch job ${job.id} after completion.`);
+      }
+
+      jobLogger.info({ returnValue: finishedJob.returnvalue }, 'Job completed successfully');
+      return finishedJob.returnvalue;
+    } catch (error) {
+      jobLogger.error(
+        { err: error instanceof Error ? error : new Error(String(error)) },
+        `Job failed or could not be waited for`
+      );
+      throw error;
     }
   }
 }

@@ -77,18 +77,8 @@ export class SubTask<ST = unknown, SR = unknown> {
       ...this.parentTask.defaultJobOptions,
       ...overrideOptions,
     };
-    // Use the subtask name as the BullMQ job name
-    const jobName = this.name;
-    this.logger.info(
-      { data, options: finalOptions, jobName },
-      `Adding job for subtask to queue [${this.parentTask.queueName}]`
-    );
-
-    // Use the parent task's queue instance
-    const job = await this.parentTask.queue.add(jobName, data, finalOptions);
-    this.logger.info({ jobId: job.id, jobName }, `Subtask job added to queue [${this.parentTask.queueName}]`);
-    // Assert the type of the returned job based on ST, SR
-    return job as Job<ST, SR>;
+    // Call parent task's public helper method directly
+    return this.parentTask._runJob<ST, SR>(this.name, data, finalOptions);
   }
 
   /**
@@ -104,42 +94,7 @@ export class SubTask<ST = unknown, SR = unknown> {
       ...this.parentTask.defaultJobOptions,
       ...overrideOptions,
     };
-    const jobName = this.name;
-    this.logger.info(
-      { data, options: finalOptions, jobName },
-      `Adding job for subtask to queue [${this.parentTask.queueName}] and waiting`
-    );
-
-    const job = await this.parentTask.queue.add(jobName, data, finalOptions);
-    const jobLogger = this.logger.child({ jobId: job.id, jobName }); // SubTask logger is base
-
-    try {
-      jobLogger.info('Waiting for subtask job completion...');
-      // Use parent task's queueEvents
-      await job.waitUntilFinished(this.parentTask.queueEvents);
-
-      if (!job.id) {
-        jobLogger.error('Job ID is missing after adding to the queue. Cannot wait for result.');
-        throw new Error('Job ID is missing after adding to the queue. Cannot wait for result.');
-      }
-
-      jobLogger.debug('Refetching job after completion');
-      const finishedJob = await Job.fromId(this.parentTask.queue, job.id);
-
-      if (!finishedJob) {
-        jobLogger.error(`Failed to refetch job after completion.`);
-        throw new Error(`Failed to refetch job ${job.id} after completion.`);
-      }
-
-      jobLogger.info({ returnValue: finishedJob.returnvalue }, 'Subtask job completed successfully');
-      // Assert the return type based on SR
-      return finishedJob.returnvalue as SR;
-    } catch (error) {
-      jobLogger.error(
-        { err: error instanceof Error ? error : new Error(String(error)) },
-        `Subtask job failed or could not be waited for`
-      );
-      throw error;
-    }
+    // Call parent task's public helper method directly
+    return this.parentTask._runJobAndWait<ST, SR>(this.name, data, finalOptions);
   }
 }
