@@ -1,0 +1,232 @@
+import { ToroTaskClient, TaskGroup, WorkerFilter } from '@torotask/client';
+import pino, { Logger, DestinationStream, LoggerOptions } from 'pino';
+import { WorkerOptions } from 'bullmq';
+
+const LOGGER_NAME = 'TaskServer';
+
+/** Options for configuring the TaskServer */
+export interface TaskServerOptions {
+  /**
+   * ToroTaskClient instance to use.
+   * If not provided, connection options must be supplied to create one.
+   */
+  client?: ToroTaskClient;
+  /**
+   * Options to create a ToroTaskClient if an instance is not provided.
+   * Ignored if `client` is provided.
+   */
+  clientOptions?: ConstructorParameters<typeof ToroTaskClient>[0];
+  /**
+   * Pino logger instance or options.
+   * If neither is provided, a default logger will be created.
+   */
+  logger?: Logger | DestinationStream | pino.LoggerOptions;
+  /** Logger name to use if creating a logger */
+  loggerName?: string;
+  /**
+   * Whether the server should attach listeners to
+   * process.on('unhandledRejection') and process.on('uncaughtException').
+   * Defaults to true.
+   */
+  handleGlobalErrors?: boolean;
+}
+
+/**
+ * A server class responsible for managing the lifecycle of BullMQ workers
+ * based on TaskGroup definitions from the client package.
+ * Provides features like centralized worker start/stop and optional global error handling.
+ */
+export class TaskServer {
+  public readonly client: ToroTaskClient;
+  public readonly logger: Logger;
+  private readonly options: Required<Pick<TaskServerOptions, 'handleGlobalErrors'>>;
+  private readonly managedGroups: Set<TaskGroup> = new Set();
+  private readonly ownClient: boolean = false; // Did we create the client?
+
+  // Store bound handlers to remove them later
+  private unhandledRejectionListener?: (...args: any[]) => void;
+  private uncaughtExceptionListener?: (...args: any[]) => void;
+
+  constructor(options: TaskServerOptions) {
+    // Refined Logger Initialization
+    const loggerOptions = options.logger;
+    const loggerName = options.loggerName ?? LOGGER_NAME;
+
+    if (
+      typeof loggerOptions === 'object' &&
+      loggerOptions !== null &&
+      typeof (loggerOptions as Logger).info === 'function'
+    ) {
+      // It looks like a Logger instance
+      this.logger = (loggerOptions as Logger).child({ name: loggerName });
+    } else if (
+      typeof loggerOptions === 'object' &&
+      loggerOptions !== null &&
+      typeof (loggerOptions as DestinationStream).write === 'function'
+    ) {
+      // It looks like a DestinationStream
+      this.logger = pino(loggerOptions as DestinationStream).child({ name: loggerName });
+    } else {
+      // Assume it's LoggerOptions or undefined
+      this.logger = pino(loggerOptions as LoggerOptions | undefined).child({ name: loggerName });
+    }
+
+    // Initialize Client
+    if (options.client) {
+      this.client = options.client;
+      this.ownClient = false;
+      this.logger.info('Using provided ToroTaskClient instance.');
+    } else if (options.clientOptions) {
+      this.client = new ToroTaskClient({
+        ...options.clientOptions,
+        logger: options.clientOptions.logger ?? this.logger.child({ component: 'ToroTaskClient' }),
+      });
+      this.ownClient = true;
+      this.logger.info('Created new ToroTaskClient instance.');
+    } else {
+      throw new Error('TaskServer requires either a `client` instance or `clientOptions`.');
+    }
+
+    // Store other options with defaults
+    this.options = {
+      handleGlobalErrors: options.handleGlobalErrors ?? true,
+    };
+
+    this.logger.info('TaskServer initialized');
+  }
+
+  /**
+   * Adds TaskGroups to be managed by this server.
+   */
+  addGroups(...groups: TaskGroup[]): this {
+    groups.forEach((group) => {
+      if (!group || !(group instanceof TaskGroup)) {
+        this.logger.warn({ group }, 'Skipping invalid item passed to addGroups');
+        return;
+      }
+      if (group.client !== this.client) {
+        this.logger.warn(
+          { groupName: group.name },
+          'TaskGroup added was created with a different ToroTaskClient instance. This may cause issues.'
+        );
+      }
+      this.logger.debug({ groupName: group.name }, 'Adding TaskGroup');
+      this.managedGroups.add(group);
+    });
+    return this;
+  }
+
+  /**
+   * Starts the workers for all managed TaskGroups (or filtered ones) and
+   * attaches global error handlers if configured.
+   *
+   * @param filter Optional filter to target specific groups or tasks.
+   * @param workerOptions Optional default BullMQ WorkerOptions to pass down.
+   */
+  start(filter?: WorkerFilter, workerOptions?: WorkerOptions): void {
+    this.logger.info('Starting TaskServer...');
+
+    // Attach global handlers if configured
+    if (this.options.handleGlobalErrors) {
+      this.attachGlobalErrorHandlers();
+    }
+
+    // Start workers using the client's method, targeting managed groups
+    const groupNames = Array.from(this.managedGroups).map((g) => g.name);
+    const effectiveFilter: WorkerFilter = {
+      ...(filter ?? {}),
+      groups: filter?.groups ? filter.groups.filter((g) => groupNames.includes(g)) : groupNames,
+    };
+
+    if (effectiveFilter.groups?.length === 0 && filter?.groups) {
+      this.logger.warn('No managed groups matched the provided group filter for starting workers.');
+      return;
+    }
+    if (effectiveFilter.groups?.length === 0 && this.managedGroups.size > 0) {
+      this.logger.warn('No groups are currently managed by the server to start workers for.');
+      return;
+    }
+
+    this.client.startWorkers(effectiveFilter, workerOptions);
+    this.logger.info('TaskServer started, workers initialized.');
+  }
+
+  /**
+   * Stops the workers for all managed TaskGroups (or filtered ones) and
+   * removes global error handlers if they were attached by this server.
+   *
+   * @param filter Optional filter to target specific groups or tasks.
+   * @returns A promise that resolves when workers have been requested to stop.
+   */
+  async stop(filter?: WorkerFilter): Promise<void> {
+    this.logger.info('Stopping TaskServer...');
+
+    // Stop workers using the client's method, targeting managed groups
+    const groupNames = Array.from(this.managedGroups).map((g) => g.name);
+    const effectiveFilter: WorkerFilter = {
+      ...(filter ?? {}),
+      groups: filter?.groups ? filter.groups.filter((g) => groupNames.includes(g)) : groupNames,
+    };
+
+    if (effectiveFilter.groups?.length === 0 && filter?.groups) {
+      this.logger.warn('No managed groups matched the provided group filter for stopping workers.');
+      // Proceed to detach handlers and potentially close client
+    } else if (effectiveFilter.groups?.length === 0 && this.managedGroups.size > 0) {
+      this.logger.warn('No groups are currently managed by the server to stop workers for.');
+      // Proceed to detach handlers and potentially close client
+    } else {
+      await this.client.stopWorkers(effectiveFilter);
+      this.logger.info('Request to stop workers completed.');
+    }
+
+    // Detach global handlers if we attached them
+    this.detachGlobalErrorHandlers();
+
+    // Optionally close the client if we created it
+    if (this.ownClient) {
+      this.logger.info('Closing internally created ToroTaskClient.');
+      await this.client.close();
+    }
+    this.logger.info('TaskServer stopped.');
+  }
+
+  private attachGlobalErrorHandlers(): void {
+    if (this.unhandledRejectionListener || this.uncaughtExceptionListener) {
+      this.logger.warn('Global error handlers already attached, detaching first.');
+      this.detachGlobalErrorHandlers();
+    }
+    this.logger.info('Attaching global error handlers (unhandledRejection, uncaughtException)');
+
+    // Bind `this` to ensure logger is accessible
+    this.unhandledRejectionListener = this.handleUnhandledRejection.bind(this);
+    this.uncaughtExceptionListener = this.handleUncaughtException.bind(this);
+
+    process.on('unhandledRejection', this.unhandledRejectionListener);
+    process.on('uncaughtException', this.uncaughtExceptionListener);
+  }
+
+  private detachGlobalErrorHandlers(): void {
+    if (this.unhandledRejectionListener) {
+      process.off('unhandledRejection', this.unhandledRejectionListener);
+      this.unhandledRejectionListener = undefined;
+      this.logger.info('Detached unhandledRejection listener.');
+    }
+    if (this.uncaughtExceptionListener) {
+      process.off('uncaughtException', this.uncaughtExceptionListener);
+      this.uncaughtExceptionListener = undefined;
+      this.logger.info('Detached uncaughtException listener.');
+    }
+  }
+
+  private handleUnhandledRejection(reason: unknown, promise: Promise<unknown>): void {
+    this.logger.fatal({ reason, promise }, 'Unhandled Promise Rejection detected by TaskServer');
+    // Optional: Exit strategy or further action
+    // process.exit(1);
+  }
+
+  private handleUncaughtException(error: Error, origin: NodeJS.UncaughtExceptionOrigin): void {
+    this.logger.fatal({ err: error, origin }, 'Uncaught Exception detected by TaskServer');
+    // Optional: Exit strategy (often recommended for uncaught exceptions)
+    // process.exit(1);
+  }
+}

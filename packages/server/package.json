@@ -1,0 +1,26 @@
+{
+  "name": "@torotask/server",
+  "version": "0.1.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "build": "tsc",
+    "build:dev": "tsup src/ --sourcemap inline",
+    "lint": "eslint src/**/*.ts",
+    "dev": "pnpm run build:dev --watch"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "@torotask/client": "workspace:^",
+    "bullmq": "^5.11.0",
+    "glob": "^11.0.1",
+    "pino": "^9.6.0"
+  },
+  "devDependencies": {
+    "@types/glob": "^8.1.0",
+    "@types/node": "^22.14.0",
+    "@types/pino": "^7.0.5"
+  }
+}
