@@ -2,6 +2,7 @@ import { ConnectionOptions, QueueOptions, WorkerOptions } from 'bullmq';
 import { getConfigFromEnv } from './utils/get-config-from-env';
 import { ManagedQueue } from './managed-queue';
 import { ManagedWorker } from './managed-worker';
+import { TaskGroup } from './task-group';
 import pino, { Logger } from 'pino';
 
 const LOGGER_NAME = 'BullMQ';
@@ -32,6 +33,7 @@ export class ToroTaskClient {
   // Adjust record type to remove T, R generics
   private readonly queues: Record<string, ManagedQueue> = {};
   private readonly workers: Record<string, ManagedWorker> = {};
+  private readonly taskGroups: Record<string, TaskGroup> = {};
 
   constructor(options?: ToroTaskClientOptions) {
     const toroTaskEnvConfig = getConfigFromEnv('TOROTASK_REDIS_');
@@ -98,6 +100,35 @@ export class ToroTaskClient {
   }
 
   /**
+   * Creates or retrieves a TaskGroup instance.
+   * If a group with the same name already exists, the existing instance is returned.
+   *
+   * @param name The name of the task group.
+   * @returns The created or retrieved TaskGroup instance.
+   */
+  public createTaskGroup(name: string): TaskGroup {
+    if (this.taskGroups[name]) {
+      return this.taskGroups[name];
+    }
+
+    this.logger.info({ taskGroupName: name }, 'Creating new TaskGroup');
+    // Pass client, name, and client's logger to TaskGroup constructor
+    const newTaskGroup = new TaskGroup(this, name, this.logger);
+    this.taskGroups[name] = newTaskGroup;
+    return newTaskGroup;
+  }
+
+  /**
+   * Retrieves an existing TaskGroup instance by name.
+   *
+   * @param name The name of the task group to retrieve.
+   * @returns The TaskGroup instance if found, otherwise undefined.
+   */
+  public getTaskGroup(name: string): TaskGroup | undefined {
+    return this.taskGroups[name];
+  }
+
+  /**
    * Cpwreates or retrieves a ManagedWorker instance for a specific queue.
    * The ManagedWorker uses an internal processor based on functions defined
    * on the associated ManagedQueue.
@@ -136,4 +167,49 @@ export class ToroTaskClient {
     // Cast to unknown first for safer type assertion
     return worker as unknown as ManagedWorker | undefined;
   }
+
+  /**
+   * Closes all managed queues, workers, and tasks gracefully.
+   * Should be called on application shutdown.
+   */
+  async close(): Promise<void> {
+    this.logger.info('Closing ToroTaskClient resources...');
+
+    // Close all task queues first (they manage their own BullMQ instances)
+    const taskClosePromises = Object.values(this.taskGroups).flatMap((group) =>
+      Array.from(group.getTasks().values()).map((task) => task.close())
+    );
+    await Promise.all(taskClosePromises);
+    this.logger.info('All task queues closed.');
+
+    // Close workers
+    const workerClosePromises = Object.values(this.workers).map((worker) => worker.close());
+    await Promise.all(workerClosePromises);
+    this.logger.info('All managed workers closed.');
+
+    // Close managed queues (and their queueEvents)
+    const queueClosePromises = Object.values(this.queues).map(async (managedQueue) => {
+      await managedQueue.queueEvents.close();
+      await managedQueue.queue.close();
+    });
+    await Promise.all(queueClosePromises);
+    this.logger.info('All managed queues closed.');
+
+    this.logger.info('ToroTaskClient resources closed successfully.');
+  }
 }
+
+export { ManagedQueue };
+export { ManagedWorker };
+export {
+  ManagedFunction,
+  ManagedFunctionOptions,
+  FunctionHandler,
+  HandlerContext,
+  HandlerOptions,
+} from './managed-function';
+export { Task, TaskOptions, TaskHandler, TaskHandlerContext, TaskHandlerOptions } from './task';
+export { TaskGroup } from './task-group';
+
+// Re-export core BullMQ types users might need
+export { ConnectionOptions, QueueOptions, WorkerOptions, JobsOptions, Job } from 'bullmq';
