@@ -2,7 +2,6 @@ import { ConnectionOptions } from 'bullmq';
 import { getConfigFromEnv } from './utils/get-config-from-env';
 import { TaskGroup } from './task-group';
 import pino, { Logger } from 'pino';
-import { BaseQueue } from './base-queue';
 
 const LOGGER_NAME = 'BullMQ';
 

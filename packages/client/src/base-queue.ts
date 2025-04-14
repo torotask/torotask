@@ -6,8 +6,12 @@ import { Logger } from 'pino';
  * Base class for managing a dedicated BullMQ Queue, its events, and an optional Worker.
  * Handles resource creation, lifecycle (startWorker, close), and provides an abstract
  * method for job processing logic.
+ * Also provides a static registry (`instances`) of all created queues.
  */
 export abstract class BaseQueue {
+  // Static registry of all BaseQueue instances, keyed by queueName
+  public static readonly instances: Map<string, BaseQueue> = new Map();
+
   public readonly client: ToroTaskClient;
   public readonly queueName: string;
   public readonly queue: Queue;
@@ -17,25 +21,41 @@ export abstract class BaseQueue {
 
   constructor(client: ToroTaskClient, queueName: string, parentLogger: Logger) {
     if (!client) {
-      throw new Error('ToroTaskClient instance is required.');
+      throw new Error('ToroTask instance is required.');
     }
     if (!queueName) {
       throw new Error('Queue name is required.');
     }
+    if (BaseQueue.instances.has(queueName)) {
+      throw new Error(`A queue with the name "${queueName}" already exists or is being managed.`);
+    }
+
     this.client = client;
     this.queueName = queueName;
 
-    // Create a logger specific to this queue instance
+    // Assign logger first
     this.logger = parentLogger.child({ queueName: this.queueName });
 
-    this.logger.info('Initializing BaseQueue resources (queue, events)');
+    // Register the instance in the static map
+    BaseQueue.instances.set(this.queueName, this);
 
-    const connection: ConnectionOptions = this.client.connectionOptions;
+    try {
+      // Initialize queue and events within try block
+      this.logger.info('Initializing BaseQueue resources (queue, events)');
 
-    this.queue = new Queue(this.queueName, { connection });
-    this.queueEvents = new QueueEvents(this.queueName, { connection });
+      const connection: ConnectionOptions = this.client.connectionOptions;
 
-    this.logger.info('BaseQueue resources initialized');
+      this.queue = new Queue(this.queueName, { connection });
+      this.queueEvents = new QueueEvents(this.queueName, { connection });
+
+      this.logger.info('BaseQueue resources initialized');
+    } catch (error) {
+      // If initialization fails, remove from registry before throwing
+      BaseQueue.instances.delete(this.queueName);
+      // Logger is guaranteed to be assigned now
+      this.logger.error({ err: error }, 'Failed to initialize BaseQueue resources after registration');
+      throw error;
+    }
   }
 
   /**
@@ -88,10 +108,15 @@ export abstract class BaseQueue {
   }
 
   /**
-   * Closes the underlying BullMQ Worker (if started), Queue, and QueueEvents instances.
+   * Closes the underlying BullMQ Worker (if started), Queue, and QueueEvents instances,
+   * and removes the instance from the static registry.
    * Should be called during application shutdown.
    */
   async close(): Promise<void> {
+    // Remove from static registry first
+    BaseQueue.instances.delete(this.queueName);
+    this.logger.info('Removed queue from static registry.');
+
     this.logger.info('Closing BaseQueue resources (worker, queue, events)');
     const closePromises: Promise<void>[] = [];
 
@@ -113,6 +138,7 @@ export abstract class BaseQueue {
         { err: error instanceof Error ? error : new Error(String(error)) },
         'Error closing BaseQueue resources'
       );
+      // Note: Instance was already removed from registry
     }
   }
 
