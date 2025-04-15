@@ -16,6 +16,7 @@ export abstract class BaseQueue extends EventEmitter {
 
   public readonly client: ToroTaskClient;
   public readonly queueName: string;
+  public readonly prefix: string;
   public readonly queue: Queue;
   public readonly queueEvents: QueueEvents;
   public readonly logger: Logger;
@@ -23,7 +24,7 @@ export abstract class BaseQueue extends EventEmitter {
   // Store listeners to remove them later
   private workerEventHandlers: Record<string, (...args: any[]) => void> = {};
 
-  constructor(client: ToroTaskClient, queueName: string, parentLogger: Logger) {
+  constructor(client: ToroTaskClient, queueName: string, parentLogger: Logger, prefix?: string) {
     super();
     if (!client) {
       throw new Error('ToroTask instance is required.');
@@ -37,6 +38,7 @@ export abstract class BaseQueue extends EventEmitter {
 
     this.client = client;
     this.queueName = queueName;
+    this.prefix = prefix || client.queuePrefix;
 
     // Assign logger first
     this.logger = parentLogger.child({ queueName: this.queueName });
@@ -50,8 +52,8 @@ export abstract class BaseQueue extends EventEmitter {
 
       const connection: ConnectionOptions = this.client.connectionOptions;
 
-      this.queue = new Queue(this.queueName, { connection });
-      this.queueEvents = new QueueEvents(this.queueName, { connection });
+      this.queue = new Queue(this.queueName, { prefix: this.prefix, connection });
+      this.queueEvents = new QueueEvents(this.queueName, { prefix: this.prefix, connection });
 
       this.logger.info('BaseQueue resources initialized');
     } catch (error) {
@@ -97,19 +99,15 @@ export abstract class BaseQueue extends EventEmitter {
     this.removeAllWorkerListeners();
 
     const mergedOptions = {
+      connection: this.client.connectionOptions,
+      prefix: this.client.queuePrefix,
       ...this.getDefaultOptions(),
-      options,
+      ...(options ?? {}),
     };
 
     this.logger.info({ workerOptions: mergedOptions }, 'Starting worker');
 
-    const workerOptions: WorkerOptions = {
-      connection: this.client.connectionOptions,
-      ...(options ?? {}),
-      concurrency: options?.concurrency ?? 1,
-    };
-
-    const newWorker = new Worker(this.queueName, async (job) => this.process(job), workerOptions);
+    const newWorker = new Worker(this.queueName, async (job) => this.process(job), mergedOptions);
 
     // --- Event Forwarding ---
     // Define handlers that emit events from `this` (the BaseQueue instance)

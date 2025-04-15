@@ -7,7 +7,9 @@ import type { BaseQueue } from './base-queue.js';
 import type { ConnectionOptions as BullMQConnectionOptions } from 'bullmq'; // Import ConnectionOptions if needed
 import { EventDispatcher } from './event-dispatcher.js'; // Import EventDispatcher
 
-const LOGGER_NAME = 'BullMQ';
+const LOGGER_NAME = 'ToroTask';
+const BASE_PREFIX = 'torotask';
+const QUEUE_PREFIX = 'tasks';
 
 /** BullMQ Client Options using intersection */
 export type ToroTaskClientOptions = Partial<BullMQConnectionOptions> & {
@@ -17,6 +19,8 @@ export type ToroTaskClientOptions = Partial<BullMQConnectionOptions> & {
    */
   logger?: Logger;
   loggerName?: string;
+  prefix?: string;
+  queuePrefix?: string;
 };
 
 /** Worker Filter defined here */
@@ -33,6 +37,8 @@ export interface WorkerFilter {
 export class ToroTaskClient {
   public readonly connectionOptions: ConnectionOptions;
   public readonly logger: Logger;
+  public readonly prefix: string;
+  public readonly queuePrefix: string;
   private readonly taskGroups: Record<string, TaskGroup> = {};
   private _eventDispatcher: EventDispatcher | null = null; // Backing field for lazy loading
 
@@ -40,7 +46,7 @@ export class ToroTaskClient {
     const bullmqEnvConfig = getConfigFromEnv('BULLMQ_REDIS_');
     const redisEnvConfig = getConfigFromEnv('REDIS_');
 
-    const { logger, loggerName, ...connectionOpts } = options || {};
+    const { logger, loggerName, prefix, queuePrefix, ...connectionOpts } = options || {};
 
     const mergedConfig: Partial<ConnectionOptions> = {
       ...redisEnvConfig,
@@ -51,6 +57,8 @@ export class ToroTaskClient {
     this.connectionOptions = mergedConfig as ConnectionOptions;
 
     this.logger = (logger ?? pino()).child({ name: loggerName ?? LOGGER_NAME });
+    this.prefix = prefix || BASE_PREFIX;
+    this.queuePrefix = [this.prefix, queuePrefix || QUEUE_PREFIX].join(':');
     this.logger.info('ToroTaskClient initialized');
   }
 
@@ -107,14 +115,17 @@ export class ToroTaskClient {
     const redis = new Redis(this.connectionOptions as RedisOptions);
     const queueNames = new Set<string>();
     const stream = redis.scanStream({
-      match: 'bull:*:meta', // BullMQ uses this pattern for queue metadata
+      match: `${this.queuePrefix}:*:meta`, // BullMQ uses this pattern for queue metadata
       count: 100, // Adjust count for performance if needed
     });
+
+    const escapedPrefix = this.queuePrefix.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
+    const queueRegex = new RegExp(`^${escapedPrefix}:(.+):meta$`);
 
     return new Promise((resolve, reject) => {
       stream.on('data', (keys: string[]) => {
         keys.forEach((key) => {
-          const match = key.match(/^bull:(.+):meta$/);
+          const match = key.match(queueRegex);
           if (match && match[1]) {
             queueNames.add(match[1]);
           }
@@ -156,7 +167,10 @@ export class ToroTaskClient {
     for (const queueName of queueNames) {
       this.logger.debug({ queueName }, 'Creating Queue instance');
       // Use the client's connection options to instantiate each queue
-      queueInstances[queueName] = new Queue(queueName, { connection: this.connectionOptions });
+      queueInstances[queueName] = new Queue(queueName, {
+        prefix: this.queuePrefix,
+        connection: this.connectionOptions,
+      });
     }
 
     this.logger.info({ count: queueNames.length }, 'Finished creating Queue instances for all found queues.');
@@ -188,6 +202,12 @@ export class ToroTaskClient {
       groupsToProcess = Object.values(this.taskGroups);
     }
 
+    const mergedOptions: WorkerOptions = {
+      prefix: this.queuePrefix,
+      connection: this.connectionOptions,
+      ...workerOptions,
+    };
+
     groupsToProcess.forEach((group) => {
       // Determine task filter for this specific group
       const taskFilter = filter?.tasks?.[group.name] ? { tasks: filter.tasks[group.name] } : undefined;
@@ -196,7 +216,7 @@ export class ToroTaskClient {
         // skip this group entirely.
         return;
       }
-      group.startWorkers(taskFilter, workerOptions);
+      group.startWorkers(taskFilter, mergedOptions);
     });
     this.logger.info('Finished request to start workers');
   }

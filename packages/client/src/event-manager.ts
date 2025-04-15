@@ -7,8 +7,8 @@ import { BaseQueue } from './base-queue.js';
 const SYNC_QUEUE_NAME = 'events.sync';
 
 // Define Redis key prefixes
-const EVENT_BY_EVENT_PREFIX = 'events:by-event:';
-const TASK_INDEX_PREFIX = 'events:task-index:'; // New prefix for task index sets
+const EVENT_BY_EVENT_PREFIX = 'events:by-event';
+const TASK_INDEX_PREFIX = 'events:task-index'; // New prefix for task index sets
 
 interface SyncJobPayload {
   taskGroup: string;
@@ -30,14 +30,17 @@ interface SyncJobReturn {
 export class EventManager extends BaseQueue {
   // Store reference to dispatcher for performing registrations
   private readonly eventDispatcher: EventDispatcher;
+  public readonly prefix: string;
 
-  constructor(dispatcher: EventDispatcher, parentLogger: Logger, queueName: string = SYNC_QUEUE_NAME) {
+  constructor(dispatcher: EventDispatcher, parentLogger: Logger, queueName: string = SYNC_QUEUE_NAME, prefix?: string) {
     if (!dispatcher) {
       throw new Error('EventDispatcher instance is required for EventManager.');
     }
     const managerLogger = parentLogger.child({ service: 'EventManager', queue: queueName });
     super(dispatcher.client, queueName, managerLogger);
 
+    // Set prefix
+    this.prefix = prefix || dispatcher.client.prefix;
     // EventManager needs access to the dispatcher to modify registrations
     this.eventDispatcher = dispatcher;
   }
@@ -52,7 +55,8 @@ export class EventManager extends BaseQueue {
   }
 
   getEventKey(eventName: string): string {
-    return `${EVENT_BY_EVENT_PREFIX}${eventName}`;
+    const prefix = this.prefix ? `${this.prefix}:` : '';
+    return `${prefix}${EVENT_BY_EVENT_PREFIX}:${eventName}`;
   }
 
   /**
@@ -62,7 +66,8 @@ export class EventManager extends BaseQueue {
    * @returns The Redis key string.
    */
   private getTaskIndexKey(taskGroup: string, taskName: string): string {
-    return `${TASK_INDEX_PREFIX}${taskGroup}:${taskName}`;
+    const prefix = this.prefix ? `${this.prefix}:` : '';
+    return `${prefix}${TASK_INDEX_PREFIX}:${taskGroup}:${taskName}`;
   }
 
   /**
