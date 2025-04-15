@@ -3,11 +3,12 @@
   "projects": {
     "client": "packages/client",
     "server": "packages/server",
+    "torotask": "packages/torotask",
     "tester": "apps/tester",
     "dashboard": "apps/dashboard"
   },
   "release": {
-    "projects": ["client", "server"],
+    "projects": ["client", "server", "torotask"],
     "version": {
       "generatorOptions": {
         "preserveLocalDependencyProtocols": true

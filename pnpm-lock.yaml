@@ -101,7 +101,7 @@ importers:
         specifier: ^4.16.0
         version: 4.19.3
       typescript:
-        specifier: ^5.5.2
+        specifier: ^5.5.3
         version: 5.8.2
 
   packages/client:
@@ -134,7 +134,7 @@ importers:
   packages/server:
     dependencies:
       '@torotask/client':
-        specifier: workspace:^
+        specifier: workspace:*
         version: link:../client
       bullmq:
         specifier: ^5.11.0
@@ -155,6 +155,15 @@ importers:
       '@types/pino':
         specifier: ^7.0.5
         version: 7.0.5
+
+  packages/torotask:
+    dependencies:
+      '@torotask/client':
+        specifier: workspace:*
+        version: link:../client
+      '@torotask/server':
+        specifier: workspace:*
+        version: link:../server
 
 packages:
 
