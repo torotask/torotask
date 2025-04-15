@@ -1,6 +1,6 @@
 {
   "name": "torotask",
-  "version": "0.0.1",
+  "version": "0.1.0",
   "keywords": ["bullmq", "message-queue", "task-queue", "tasks"],
   "description": "Task queue processing in NodeJS based on BullMQ and Redis",
   "author": "Ben Osman",
