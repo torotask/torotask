@@ -1,0 +1,16 @@
+{
+  "name": "server",
+  "targets": {
+    "release": {
+      "executor": "@nx/js:release-publish",
+      "options": {
+        "version": true,
+        "changelog": true,
+        "commit": true,
+        "tag": true,
+        "push": true,
+        "publish": true
+      }
+    }
+  }
+}

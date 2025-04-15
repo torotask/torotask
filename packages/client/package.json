@@ -1,6 +1,6 @@
 {
   "name": "@torotask/client",
-  "version": "0.1.0",
+  "version": "0.0.1",
   "description": "A wrapper for creating ToroTask connections",
   "type": "module",
   "exports": {
@@ -17,6 +17,9 @@
     "build:dev": "tsc --build",
     "dev": "tsc --build --watch"
   },
+  "keywords": [],
+  "author": "Ben Osman",
+  "license": "MIT",
   "dependencies": {
     "@sindresorhus/slugify": "^2.2.1",
     "@types/pino": "^7.0.5",

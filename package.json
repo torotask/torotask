@@ -3,6 +3,7 @@
   "private": true,
   "version": "0.1.0",
   "description": "Monorepo for ToroTask related packages and apps",
+  "license": "MIT",
   "scripts": {
     "build": "nx run-many -t build",
     "lint": "biome lint",

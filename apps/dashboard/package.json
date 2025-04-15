@@ -1,6 +1,6 @@
 {
   "name": "@torotask/dashboard",
-  "version": "0.1.0",
+  "version": "0.0.1",
   "description": "BullBoard based dashboard for Toro Task queues",
   "type": "module",
   "private": "true",
@@ -13,8 +13,8 @@
     "start": "node dist/index.js"
   },
   "keywords": [],
-  "author": "",
-  "license": "ISC",
+  "author": "Ben Osman",
+  "license": "MIT",
   "dependencies": {
     "@bull-board/api": "^6.8.1",
     "@bull-board/express": "^6.8.1",
