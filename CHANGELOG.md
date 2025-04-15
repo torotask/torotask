@@ -1,3 +1,17 @@
+## 0.2.0 (2025-04-15)
+
+### 🚀 Features
+
+- **client:** add overridable redis prefix ([6a0d9de](https://github.com/torotask/torotask/commit/6a0d9de))
+
+### 🩹 Fixes
+
+- **dashboard:** set delimiter for tasks ([1c54901](https://github.com/torotask/torotask/commit/1c54901))
+
+### ❤️ Thank You
+
+- Ben Osman @benosman
+
 ## 0.1.0 (2025-04-15)
 
 ### 🚀 Features
