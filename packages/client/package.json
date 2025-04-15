@@ -1,10 +1,18 @@
 {
   "name": "@torotask/client",
   "version": "0.0.1",
+  "publishConfig": {
+    "access": "public"
+  },
   "keywords": [],
   "description": "A wrapper for creating ToroTask connections",
   "author": "Ben Osman",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/torotask/torotask.git",
+    "directory": "packages/client"
+  },
   "scripts": {
     "build": "tsc --build",
     "build:dev": "tsc --build",

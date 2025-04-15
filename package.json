@@ -6,6 +6,7 @@
   "license": "MIT",
   "scripts": {
     "build": "nx run-many -t build",
+    "clean": "nx run-many -t clean",
     "format": "biome format --write",
     "lint": "biome lint",
     "prepare": "simple-git-hooks",
