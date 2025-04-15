@@ -34,7 +34,7 @@ async function main() {
       for (const queueName in queueInstances) {
         if (Object.prototype.hasOwnProperty.call(queueInstances, queueName)) {
           const queue = queueInstances[queueName];
-          queueAdaptersMap.set(queueName, new BullMQAdapter(queue));
+          queueAdaptersMap.set(queueName, new BullMQAdapter(queue, { delimiter: '.' }));
         }
       }
       // Use type assertion as any to bypass strict type check
