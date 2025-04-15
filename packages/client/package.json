@@ -1,25 +1,17 @@
 {
   "name": "@torotask/client",
   "version": "0.0.1",
-  "description": "A wrapper for creating ToroTask connections",
-  "type": "module",
-  "exports": {
-    ".": {
-      "import": "./dist/index.js",
-      "types": "./dist/index.d.ts"
-    },
-    "./package.json": "./package.json"
-  },
-  "types": "dist/index.d.ts",
-  "scripts": {
-    "clean": "tsc --build --clean",
-    "build": "tsc --build",
-    "build:dev": "tsc --build",
-    "dev": "tsc --build --watch"
-  },
   "keywords": [],
+  "description": "A wrapper for creating ToroTask connections",
   "author": "Ben Osman",
   "license": "MIT",
+  "scripts": {
+    "build": "tsc --build",
+    "build:dev": "tsc --build",
+    "clean": "tsc --build --clean",
+    "dev": "tsc --build --watch"
+  },
+  "type": "module",
   "dependencies": {
     "@sindresorhus/slugify": "^2.2.1",
     "@types/pino": "^7.0.5",
@@ -30,5 +22,13 @@
     "pino": "^9.6.0",
     "pretty-ms": "^9.2.0"
   },
-  "files": ["dist"]
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": ["dist"],
+  "types": "dist/index.d.ts"
 }

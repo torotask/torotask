@@ -1,13 +1,13 @@
 {
   "name": "torotask-monorepo",
-  "private": true,
   "version": "0.1.0",
+  "private": true,
   "description": "Monorepo for ToroTask related packages and apps",
   "license": "MIT",
   "scripts": {
     "build": "nx run-many -t build",
-    "lint": "biome lint",
     "format": "biome format --write",
+    "lint": "biome lint",
     "prepare": "simple-git-hooks",
     "syncpack:fix": "syncpack format && syncpack fix-mismatches",
     "watch": "nx watch --all --includeDependentProjects -- nx run-many -t build:dev -p $NX_PROJECT_NAME"
@@ -26,11 +26,11 @@
     "tsx": "^4.16.0",
     "typescript": "^5.5.3"
   },
-  "simple-git-hooks": {
-    "pre-commit": "pnpm lint-staged"
-  },
   "lint-staged": {
     "**/*.{ts,tsx,js,jsx}": ["biome lint --fix", "biome format --write"],
     "**/*.{json,md}": ["biome format --write"]
+  },
+  "simple-git-hooks": {
+    "pre-commit": "pnpm lint-staged"
   }
 }
