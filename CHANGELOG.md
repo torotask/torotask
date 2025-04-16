@@ -1,3 +1,13 @@
+## 0.3.0 (2025-04-16)
+
+### 🚀 Features
+
+- **client:** allow passing in env vars to client ([d7d3c6e](https://github.com/torotask/torotask/commit/d7d3c6e))
+
+### ❤️ Thank You
+
+- Ben Osman @benosman
+
 ## 0.2.1 (2025-04-16)
 
 ### 🩹 Fixes
