@@ -1,3 +1,13 @@
+## 0.2.1 (2025-04-16)
+
+### 🩹 Fixes
+
+- **client:** rename env vars for ToroTask ([d6564a0](https://github.com/torotask/torotask/commit/d6564a0))
+
+### ❤️ Thank You
+
+- Ben Osman @benosman
+
 ## 0.2.0 (2025-04-15)
 
 ### 🚀 Features
