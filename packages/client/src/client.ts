@@ -43,14 +43,14 @@ export class ToroTaskClient {
   private _eventDispatcher: EventDispatcher | null = null; // Backing field for lazy loading
 
   constructor(options?: ToroTaskClientOptions) {
-    const bullmqEnvConfig = getConfigFromEnv('BULLMQ_REDIS_');
+    const toroTaskEnvConfig = getConfigFromEnv('TOROTASK_REDIS_');
     const redisEnvConfig = getConfigFromEnv('REDIS_');
 
     const { logger, loggerName, prefix, queuePrefix, ...connectionOpts } = options || {};
 
     const mergedConfig: Partial<ConnectionOptions> = {
       ...redisEnvConfig,
-      ...bullmqEnvConfig,
+      ...toroTaskEnvConfig,
       ...connectionOpts,
     };
 
