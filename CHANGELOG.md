@@ -1,3 +1,13 @@
+## 0.3.1 (2025-04-16)
+
+### 🩹 Fixes
+
+- **client:** make sure getConfigFromEnv returns nested maps ([2054065](https://github.com/torotask/torotask/commit/2054065))
+
+### ❤️ Thank You
+
+- Ben Osman @benosman
+
 ## 0.3.0 (2025-04-16)
 
 ### 🚀 Features
