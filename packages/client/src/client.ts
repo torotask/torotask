@@ -21,6 +21,7 @@ export type ToroTaskClientOptions = Partial<BullMQConnectionOptions> & {
   loggerName?: string;
   prefix?: string;
   queuePrefix?: string;
+  env?: Record<string, any>;
 };
 
 /** Worker Filter defined here */
@@ -43,10 +44,10 @@ export class ToroTaskClient {
   private _eventDispatcher: EventDispatcher | null = null; // Backing field for lazy loading
 
   constructor(options?: ToroTaskClientOptions) {
-    const toroTaskEnvConfig = getConfigFromEnv('TOROTASK_REDIS_');
-    const redisEnvConfig = getConfigFromEnv('REDIS_');
+    const { env, logger, loggerName, prefix, queuePrefix, ...connectionOpts } = options || {};
 
-    const { logger, loggerName, prefix, queuePrefix, ...connectionOpts } = options || {};
+    const toroTaskEnvConfig = getConfigFromEnv('TOROTASK_REDIS_', env);
+    const redisEnvConfig = getConfigFromEnv('REDIS_', env);
 
     const mergedConfig: Partial<ConnectionOptions> = {
       ...redisEnvConfig,

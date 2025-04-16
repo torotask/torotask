@@ -11,11 +11,12 @@ import camelcase from 'camelcase';
  * @param prefix The prefix to look for (case-insensitive).
  * @returns A record with camelCased keys and their corresponding values.
  */
-export function getConfigFromEnv(prefix: string): Record<string, string> {
+export function getConfigFromEnv(prefix: string, env?: Record<string, any>): Record<string, string> {
   const config: Record<string, string> = {};
   const lowerCasePrefix = prefix.toLowerCase();
 
-  for (const [key, value] of Object.entries(process.env)) {
+  env = env || process.env;
+  for (const [key, value] of Object.entries(env)) {
     const lowerCaseKey = key.toLowerCase();
 
     if (lowerCaseKey.startsWith(lowerCasePrefix) && value !== undefined) {
