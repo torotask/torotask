@@ -27,6 +27,7 @@
     "camelcase": "^8.0.0",
     "cronstrue": "^2.59.0",
     "ioredis": "^5.4.1",
+    "lodash-es": "^4.17.21",
     "pino": "^9.6.0",
     "pretty-ms": "^9.2.0"
   },
@@ -38,5 +39,8 @@
     "./package.json": "./package.json"
   },
   "files": ["dist"],
-  "types": "dist/index.d.ts"
+  "types": "dist/index.d.ts",
+  "devDependencies": {
+    "@types/lodash-es": "^4.17.12"
+  }
 }

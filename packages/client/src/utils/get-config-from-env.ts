@@ -1,4 +1,5 @@
 import camelcase from 'camelcase';
+import { set } from 'lodash-es';
 
 /**
  * Reads environment variables starting with a given prefix,
@@ -22,10 +23,13 @@ export function getConfigFromEnv(prefix: string, env?: Record<string, any>): Rec
     if (lowerCaseKey.startsWith(lowerCasePrefix) && value !== undefined) {
       // Remove prefix, handle potential leading underscore if prefix didn't end with one
       const keyWithoutPrefix = key.substring(prefix.length);
-      const camelCaseKey = camelcase(keyWithoutPrefix, { locale: false });
 
-      // Only add if the camelCaseKey is not empty (e.g. if env var was just the prefix)
-      if (camelCaseKey) {
+      if (keyWithoutPrefix.includes('__')) {
+        const path = keyWithoutPrefix.split('__').map((pathKey) => camelcase(pathKey));
+
+        set(config, path.join('.'), value);
+      } else {
+        const camelCaseKey = camelcase(keyWithoutPrefix, { locale: false });
         config[camelCaseKey] = value;
       }
     }
