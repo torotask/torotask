@@ -123,3 +123,10 @@ export type SubTaskHandler<ST = unknown, SR = unknown> = (
   options: SubTaskHandlerOptions<ST>,
   context: SubTaskHandlerContext
 ) => Promise<SR>;
+
+// Return value for the EventManager sync job
+export interface SyncJobReturn {
+  registered: number;
+  unregistered: number;
+  errors: number;
+}

@@ -4,18 +4,22 @@ import { BaseQueue } from './base-queue.js';
 import type { ToroTaskClient } from './client.js'; // Assuming client path
 import { EventManager } from './event-manager.js';
 import type { Task } from './task.js'; // Assuming task path
-import type { EventSubscriptionInfo } from './types.js';
+import type { EventSubscriptionInfo, SyncJobReturn } from './types.js';
 
 // Define a default queue name for events, easily configurable if needed
 const DEFAULT_EVENT_QUEUE_NAME = 'events.dispatch';
+const SET_ACTIVE_DEBOUNCE_MS = 500; // Debounce time in milliseconds
 
 /**
  * Manages the registration and dispatching of events to subscribed Tasks.
  * It uses its own BullMQ queue to process published events.
- * Stores JSON strings in the events:by-event:<eventName> set.
+ * Maintains a local cache (`activeEvents`) of events presumed to have subscribers.
  */
 export class EventDispatcher extends BaseQueue {
   public manager: EventManager;
+  public activeEvents: Set<string> = new Set(); // Use Set for efficient lookups
+  private setActiveEventsDebounced: () => void;
+  private setActiveEventsTimeout: NodeJS.Timeout | null = null;
 
   constructor(client: ToroTaskClient, parentLogger: Logger, eventQueueName: string = DEFAULT_EVENT_QUEUE_NAME) {
     if (!client) {
@@ -24,6 +28,18 @@ export class EventDispatcher extends BaseQueue {
     const dispatcherLogger = parentLogger.child({ service: 'EventDispatcher', queue: eventQueueName });
     super(client, eventQueueName, dispatcherLogger);
     this.manager = new EventManager(this, parentLogger);
+
+    // Simple debounce implementation
+    this.setActiveEventsDebounced = () => {
+      if (this.setActiveEventsTimeout) {
+        clearTimeout(this.setActiveEventsTimeout);
+      }
+      this.setActiveEventsTimeout = setTimeout(() => {
+        this.setActiveEvents().catch((err) => {
+          this.logger.error({ err }, 'Error during debounced setActiveEvents execution');
+        });
+      }, SET_ACTIVE_DEBOUNCE_MS);
+    };
   }
 
   /**
@@ -31,7 +47,68 @@ export class EventDispatcher extends BaseQueue {
    */
   async startWorker(options?: WorkerOptions): Promise<Worker> {
     await this.manager.startWorker(); // Start manager worker (assuming it's sync)
+    await this.setActiveEvents();
+
+    this.manager.queueEvents.on('completed', ({ jobId, returnvalue }) => {
+      this.logger.debug({ jobId, returnvalue }, 'EventManager sync job completed');
+      // Type guard to ensure returnvalue is actually SyncJobReturn
+      const isSyncResult =
+        returnvalue !== null &&
+        typeof returnvalue === 'object' &&
+        typeof (returnvalue as SyncJobReturn).registered === 'number' &&
+        typeof (returnvalue as SyncJobReturn).unregistered === 'number';
+
+      if (isSyncResult) {
+        const syncResult = returnvalue as SyncJobReturn;
+        if (syncResult.registered > 0 || syncResult.unregistered > 0) {
+          this.logger.info(
+            { syncResult },
+            'Detected registration changes, triggering debounced active events refresh.'
+          );
+          this.setActiveEventsDebounced(); // Trigger refresh
+        }
+      }
+    });
+
+    // Now start the actual worker for this dispatcher's queue
     return super.startWorker(options);
+  }
+
+  /**
+   * Fetches the list of event keys from Redis and updates the local activeEvents cache.
+   * Note: This scans keys, but doesn't verify HLEN > 0 for each. It assumes
+   * the existence of the key implies active subscribers for performance.
+   */
+  async setActiveEvents(): Promise<void> {
+    this.logger.info('Refreshing local activeEvents cache from Redis...');
+    const redis = await this.getRedisClient();
+    const newActiveEvents = new Set<string>();
+
+    // Construct the pattern based on the manager's prefix and key structure
+    const prefix = this.manager.prefix ? `${this.manager.prefix}:` : '';
+    const pattern = `${prefix}events:by-event:*`;
+    const keyPrefixToRemove = `${prefix}events:by-event:`; // Used to extract event name
+
+    let cursor = '0';
+    try {
+      do {
+        const [nextCursor, keys] = await redis.scan(cursor, 'MATCH', pattern, 'COUNT', 100);
+        keys.forEach((key) => {
+          if (key.startsWith(keyPrefixToRemove)) {
+            const eventName = key.substring(keyPrefixToRemove.length);
+            newActiveEvents.add(eventName);
+          }
+        });
+        cursor = nextCursor;
+      } while (cursor !== '0');
+
+      this.activeEvents = newActiveEvents;
+      this.logger.info({ count: this.activeEvents.size }, 'Local activeEvents cache refreshed.');
+    } catch (error) {
+      this.logger.error({ err: error, pattern }, 'Failed to scan event keys from Redis for activeEvents cache.');
+      // Decide: Keep stale cache or clear it? Keeping stale might be safer.
+      throw error; // Re-throw to indicate failure
+    }
   }
 
   /**
@@ -69,7 +146,18 @@ export class EventDispatcher extends BaseQueue {
       throw new Error('Event name cannot be empty.');
     }
     const jobName = eventName.trim(); // Use event name as job name
-    this.logger.info({ eventName: jobName, hasData: data !== undefined }, 'Publishing event');
+
+    // --- Check local cache for active subscribers before adding job ---
+    if (!this.activeEvents.has(jobName)) {
+      this.logger.debug({ eventName: jobName }, 'Skipping event publish: No active subscribers found in local cache.');
+      return undefined; // Indicate that the job was not added
+    }
+    // --- End Check ---
+
+    this.logger.debug(
+      { eventName: jobName, hasData: data !== undefined },
+      'Publishing event (subscribers likely exist in cache)'
+    );
     // Use the queue inherited from BaseQueue to add the job
     return this.queue.add(jobName, data, options);
   }

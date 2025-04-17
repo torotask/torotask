@@ -324,7 +324,7 @@ export class Task<T = unknown, R = unknown> extends BaseQueue {
   private async _requestEventTriggerSync(): Promise<void> {
     const logPrefix = `[Event Sync Request: ${this.name}]`;
     this.logger.info(`${logPrefix} Collecting desired event subscriptions...`);
-    const manager = this.group.client.eventDispatcher.manager; // Access manager
+    const manager = this.group.client.events.manager; // Access manager
 
     // 1. Build the list of desired subscriptions from current config
     const desiredSubscriptions: EventSubscriptionInfo[] = [];

@@ -1,7 +1,7 @@
 import { Queue, Worker, Job, JobsOptions, WorkerOptions } from 'bullmq';
 import type { Logger } from 'pino';
 import type { EventDispatcher } from './event-dispatcher.js';
-import type { EventSubscriptionInfo } from './types.js';
+import type { EventSubscriptionInfo, SyncJobReturn } from './types.js';
 import { BaseQueue } from './base-queue.js';
 
 const SYNC_QUEUE_NAME = 'events.sync';
@@ -16,13 +16,6 @@ interface SyncJobPayload {
   // The complete list of event subscriptions this task *should* have
   desiredSubscriptions: EventSubscriptionInfo[];
 }
-
-interface SyncJobReturn {
-  registered: number;
-  unregistered: number;
-  errors: number;
-}
-
 /**
  * Manages the synchronization of event trigger registrations using a dedicated queue
  * processed by a single worker. Ensures atomic updates across multiple Task instances.
@@ -65,7 +58,7 @@ export class EventManager extends BaseQueue {
    * @param taskName Task name.
    * @returns The Redis key string.
    */
-  private getTaskIndexKey(taskGroup: string, taskName: string): string {
+  getTaskIndexKey(taskGroup: string, taskName: string): string {
     const prefix = this.prefix ? `${this.prefix}:` : '';
     return `${prefix}${TASK_INDEX_PREFIX}:${taskGroup}:${taskName}`;
   }
