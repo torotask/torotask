@@ -223,6 +223,24 @@ export class TaskServer {
   }
 
   /**
+   * Retrieves an existing Task instance by group and name.
+   */
+  getTask<T = any, R = any>(groupName: string, name: string) {
+    return this.client.getTask<T, R>(groupName, name);
+  }
+
+  /**
+   * Gets a task in the specified group with the provided data.
+   *
+   * @param taskKey The key of the task to run in format group.task.
+   * @param data The data to pass to the task.
+   * @returns A promise that resolves to the Job instance.
+   */
+  getTaskByKey<T = any, R = any>(taskKey: `${string}.${string}`) {
+    return this.client.getTaskByKey<T, R>(taskKey);
+  }
+
+  /**
    * Runs a task in the specified group with the provided data.
    *
    * @param groupName The name of the task group.
@@ -230,9 +248,22 @@ export class TaskServer {
    * @param data The data to pass to the task.
    * @returns A promise that resolves to the Job instance.
    */
-  async runTask<T = any, R = any>(groupName: string, taskName: string, data: T): Promise<Job<T, R>> {
+
+  async runTask<T = any, R = any>(groupName: string, taskName: string, data: T) {
     return this.client.runTask<T, R>(groupName, taskName, data);
   }
+
+  /**
+   * Runs a task in the specified group with the provided data.
+   *
+   * @param taskKey The key of the task to run in format group.task.
+   * @param data The data to pass to the task.
+   * @returns A promise that resolves to the Job instance.
+   */
+  async runTaskByKey<T = any, R = any>(key: `${string}.${string}`, data: T) {
+    return this.client.runTaskByKey<T, R>(key, data);
+  }
+
   /**
    * Starts the workers for all managed TaskGroups (or filtered ones) and
    * attaches global error handlers if configured.

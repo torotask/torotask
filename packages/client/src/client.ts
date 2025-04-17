@@ -134,6 +134,18 @@ export class ToroTaskClient {
   }
 
   /**
+   * Gets a task in the specified group with the provided data.
+   *
+   * @param taskKey The key of the task to run in format group.task.
+   * @param data The data to pass to the task.
+   * @returns A promise that resolves to the Job instance.
+   */
+  public getTaskByKey<T = any, R = any>(taskKey: `${string}.${string}`): Task<T, R> | undefined {
+    const [groupName, taskName] = taskKey.split('.');
+    return this.getTask<T, R>(groupName, taskName);
+  }
+
+  /**
    * Checks if a queue exists in Redis.
    *
    * @param queueName The name of the queue to check.
@@ -183,6 +195,18 @@ export class ToroTaskClient {
     }
 
     return await queue.add(taskName, data);
+  }
+
+  /**
+   * Runs a task in the specified group with the provided data.
+   *
+   * @param taskKey The key of the task to run in format group.task.
+   * @param data The data to pass to the task.
+   * @returns A promise that resolves to the Job instance.
+   */
+  async runTaskByKey<T = any, R = any>(taskKey: `${string}.${string}`, data: T): Promise<Job<T, R>> {
+    const [groupName, taskName] = taskKey.split('.');
+    return this.runTask<T, R>(groupName, taskName, data);
   }
 
   /**
