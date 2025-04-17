@@ -15,10 +15,13 @@ export default defineTask<SayHelloData, string>(
       delay: 1000,
     },
   },
-  {
-    type: 'cron',
-    cron: '27 */1 * * *',
-  },
+  [
+    {
+      type: 'cron',
+      cron: '27 */1 * * *',
+    },
+    { type: 'event', event: 'item.update' },
+  ],
   async (options, context) => {
     const { data } = options;
     const { logger } = context;
