@@ -62,7 +62,7 @@ export class TaskGroup {
    * @param name The name of the task.
    * @returns The Task instance if found, otherwise undefined.
    */
-  getTask(name: string): Task<any, any> | undefined {
+  getTask<T = any, R = any>(name: string): Task<T, R> | undefined {
     return this.tasks.get(name);
   }
 

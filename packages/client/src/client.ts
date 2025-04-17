@@ -1,12 +1,12 @@
 import { ConnectionOptions, WorkerOptions, Queue } from 'bullmq';
 import { Redis, RedisOptions } from 'ioredis';
+import { LRU } from 'tiny-lru';
 import { getConfigFromEnv } from './utils/get-config-from-env.js';
 import { TaskGroup } from './task-group.js';
 import { Task } from './task.js';
 import { pino, type Logger } from 'pino';
-import type { BaseQueue } from './base-queue.js';
-import type { ConnectionOptions as BullMQConnectionOptions } from 'bullmq'; // Import ConnectionOptions if needed
-import { EventDispatcher } from './event-dispatcher.js'; // Import EventDispatcher
+import type { ConnectionOptions as BullMQConnectionOptions, Job } from 'bullmq';
+import { EventDispatcher } from './event-dispatcher.js';
 
 const LOGGER_NAME = 'ToroTask';
 const BASE_PREFIX = 'torotask';
@@ -20,9 +20,10 @@ export type ToroTaskClientOptions = Partial<BullMQConnectionOptions> & {
    */
   logger?: Logger;
   loggerName?: string;
+  env?: Record<string, any>;
   prefix?: string;
   queuePrefix?: string;
-  env?: Record<string, any>;
+  queueTTL?: number;
 };
 
 /** Worker Filter defined here */
@@ -43,9 +44,14 @@ export class ToroTaskClient {
   public readonly queuePrefix: string;
   private readonly taskGroups: Record<string, TaskGroup> = {};
   private _eventDispatcher: EventDispatcher | null = null; // Backing field for lazy loading
+  private _redis: Redis | null = null;
+  private _consumerQueues = new LRU<Queue>(
+    100, // Max number of cached queues
+    5 * 60_000 // TTL in ms (default: 5 minutes)
+  );
 
   constructor(options?: ToroTaskClientOptions) {
-    const { env, logger, loggerName, prefix, queuePrefix, ...connectionOpts } = options || {};
+    const { env, logger, loggerName, prefix, queuePrefix, queueTTL, ...connectionOpts } = options || {};
 
     const toroTaskEnvConfig = getConfigFromEnv('TOROTASK_REDIS_', env);
     const redisEnvConfig = getConfigFromEnv('REDIS_', env);
@@ -86,6 +92,17 @@ export class ToroTaskClient {
   }
 
   /**
+   * Gets the lazily-initialized Redis client instance.
+   * Creates the instance on first access.
+   */
+  public get redis(): Redis {
+    if (!this._redis) {
+      this._redis = new Redis(this.connectionOptions as RedisOptions);
+    }
+    return this._redis;
+  }
+
+  /**
    * Creates or retrieves a TaskGroup instance.
    */
   public createTaskGroup(name: string): TaskGroup {
@@ -109,11 +126,63 @@ export class ToroTaskClient {
   /**
    * Retrieves an existing Task instance by group and name.
    */
-  public getTask(groupName: string, name: string): Task | undefined {
+  public getTask<T = any, R = any>(groupName: string, name: string): Task<T, R> | undefined {
     const group = this.getTaskGroup(groupName);
     if (!group) return undefined;
 
     return group.getTask(name);
+  }
+
+  /**
+   * Checks if a queue exists in Redis.
+   *
+   * @param queueName The name of the queue to check.
+   * @returns A promise that resolves to a boolean indicating if the queue exists.
+   */
+  private async queueExists(queueName: string): Promise<boolean> {
+    return (await this.redis.exists(`${this.queuePrefix}:${queueName}:meta`)) > 0;
+  }
+
+  /**
+   * Retrieves a consumer queue, creating it if it doesn't exist.
+   *
+   * @param group The group name of the task.
+   * @param task The task name.
+   * @returns A promise that resolves to the Queue instance or null if it doesn't exist.
+   */
+  private async getConsumerQueue(group: string, task: string): Promise<Queue | null> {
+    const key = `${group}.${task}`;
+    const cached = this._consumerQueues.get(key);
+    if (cached) return cached;
+
+    const exists = await this.queueExists(key);
+    if (!exists) return null;
+
+    const queue = new Queue(key, { connection: this.redis });
+    this._consumerQueues.set(key, queue);
+    return queue;
+  }
+
+  /**
+   * Runs a task in the specified group with the provided data.
+   *
+   * @param groupName The name of the task group.
+   * @param taskName The name of the task to run.
+   * @param data The data to pass to the task.
+   * @returns A promise that resolves to the Job instance.
+   */
+  async runTask<T = any, R = any>(groupName: string, taskName: string, data: T): Promise<Job<T, R>> {
+    const task = this.getTask<T, R>(groupName, taskName);
+    if (task) {
+      return await task.run(data);
+    }
+
+    const queue = await this.getConsumerQueue(groupName, taskName);
+    if (!queue) {
+      throw new Error(`Queue ${groupName}.${taskName} is not registered`);
+    }
+
+    return await queue.add(taskName, data);
   }
 
   /**
@@ -124,7 +193,7 @@ export class ToroTaskClient {
    */
   async getAllQueueNames(): Promise<string[]> {
     this.logger.debug('Attempting to fetch all queue names from Redis...');
-    const redis = new Redis(this.connectionOptions as RedisOptions);
+    const redis = this.redis;
     const queueNames = new Set<string>();
     const stream = redis.scanStream({
       match: `${this.queuePrefix}:*:meta`, // BullMQ uses this pattern for queue metadata
@@ -147,7 +216,6 @@ export class ToroTaskClient {
       stream.on('end', async () => {
         this.logger.debug({ count: queueNames.size }, 'Finished scanning Redis for queue names.');
         try {
-          await redis.quit(); // Ensure the temporary connection is closed
           // Sort the names alphabetically before resolving
           resolve(Array.from(queueNames).sort());
         } catch (quitError) {
@@ -271,7 +339,7 @@ export class ToroTaskClient {
   }
 
   /**
-   * Closes all managed TaskGroups, their Tasks, and the EventDispatcher gracefully.
+   * Closes all managed TaskGroups, their Tasks, the EventDispatcher, Queues and redis gracefully.
    */
   async close(): Promise<void> {
     this.logger.info('Closing ToroTaskClient resources (Tasks, TaskGroups, EventDispatcher)...');
@@ -291,16 +359,20 @@ export class ToroTaskClient {
       this.logger.debug('EventDispatcher was not initialized, skipping closure.');
     }
 
+    for (const queue of this._consumerQueues.values()) {
+      closePromises.push(queue.close());
+    }
+
     // Wait for all tasks and the event dispatcher to close
     try {
       await Promise.all(closePromises);
-      this.logger.info('All managed resources (tasks, event dispatcher) closed.');
+      this._consumerQueues.clear();
+      await this.redis.quit();
+      this.logger.info('All managed resources (tasks, event dispatcher, queues, redis) closed.');
     } catch (error) {
       this.logger.error({ err: error }, 'Error during ToroTaskClient resource closure.');
       // Potentially re-throw or handle aggregate error
     }
-
-    this.logger.info('ToroTaskClient resources closed successfully.');
   }
 }
 
