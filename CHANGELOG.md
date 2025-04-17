@@ -1,3 +1,19 @@
+## 0.4.0 (2025-04-17)
+
+### 🚀 Features
+
+- **client:** add activeEvents cache, and skip queue if not present ([ff7136f](https://github.com/torotask/torotask/commit/ff7136f))
+- **client:** add run tasks method for consumers ([66a86c3](https://github.com/torotask/torotask/commit/66a86c3))
+- **client:** add runTaskByKey and getTaskByKey helpers ([d06b33d](https://github.com/torotask/torotask/commit/d06b33d))
+
+### 🩹 Fixes
+
+- **client:** update process function to work with new event subscriptions ([753f4d0](https://github.com/torotask/torotask/commit/753f4d0))
+
+### ❤️ Thank You
+
+- Ben Osman @benosman
+
 ## 0.3.1 (2025-04-16)
 
 ### 🩹 Fixes
