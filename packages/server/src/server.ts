@@ -229,7 +229,7 @@ export class TaskServer {
    * @param filter Optional filter to target specific groups or tasks.
    * @param workerOptions Optional default BullMQ WorkerOptions to pass down.
    */
-  start(filter?: WorkerFilter, workerOptions?: WorkerOptions): void {
+  async start(filter?: WorkerFilter, workerOptions?: WorkerOptions): Promise<void> {
     this.logger.info('Starting TaskServer...');
 
     // Attach global handlers if configured
@@ -238,7 +238,7 @@ export class TaskServer {
     }
 
     // TODO Add event dispatcher options somewhere, possibly create dedicated method on client
-    this.eventDispatcher.startWorker();
+    await this.events.startWorker();
 
     // Start workers using the client's method, targeting managed groups
     const groupNames = Array.from(this.managedGroups).map((g) => g.name);
@@ -256,7 +256,7 @@ export class TaskServer {
       return;
     }
 
-    this.client.startWorkers(effectiveFilter, workerOptions);
+    await this.client.startWorkers(effectiveFilter, workerOptions);
     this.logger.info('TaskServer started, workers initialized.');
   }
 

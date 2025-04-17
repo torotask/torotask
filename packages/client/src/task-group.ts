@@ -83,7 +83,7 @@ export class TaskGroup {
    * @param filter Optional filter object. If `filter.tasks` is provided, only starts workers for task names in the array.
    * @param workerOptions Optional default WorkerOptions to pass to each task's worker.
    */
-  startWorkers(filter?: { tasks?: string[] }, workerOptions?: WorkerOptions): void {
+  async startWorkers(filter?: { tasks?: string[] }, workerOptions?: WorkerOptions): Promise<void> {
     this.logger.info({ filter }, 'Starting workers for task group');
     const tasksToStart = filter?.tasks
       ? filter.tasks.map((name) => this.tasks.get(name)).filter((task): task is Task<any, any> => !!task)
@@ -100,9 +100,9 @@ export class TaskGroup {
       }
     }
 
-    tasksToStart.forEach((task) => {
+    tasksToStart.forEach(async (task) => {
       try {
-        task.startWorker(workerOptions);
+        await task.startWorker(workerOptions);
       } catch (error) {
         this.logger.error({ taskName: task.name, err: error }, 'Error starting worker for task');
         // Continue starting other workers

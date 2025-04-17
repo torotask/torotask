@@ -90,7 +90,7 @@ export abstract class BaseQueue extends EventEmitter {
    * Starts a dedicated BullMQ Worker for this queue, if one is not already running.
    * Forwards worker events to this BaseQueue instance.
    */
-  startWorker(options?: WorkerOptions): Worker {
+  async startWorker(options?: WorkerOptions): Promise<Worker> {
     if (this.worker) {
       this.logger.warn('Worker already started for this queue. Returning existing instance.');
       return this.worker;

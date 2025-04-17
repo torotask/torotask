@@ -29,8 +29,8 @@ export class EventDispatcher extends BaseQueue {
   /**
    * Starts the event manager before the event dispatcher
    */
-  startWorker(options?: WorkerOptions): Worker {
-    this.manager.startWorker();
+  async startWorker(options?: WorkerOptions): Promise<Worker> {
+    await this.manager.startWorker(); // Start manager worker (assuming it's sync)
     return super.startWorker(options);
   }
 

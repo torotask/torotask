@@ -184,7 +184,7 @@ export class ToroTaskClient {
    * @param filter Optional filter to target specific groups or tasks.
    * @param workerOptions Optional default WorkerOptions to pass down.
    */
-  startWorkers(filter?: WorkerFilter, workerOptions?: WorkerOptions): void {
+  async startWorkers(filter?: WorkerFilter, workerOptions?: WorkerOptions): Promise<void> {
     this.logger.info({ filter }, 'Starting workers across task groups');
     let groupsToProcess: TaskGroup[] = [];
 
@@ -209,7 +209,7 @@ export class ToroTaskClient {
       ...workerOptions,
     };
 
-    groupsToProcess.forEach((group) => {
+    groupsToProcess.forEach(async (group) => {
       // Determine task filter for this specific group
       const taskFilter = filter?.tasks?.[group.name] ? { tasks: filter.tasks[group.name] } : undefined;
       if (filter?.tasks && !filter.groups?.includes(group.name) && !taskFilter) {
@@ -217,7 +217,7 @@ export class ToroTaskClient {
         // skip this group entirely.
         return;
       }
-      group.startWorkers(taskFilter, mergedOptions);
+      await group.startWorkers(taskFilter, mergedOptions);
     });
     this.logger.info('Finished request to start workers');
   }
