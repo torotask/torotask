@@ -67,7 +67,7 @@ export class ToroTaskClient {
    * Gets the lazily-initialized EventDispatcher instance.
    * Creates the instance on first access.
    */
-  public get eventDispatcher(): EventDispatcher {
+  public get events(): EventDispatcher {
     if (!this._eventDispatcher) {
       this.logger.info('Initializing EventDispatcher...');
       // Pass 'this' (the client instance) and its logger

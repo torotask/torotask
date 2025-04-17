@@ -63,7 +63,7 @@ export class EventDispatcher extends BaseQueue {
    * @param data The data payload for the event.
    * @param options Optional BullMQ job options.
    */
-  async publishEvent<E = unknown>(eventName: string, data: E, options?: JobsOptions): Promise<Job<E, any>> {
+  async publish<E = unknown>(eventName: string, data: E, options?: JobsOptions): Promise<Job<E, any> | undefined> {
     if (!eventName || typeof eventName !== 'string' || eventName.trim() === '') {
       this.logger.error({ eventName }, 'Invalid event name provided for publishing.');
       throw new Error('Event name cannot be empty.');

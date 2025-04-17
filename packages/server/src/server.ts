@@ -21,7 +21,7 @@ export class TaskServer {
   private readonly options: Required<Pick<TaskServerOptions, 'handleGlobalErrors'>>;
   private readonly managedGroups: Set<TaskGroup> = new Set();
   private readonly ownClient: boolean = false; // Did we create the client?
-  public readonly eventDispatcher: EventDispatcher;
+  public readonly events: EventDispatcher;
 
   // Store bound handlers to remove them later
   private unhandledRejectionListener?: (...args: any[]) => void;
@@ -78,7 +78,7 @@ export class TaskServer {
     }
 
     // Create / fetch eventDispatcher
-    this.eventDispatcher = this.client.eventDispatcher;
+    this.events = this.client.events;
 
     // Store other options with defaults
     this.options = {
