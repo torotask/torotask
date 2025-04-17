@@ -133,6 +133,9 @@ importers:
       pretty-ms:
         specifier: ^9.2.0
         version: 9.2.0
+      tiny-lru:
+        specifier: ^11.2.11
+        version: 11.2.11
     devDependencies:
       '@types/lodash-es':
         specifier: ^4.17.12
@@ -2743,6 +2746,10 @@ packages:
   tightrope@0.2.0:
     resolution: {integrity: sha512-Kw36UHxJEELq2VUqdaSGR2/8cAsPgMtvX8uGVU6Jk26O66PhXec0A5ZnRYs47btbtwPDpXXF66+Fo3vimCM9aQ==}
     engines: {node: '>=16'}
+
+  tiny-lru@11.2.11:
+    resolution: {integrity: sha512-27BIW0dIWTYYoWNnqSmoNMKe5WIbkXsc0xaCQHd3/3xT2XMuMJrzHdrO9QBFR14emBz1Bu0dOAs2sCBBrvgPQA==}
+    engines: {node: '>=12'}
 
   tinyglobby@0.2.12:
     resolution: {integrity: sha512-qkf4trmKSIiMTs/E63cxH+ojC2unam7rJ0WrauAzpT3ECNTxGRMlaXxVbfxMUC/w0LaYk6jQ4y/nGR9uBO3tww==}
@@ -5612,6 +5619,8 @@ snapshots:
       real-require: 0.2.0
 
   tightrope@0.2.0: {}
+
+  tiny-lru@11.2.11: {}
 
   tinyglobby@0.2.12:
     dependencies:
