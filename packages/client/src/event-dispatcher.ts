@@ -164,7 +164,8 @@ export class EventDispatcher extends BaseQueue {
 
   /**
    * Processes jobs from the event queue.
-   * Looks up event subscription JSON in Redis and triggers associated tasks.
+   * Looks up event subscription JSON in Redis Hash using the EventManager
+   * and triggers associated tasks by adding jobs to their respective queues.
    * This is intended to be used as the processor function for the BullMQ Worker.
    * @param job The job received from the event queue.
    */
@@ -173,96 +174,83 @@ export class EventDispatcher extends BaseQueue {
     const eventData = job.data;
     const jobLogger = this.logger.child({ jobId: job.id, eventName });
 
-    jobLogger.info({ hasData: eventData !== undefined }, 'Processing event job, querying Redis for subscribers...');
+    jobLogger.info(
+      { hasData: eventData !== undefined },
+      'Processing event job, querying Redis Hash for subscribers via EventManager...'
+    );
 
     try {
-      const redis = await this.getRedisClient();
-      const eventKey = this.manager.getEventKey(eventName);
+      // This method handles using HVALS and parsing the JSON strings.
+      const subscriptions: EventSubscriptionInfo[] = await this.manager.getRegisteredSubscriptionsForEvent(eventName);
 
-      // Get subscription JSON strings for this event
-      const subscriptionJsonStrings = await redis.smembers(eventKey);
-
-      if (!subscriptionJsonStrings || subscriptionJsonStrings.length === 0) {
-        jobLogger.warn('No task triggers registered for this event in Redis. Job will be completed without action.');
+      if (!subscriptions || subscriptions.length === 0) {
+        jobLogger.info('No registered task subscriptions found for this event in Redis Hash.');
+        // No subscribers, so the job is successfully processed (did nothing).
         return;
       }
 
+      jobLogger.info({ count: subscriptions.length }, 'Found subscriptions, dispatching jobs to target task queues...');
+
+      // --- Dispatch to each subscribed task's queue ---
+      const dispatchPromises: Promise<any>[] = []; // Store promises for logging/waiting
+
+      for (const subInfo of subscriptions) {
+        // Ensure we have the necessary info to target the task queue
+        if (!subInfo.taskGroup || !subInfo.taskName) {
+          jobLogger.warn(
+            { subscriptionInfo: subInfo },
+            'Skipping dispatch: Subscription info missing taskGroup or taskName.'
+          );
+          continue;
+        }
+
+        // Construct the target task's queue name.
+        // Assumes your client or BaseQueue structure provides a way to get other queues.
+        // You might need to adapt this part based on your actual implementation for accessing other task queues.
+        let taskInstance;
+        try {
+          taskInstance = this.client.getTask(subInfo.taskGroup, subInfo.taskName) as Task<any, any> | undefined;
+        } catch (taskError) {
+          jobLogger.error(
+            { err: taskError, taskGroup: subInfo.taskGroup, taskName: subInfo.taskName },
+            'Failed to get target task instance.'
+          );
+          continue; // Skip this subscription if queue cannot be obtained
+        }
+
+        if (taskInstance) {
+          dispatchPromises.push(taskInstance.run(eventData));
+        } else {
+          jobLogger.error(
+            { taskGroup: subInfo.taskGroup, taskName: subInfo.taskName },
+            'Could not get target task instance for dispatch (was null/undefined).'
+          );
+        }
+      } // end for loop
+
+      // Wait for all dispatches to attempt completion
+      const results = await Promise.allSettled(dispatchPromises);
+      const successfulDispatches = results.filter((r) => r.status === 'fulfilled').length;
+      const failedDispatches = results.length - successfulDispatches;
+
       jobLogger.info(
-        `Found ${subscriptionJsonStrings.length} potential task triggers in Redis. Parsing and triggering...`
+        { successful: successfulDispatches, failed: failedDispatches, total: results.length },
+        'Finished dispatching event to subscribed tasks.'
       );
 
-      const triggerPromises: Promise<any>[] = [];
-      const processedTasks = new Set<string>(); // Track taskName to avoid duplicate runs if multiple triggers call same task
-
-      for (const jsonString of subscriptionJsonStrings) {
-        let subscriptionInfo: EventSubscriptionInfo;
-        try {
-          subscriptionInfo = JSON.parse(jsonString);
-          // Basic validation
-          if (
-            !subscriptionInfo.taskGroup ||
-            !subscriptionInfo.taskName ||
-            typeof subscriptionInfo.triggerId !== 'number'
-          ) {
-            jobLogger.error({ jsonString }, 'Invalid subscription JSON found in Redis set. Skipping.');
-            continue;
-          }
-        } catch (parseError) {
-          jobLogger.error(
-            { err: parseError, jsonString },
-            'Failed to parse subscription JSON from Redis set. Skipping.'
-          );
-          continue;
-        }
-
-        const { taskGroup, taskName, triggerId } = subscriptionInfo;
-
-        // Prevent running the same task multiple times for the same event if desired
-        // If different triggers *should* cause separate runs, remove this check
-        if (processedTasks.has(taskName)) {
-          jobLogger.debug(
-            { taskName, triggerId },
-            'Task already triggered for this event. Skipping duplicate trigger.'
-          );
-          continue;
-        }
-
-        // --- Task Instance Lookup ---
-        // Assuming client instance (this.client) provides this lookup
-        // Replace 'getTask' with the actual method signature
-        // @ts-expect-error // Assuming client has getTask(groupName, taskName) or similar
-        const taskInstance = this.client.getTask(groupName, taskName) as Task<any, any> | undefined;
-
-        if (!taskInstance) {
-          jobLogger.error(
-            { taskGroup, taskName, triggerId },
-            'Could not find active Task instance for registered subscriber. Skipping.'
-          );
-          continue; // Skip this task instance
-        }
-        // --- End Task Instance Lookup ---
-
-        processedTasks.add(taskName); // Mark task as processed for this event job
-        jobLogger.debug({ taskGroup, taskName: taskInstance.name, triggerId }, 'Triggering task.run()');
-        triggerPromises.push(taskInstance.run(eventData));
-      }
-
-      // Wait for all task.run() promises to settle.
-      const results = await Promise.allSettled(triggerPromises);
-
-      const successfulTriggers = results.filter((r) => r.status === 'fulfilled').length;
-      const failedTriggers = results.length - successfulTriggers;
-      jobLogger.info({ successfulTriggers, failedTriggers }, 'Finished triggering tasks for event job.');
-
-      if (failedTriggers > 0) {
-        jobLogger.warn(
-          `${failedTriggers} task trigger(s) failed during event processing (errors logged individually).`
-        );
-        // Event job still completes successfully, as failures are handled at the task level.
+      // If any dispatch failed, throw an error to mark the main event job as failed
+      if (failedDispatches > 0) {
+        // Collect reasons for logging or more specific error message
+        const errors = results.filter((r) => r.status === 'rejected').map((r) => (r as PromiseRejectedResult).reason);
+        jobLogger.error({ errors, failedCount: failedDispatches }, 'One or more dispatches to tasks failed.');
+        throw new Error(`Failed to dispatch event to ${failedDispatches} task(s).`);
       }
     } catch (error) {
-      jobLogger.error({ err: error }, 'Failed to process event job due to Redis error or other issue');
-      // Re-throw the error to potentially mark the job as failed
+      jobLogger.error(
+        { err: error },
+        'Failed to process event job due to an error retrieving subscriptions or dispatching.'
+      );
+      // Re-throw the error so BullMQ knows the job failed and can handle retries etc.
       throw error;
     }
   }

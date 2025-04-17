@@ -403,7 +403,7 @@ export class Task<T = unknown, R = unknown> extends BaseQueue {
   async removeAllTriggers(): Promise<void> {
     const logPrefix = `[Remove Triggers: ${this.name}]`;
     this.logger.info(`${logPrefix} Starting removal of all triggers...`);
-    const manager = this.group.client.eventDispatcher.manager;
+    const manager = this.group.client.events.manager;
 
     // 1. Remove Cron/Every Schedulers locally
     try {

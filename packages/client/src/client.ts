@@ -2,6 +2,7 @@ import { ConnectionOptions, WorkerOptions, Queue } from 'bullmq';
 import { Redis, RedisOptions } from 'ioredis';
 import { getConfigFromEnv } from './utils/get-config-from-env.js';
 import { TaskGroup } from './task-group.js';
+import { Task } from './task.js';
 import { pino, type Logger } from 'pino';
 import type { BaseQueue } from './base-queue.js';
 import type { ConnectionOptions as BullMQConnectionOptions } from 'bullmq'; // Import ConnectionOptions if needed
@@ -103,6 +104,16 @@ export class ToroTaskClient {
    */
   public getTaskGroup(name: string): TaskGroup | undefined {
     return this.taskGroups[name];
+  }
+
+  /**
+   * Retrieves an existing Task instance by group and name.
+   */
+  public getTask(groupName: string, name: string): Task | undefined {
+    const group = this.getTaskGroup(groupName);
+    if (!group) return undefined;
+
+    return group.getTask(name);
   }
 
   /**
