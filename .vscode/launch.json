@@ -1,0 +1,24 @@
+{
+  // Use IntelliSense to learn about possible attributes.
+  // Hover to view descriptions of existing attributes.
+  // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "type": "node",
+      "request": "launch",
+      "name": "Debug Dashboard",
+      "cwd": "${workspaceFolder}/apps/dashboard",
+      "outputCapture": "std",
+      "runtimeExecutable": "pnpm",
+      "runtimeArgs": ["run", "dev", "--preserve-symlinks"],
+      "env": {
+        "NODE_ENV": "development",
+        "NODE_TLS_REJECT_UNAUTHORIZED": "0"
+      },
+      "sourceMaps": true,
+      "outFiles": ["${workspaceFolder}/apps/dashboard/src/**/*.*"],
+      "skipFiles": ["<node_internals>/**"]
+    }
+  ]
+}
