@@ -1,10 +1,4 @@
-import type {
-  ToroTaskClient,
-  SingleOrArray,
-  TaskHandler,
-  TaskOptions,
-  TaskTrigger,
-} from '@torotask/client';
+import type { ToroTaskClient, SingleOrArray, TaskHandler, TaskOptions, TaskTrigger } from '@torotask/client';
 import type { Logger, DestinationStream, LoggerOptions } from 'pino';
 
 /** Options for configuring the TaskServer */
@@ -47,6 +41,6 @@ export type TaskModuleOptions = TaskOptions & {
 /** Type definition for the expected export from a task file */
 export interface TaskModule<T = unknown, R = unknown> {
   handler: TaskHandler<T, R>;
-  trigger: SingleOrArray<TaskTrigger<T>>;
+  triggers: SingleOrArray<TaskTrigger<T>>;
   options?: TaskModuleOptions;
 }

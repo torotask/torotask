@@ -6,19 +6,19 @@ interface SayHelloData {
 }
 
 // Use the factory function for the default export
-export default defineTask<SayHelloData, string>(
-  {
+export default defineTask<SayHelloData, string>({
+  options: {
     attempts: 3,
     backoff: {
       type: 'exponential',
       delay: 1000,
     },
   },
-  {
+  triggers: {
     type: 'every',
     every: 20000,
   },
-  async (options, context) => {
+  handler: async (options, context) => {
     const { data } = options;
     const { logger } = context;
 
@@ -31,5 +31,5 @@ export default defineTask<SayHelloData, string>(
     await new Promise((resolve) => setTimeout(resolve, 100));
 
     return message; // Return a result
-  }
-);
+  },
+});

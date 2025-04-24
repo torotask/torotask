@@ -11,13 +11,14 @@ import type { TaskModule, TaskModuleOptions } from './types.js'; // Added .js ex
  * @param handler The task handler function.
  * @returns A TaskModule object.
  */
-export function defineTask<T = unknown, R = unknown>(
-  options: TaskModuleOptions,
-  trigger: SingleOrArray<TaskTrigger<T>>,
-  handler: TaskHandler<T, R>
-): TaskModule<T, R> {
+export function defineTask<T = unknown, R = unknown>(config: {
+  options: TaskModuleOptions;
+  triggers: SingleOrArray<TaskTrigger<T>>;
+  handler: TaskHandler<T, R>;
+}): TaskModule<T, R> {
+  const { options, triggers, handler } = config;
   if (!handler || typeof handler !== 'function') {
     throw new Error('defineTask requires a valid handler function.');
   }
-  return { options, trigger, handler };
+  return { options, triggers, handler };
 }

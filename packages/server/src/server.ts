@@ -203,7 +203,12 @@ export class TaskServer {
 
         const group = this.client.createTaskGroup(groupName);
         this.managedGroups.add(group);
-        group.defineTask(finalTaskName, optionsToUse, triggerOrTriggers, moduleToUse.handler);
+        group.defineTask({
+          name: finalTaskName,
+          options: optionsToUse,
+          triggers: triggerOrTriggers,
+          handler: moduleToUse.handler,
+        });
 
         this.logger.debug({ groupName, taskName: finalTaskName }, 'Successfully loaded and defined task.');
         loadedCount++;
