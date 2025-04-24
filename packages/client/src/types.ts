@@ -36,6 +36,13 @@ export interface TaskOptions extends JobsOptions {
   allowCatchAll?: boolean;
 }
 
+export interface BatchOptions {
+  batchSize: number;
+  batchDelay: number;
+}
+
+export interface BatchTaskOptions extends TaskOptions, BatchOptions {}
+
 /** Handler details passed to the task handler */
 export interface TaskHandlerOptions<T = unknown> {
   id?: string; // Job ID
