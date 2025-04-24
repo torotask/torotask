@@ -48,14 +48,14 @@ export abstract class BaseQueue extends EventEmitter {
 
     try {
       // Initialize queue and events within try block
-      this.logger.info('Initializing BaseQueue resources (queue, events)');
+      this.logger.debug('Initializing BaseQueue resources (queue, events)');
 
       const connection: ConnectionOptions = this.client.connectionOptions;
 
       this.queue = new Queue(this.queueName, { prefix: this.prefix, connection });
       this.queueEvents = new QueueEvents(this.queueName, { prefix: this.prefix, connection });
 
-      this.logger.info('BaseQueue resources initialized');
+      this.logger.debug('BaseQueue resources initialized');
     } catch (error) {
       // If initialization fails, remove from registry before throwing
       BaseQueue.instances.delete(this.queueName);
@@ -120,7 +120,7 @@ export abstract class BaseQueue extends EventEmitter {
       },
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       cleaned: (jobs: Job[], type: string) => {
-        this.logger.info({ count: jobs.length, type }, 'Worker event: cleaned');
+        this.logger.debug({ count: jobs.length, type }, 'Worker event: cleaned');
         this.emit('cleaned', jobs, type);
       },
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -130,7 +130,7 @@ export abstract class BaseQueue extends EventEmitter {
       },
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       drained: () => {
-        this.logger.info('Worker event: drained');
+        this.logger.debug('Worker event: drained');
         this.emit('drained');
       },
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -147,7 +147,7 @@ export abstract class BaseQueue extends EventEmitter {
       },
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       paused: () => {
-        this.logger.info('Worker event: paused');
+        this.logger.debug('Worker event: paused');
         this.emit('paused');
       },
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -158,12 +158,12 @@ export abstract class BaseQueue extends EventEmitter {
       },
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       ready: () => {
-        this.logger.info('Worker event: ready');
+        this.logger.debug('Worker event: ready');
         this.emit('ready');
       },
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       resumed: () => {
-        this.logger.info('Worker event: resumed');
+        this.logger.debug('Worker event: resumed');
         this.emit('resumed');
       },
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -229,9 +229,9 @@ export abstract class BaseQueue extends EventEmitter {
   async close(): Promise<void> {
     // Remove from static registry first
     BaseQueue.instances.delete(this.queueName);
-    this.logger.info('Removed queue from static registry.');
+    this.logger.debug('Removed queue from static registry.');
 
-    this.logger.info('Closing BaseQueue resources (worker, queue, events)');
+    this.logger.debug('Closing BaseQueue resources (worker, queue, events)');
     const closePromises: Promise<void>[] = [];
 
     // Stop the worker first using the new method
@@ -246,7 +246,7 @@ export abstract class BaseQueue extends EventEmitter {
 
     try {
       await Promise.all(closePromises);
-      this.logger.info('BaseQueue resources closed successfully');
+      this.logger.debug('BaseQueue resources closed successfully');
     } catch (error) {
       this.logger.error(
         { err: error instanceof Error ? error : new Error(String(error)) },

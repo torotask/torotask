@@ -80,7 +80,7 @@ export class EventDispatcher extends BaseQueue {
    * the existence of the key implies active subscribers for performance.
    */
   async setActiveEvents(): Promise<void> {
-    this.logger.info('Refreshing local activeEvents cache from Redis...');
+    this.logger.debug('Refreshing local activeEvents cache from Redis...');
     const redis = await this.getRedisClient();
     const newActiveEvents = new Set<string>();
 
@@ -103,7 +103,7 @@ export class EventDispatcher extends BaseQueue {
       } while (cursor !== '0');
 
       this.activeEvents = newActiveEvents;
-      this.logger.info({ count: this.activeEvents.size }, 'Local activeEvents cache refreshed.');
+      this.logger.debug({ count: this.activeEvents.size }, 'Local activeEvents cache refreshed.');
     } catch (error) {
       this.logger.error({ err: error, pattern }, 'Failed to scan event keys from Redis for activeEvents cache.');
       // Decide: Keep stale cache or clear it? Keeping stale might be safer.
@@ -174,7 +174,7 @@ export class EventDispatcher extends BaseQueue {
     const eventData = job.data;
     const jobLogger = this.logger.child({ jobId: job.id, eventName });
 
-    jobLogger.info(
+    jobLogger.debug(
       { hasData: eventData !== undefined },
       'Processing event job, querying Redis Hash for subscribers via EventManager...'
     );
@@ -184,12 +184,15 @@ export class EventDispatcher extends BaseQueue {
       const subscriptions: EventSubscriptionInfo[] = await this.manager.getRegisteredSubscriptionsForEvent(eventName);
 
       if (!subscriptions || subscriptions.length === 0) {
-        jobLogger.info('No registered task subscriptions found for this event in Redis Hash.');
+        jobLogger.debug('No registered task subscriptions found for this event in Redis Hash.');
         // No subscribers, so the job is successfully processed (did nothing).
         return;
       }
 
-      jobLogger.info({ count: subscriptions.length }, 'Found subscriptions, dispatching jobs to target task queues...');
+      jobLogger.debug(
+        { count: subscriptions.length },
+        'Found subscriptions, dispatching jobs to target task queues...'
+      );
 
       // --- Dispatch to each subscribed task's queue ---
       const dispatchPromises: Promise<any>[] = []; // Store promises for logging/waiting
@@ -233,7 +236,7 @@ export class EventDispatcher extends BaseQueue {
       const successfulDispatches = results.filter((r) => r.status === 'fulfilled').length;
       const failedDispatches = results.length - successfulDispatches;
 
-      jobLogger.info(
+      jobLogger.debug(
         { successful: successfulDispatches, failed: failedDispatches, total: results.length },
         'Finished dispatching event to subscribed tasks.'
       );

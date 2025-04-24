@@ -67,7 +67,7 @@ export class ToroTaskClient {
     this.logger = (logger ?? pino()).child({ name: loggerName ?? LOGGER_NAME });
     this.prefix = prefix || BASE_PREFIX;
     this.queuePrefix = [this.prefix, queuePrefix || QUEUE_PREFIX].join(':');
-    this.logger.info('ToroTaskClient initialized');
+    this.logger.debug('ToroTaskClient initialized');
   }
 
   /**
@@ -76,10 +76,10 @@ export class ToroTaskClient {
    */
   public get events(): EventDispatcher {
     if (!this._eventDispatcher) {
-      this.logger.info('Initializing EventDispatcher...');
+      this.logger.debug('Initializing EventDispatcher...');
       // Pass 'this' (the client instance) and its logger
       this._eventDispatcher = new EventDispatcher(this, this.logger);
-      this.logger.info('EventDispatcher initialized successfully.');
+      this.logger.debug('EventDispatcher initialized successfully.');
     }
     return this._eventDispatcher;
   }
@@ -110,7 +110,7 @@ export class ToroTaskClient {
       return this.taskGroups[name];
     }
 
-    this.logger.info({ taskGroupName: name }, 'Creating new TaskGroup');
+    this.logger.debug({ taskGroupName: name }, 'Creating new TaskGroup');
     const newTaskGroup = new TaskGroup(this, name, this.logger);
     this.taskGroups[name] = newTaskGroup;
     return newTaskGroup;
@@ -377,7 +377,7 @@ export class ToroTaskClient {
 
     // Close EventDispatcher if it was initialized
     if (this._eventDispatcher) {
-      this.logger.info('Closing EventDispatcher...');
+      this.logger.debug('Closing EventDispatcher...');
       closePromises.push(this._eventDispatcher.close());
     } else {
       this.logger.debug('EventDispatcher was not initialized, skipping closure.');

@@ -25,7 +25,7 @@ export class TaskGroup {
     // Create a child logger for this task group
     this.logger = parentLogger.child({ taskGroupName: this.name });
 
-    this.logger.info('TaskGroup initialized');
+    this.logger.debug('TaskGroup initialized');
   }
 
   /**
@@ -52,7 +52,7 @@ export class TaskGroup {
     // Pass all parameters to Task constructor
     const newTask = new Task<T, R>(this, name, options, triggerOrTriggers, handler, this.logger);
     this.tasks.set(name, newTask);
-    this.logger.info({ taskName: name }, 'Task defined');
+    this.logger.debug({ taskName: name }, 'Task defined');
     return newTask;
   }
 
@@ -84,7 +84,7 @@ export class TaskGroup {
    * @param workerOptions Optional default WorkerOptions to pass to each task's worker.
    */
   async startWorkers(filter?: { tasks?: string[] }, workerOptions?: WorkerOptions): Promise<void> {
-    this.logger.info({ filter }, 'Starting workers for task group');
+    this.logger.debug({ filter }, 'Starting workers for task group');
     const tasksToStart = filter?.tasks
       ? filter.tasks.map((name) => this.tasks.get(name)).filter((task): task is Task<any, any> => !!task)
       : Array.from(this.tasks.values());
@@ -108,7 +108,7 @@ export class TaskGroup {
         // Continue starting other workers
       }
     });
-    this.logger.info({ count: tasksToStart.length }, 'Finished attempting to start workers for task group');
+    this.logger.debug({ count: tasksToStart.length }, 'Finished attempting to start workers for task group');
   }
 
   /**

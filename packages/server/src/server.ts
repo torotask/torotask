@@ -54,7 +54,7 @@ export class TaskServer {
     // Store rootDir if provided
     this.rootDir = options.rootDir;
     if (this.rootDir) {
-      this.logger.info({ rootDir: this.rootDir }, 'TaskServer root directory set.');
+      this.logger.debug({ rootDir: this.rootDir }, 'TaskServer root directory set.');
     } else {
       this.logger.warn(
         'TaskServer `rootDir` not provided. Relative paths in `loadTasksFromDirectory` will be rejected.'
@@ -65,14 +65,14 @@ export class TaskServer {
     if (options.client) {
       this.client = options.client;
       this.ownClient = false;
-      this.logger.info('Using provided ToroTaskClient instance.');
+      this.logger.debug('Using provided ToroTaskClient instance.');
     } else if (options.clientOptions) {
       this.client = new ToroTaskClient({
         ...options.clientOptions,
         logger: options.clientOptions.logger ?? this.logger.child({ component: 'ToroTaskClient' }),
       });
       this.ownClient = true;
-      this.logger.info('Created new ToroTaskClient instance.');
+      this.logger.debug('Created new ToroTaskClient instance.');
     } else {
       throw new Error('TaskServer requires either a `client` instance or `clientOptions`.');
     }
@@ -85,7 +85,7 @@ export class TaskServer {
       handleGlobalErrors: options.handleGlobalErrors ?? true,
     };
 
-    this.logger.info('TaskServer initialized');
+    this.logger.debug('TaskServer initialized');
   }
 
   /**
@@ -131,13 +131,13 @@ export class TaskServer {
         );
       }
       absoluteBaseDir = path.resolve(this.rootDir, baseDir);
-      this.logger.info(
+      this.logger.debug(
         { relativePath: baseDir, resolvedPath: absoluteBaseDir },
         'Resolved relative baseDir using rootDir'
       );
     }
 
-    this.logger.info({ baseDir: absoluteBaseDir, pattern: effectivePattern }, 'Loading tasks from directory...');
+    this.logger.debug({ baseDir: absoluteBaseDir, pattern: effectivePattern }, 'Loading tasks from directory...');
 
     try {
       if (!fs.existsSync(absoluteBaseDir) || !fs.statSync(absoluteBaseDir).isDirectory()) {
@@ -151,7 +151,7 @@ export class TaskServer {
     const searchPattern = path.join(absoluteBaseDir, effectivePattern).replace(/\\/g, '/');
     const taskFiles = await glob(searchPattern, { absolute: true });
 
-    this.logger.info({ count: taskFiles.length }, 'Found potential task files');
+    this.logger.debug({ count: taskFiles.length }, 'Found potential task files');
 
     let loadedCount = 0;
     let errorCount = 0;
@@ -205,7 +205,7 @@ export class TaskServer {
         this.managedGroups.add(group);
         group.defineTask(finalTaskName, optionsToUse, triggerOrTriggers, moduleToUse.handler);
 
-        this.logger.info({ groupName, taskName: finalTaskName }, 'Successfully loaded and defined task.');
+        this.logger.debug({ groupName, taskName: finalTaskName }, 'Successfully loaded and defined task.');
         loadedCount++;
       } catch (error) {
         this.logger.error({ filePath, err: error }, 'Failed to load or define task from file.');
@@ -213,7 +213,7 @@ export class TaskServer {
       }
     }
 
-    this.logger.info(
+    this.logger.debug(
       { loaded: loadedCount, errors: errorCount, totalFound: taskFiles.length },
       'Finished loading tasks from directory.'
     );
@@ -335,7 +335,8 @@ export class TaskServer {
 
     // Optionally close the client if we created it
     if (this.ownClient) {
-      this.logger.info('Closing internally created ToroTaskClient.');
+      this.logger.debug('Closing internally created ToroTaskClient.');
+      this.logger.debug('Closing internally created ToroTaskClient.');
       await this.client.close();
     }
     this.logger.info('TaskServer stopped.');
@@ -346,7 +347,7 @@ export class TaskServer {
       this.logger.warn('Global error handlers already attached, detaching first.');
       this.detachGlobalErrorHandlers();
     }
-    this.logger.info('Attaching global error handlers (unhandledRejection, uncaughtException)');
+    this.logger.debug('Attaching global error handlers (unhandledRejection, uncaughtException)');
 
     // Bind `this` to ensure logger is accessible
     this.unhandledRejectionListener = this.handleUnhandledRejection.bind(this);

@@ -106,7 +106,7 @@ export class EventManager extends BaseQueue {
       taskName,
       desiredSubscriptions,
     };
-    this.logger.info(
+    this.logger.debug(
       { taskGroup, taskName, desiredCount: desiredSubscriptions.length },
       `Requesting event trigger sync job.`
     );
@@ -132,7 +132,7 @@ export class EventManager extends BaseQueue {
   async process(job: Job<SyncJobPayload>): Promise<SyncJobReturn> {
     const { taskGroup, taskName, desiredSubscriptions } = job.data;
     const logPrefix = `[Sync Process: ${taskGroup}:${taskName} (Job ${job.id})]`;
-    this.logger.info(`${logPrefix} Starting synchronization using Hash strategy.`);
+    this.logger.debug(`${logPrefix} Starting synchronization using Hash strategy.`);
 
     // --- Prepare desired state map (triggers only for now) ---
     const desiredSubMap = new Map<number, EventSubscriptionInfo>();
@@ -300,7 +300,7 @@ export class EventManager extends BaseQueue {
       // --- 4. Wait for all operations to settle ---
       await Promise.allSettled(promises);
 
-      this.logger.info(
+      this.logger.debug(
         { registered: registeredCount, unregistered: unregisteredCount, errors: errorCount },
         `${logPrefix} Synchronization finished.`
       );
@@ -355,7 +355,7 @@ export class EventManager extends BaseQueue {
       const hsetResult = results?.[0]?.[1]; // [1] accesses the value part of [error, value]
       if (hsetResult === 1) {
         // Note: ioredis returns number for HSET
-        this.logger.info(
+        this.logger.debug(
           { eventName, fieldKey, redisKey: eventKey },
           'Task subscription added to event Hash in Redis (new field)'
         );
@@ -376,7 +376,7 @@ export class EventManager extends BaseQueue {
       const saddResult = results?.[1]?.[1]; // [1] accesses the value part of [error, value]
       if (saddResult === 1) {
         // Note: ioredis returns number for SADD
-        this.logger.info({ eventName, taskIndexKey }, 'Event name added to task index set');
+        this.logger.debug({ eventName, taskIndexKey }, 'Event name added to task index set');
       } else if (saddResult === 0) {
         this.logger.debug({ eventName, taskIndexKey }, 'Event name was already in task index set');
       } else {

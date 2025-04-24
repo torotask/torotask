@@ -83,7 +83,7 @@ export class Task<T = unknown, R = unknown> extends BaseQueue {
     this._initializeTriggers(trigger);
 
     this.on('ready', () => {
-      this.logger.info('Task is ready. Requesting trigger synchronization...');
+      this.logger.debug('Task is ready. Requesting trigger synchronization...');
       // Request sync instead of running it directly
       this.requestTriggerSync().catch(
         (
@@ -92,7 +92,7 @@ export class Task<T = unknown, R = unknown> extends BaseQueue {
       );
     });
 
-    this.logger.info({ allowCatchAll: this.allowCatchAll, triggerCount: this.triggers.length }, 'Task initialized');
+    this.logger.debug({ allowCatchAll: this.allowCatchAll, triggerCount: this.triggers.length }, 'Task initialized');
   }
 
   defineSubTask<ST = T, SR = R>(subTaskName: string, subTaskHandler: SubTaskHandler<ST, SR>): SubTask<ST, SR> {
@@ -106,7 +106,7 @@ export class Task<T = unknown, R = unknown> extends BaseQueue {
 
     const newSubTask = new SubTask<ST, SR>(this, subTaskName, subTaskHandler);
     this.subTasks.set(subTaskName, newSubTask);
-    this.logger.info({ subTaskName }, 'SubTask defined');
+    this.logger.debug({ subTaskName }, 'SubTask defined');
     return newSubTask;
   }
 
@@ -162,9 +162,9 @@ export class Task<T = unknown, R = unknown> extends BaseQueue {
         return result;
       } else if (effectiveJobName === this.name || this.allowCatchAll) {
         if (this.allowCatchAll && effectiveJobName !== this.name) {
-          jobLogger.info(`Routing job to main Task handler (catchAll enabled): ${effectiveJobName}`);
+          jobLogger.debug(`Routing job to main Task handler (catchAll enabled): ${effectiveJobName}`);
         } else {
-          jobLogger.info(`Routing job to main Task handler: ${effectiveJobName}`);
+          jobLogger.debug(`Routing job to main Task handler: ${effectiveJobName}`);
         }
         const typedJob = job as Job<T, R>;
         const handlerOptions: TaskHandlerOptions<T> = { id, name: this.name, data: typedJob.data };
@@ -177,7 +177,7 @@ export class Task<T = unknown, R = unknown> extends BaseQueue {
           queue: this.queue,
         };
         const result = await this.handler(handlerOptions, handlerContext);
-        jobLogger.info(`Main task job completed successfully`);
+        jobLogger.debug(`Main task job completed successfully`);
         return result;
       } else {
         jobLogger.error(
@@ -202,13 +202,13 @@ export class Task<T = unknown, R = unknown> extends BaseQueue {
 
   public async requestTriggerSync(): Promise<void> {
     const logPrefix = `[Request Sync: ${this.name}]`;
-    this.logger.info(`${logPrefix} Requesting trigger synchronization via EventManager.`);
+    this.logger.debug(`${logPrefix} Requesting trigger synchronization via EventManager.`);
     try {
       // Only need to sync event triggers via the manager
       await this._requestEventTriggerSync();
       // Cron/Every schedulers are still managed locally by this Task instance
       await this._synchronizeCronEverySchedulers();
-      this.logger.info(`${logPrefix} Synchronization request sent and local schedulers updated.`);
+      this.logger.debug(`${logPrefix} Synchronization request sent and local schedulers updated.`);
     } catch (error) {
       this.logger.error({ err: error }, `${logPrefix} Error requesting trigger synchronization.`);
       // Decide if errors should propagate
@@ -223,8 +223,8 @@ export class Task<T = unknown, R = unknown> extends BaseQueue {
   private async _synchronizeCronEverySchedulers(): Promise<void> {
     const queue = this.queue;
     // Add distinct log prefix
-    const logPrefix = `[Cron/Every Sync: ${this.name}]`;
-    this.logger.info(`${logPrefix} Starting synchronization...`);
+    const logPrefix = `(Cron/Every Sync: ${this.name})`;
+    this.logger.debug(`${logPrefix} Starting synchronization...`);
 
     try {
       // 1. Get existing job schedulers potentially related to this task (CRON/EVERY only)
@@ -232,7 +232,7 @@ export class Task<T = unknown, R = unknown> extends BaseQueue {
       const schedulerPrefix = `trigger:`;
       const taskSchedulers = allSchedulers.filter((s) => s.key?.startsWith(schedulerPrefix));
       const existingSchedulerKeys = new Set(taskSchedulers.map((s) => s.key).filter(Boolean) as string[]);
-      this.logger.info(
+      this.logger.debug(
         `${logPrefix} Found ${existingSchedulerKeys.size} existing cron/every job schedulers for this task.`
       );
 
@@ -282,7 +282,7 @@ export class Task<T = unknown, R = unknown> extends BaseQueue {
 
         const jobOptions: Omit<JobsOptions, 'repeat' | 'jobId'> = { ...(this.defaultJobOptions ?? {}) };
 
-        this.logger.info(`${logPrefix} ${logSuffix} Upserting scheduler '${schedulerKey}'`);
+        this.logger.debug(`${logPrefix} ${logSuffix} Upserting scheduler '${schedulerKey}'`);
         upsertPromises.push(
           queue.upsertJobScheduler(schedulerKey, repeatOpts, {
             name: this.name,
@@ -323,7 +323,7 @@ export class Task<T = unknown, R = unknown> extends BaseQueue {
    */
   private async _requestEventTriggerSync(): Promise<void> {
     const logPrefix = `[Event Sync Request: ${this.name}]`;
-    this.logger.info(`${logPrefix} Collecting desired event subscriptions...`);
+    this.logger.debug(`${logPrefix} Collecting desired event subscriptions...`);
     const manager = this.group.client.events.manager; // Access manager
 
     // 1. Build the list of desired subscriptions from current config
@@ -346,7 +346,7 @@ export class Task<T = unknown, R = unknown> extends BaseQueue {
       }
     });
 
-    this.logger.info(
+    this.logger.debug(
       `${logPrefix} Found ${desiredSubscriptions.length} desired event subscriptions. Requesting sync job.`
     );
 
@@ -354,9 +354,9 @@ export class Task<T = unknown, R = unknown> extends BaseQueue {
     try {
       const job = await manager.requestSync(this.group.name, this.name, desiredSubscriptions);
       if (job) {
-        this.logger.info({ jobId: job.id }, `${logPrefix} Sync job successfully requested.`);
+        this.logger.debug({ jobId: job.id }, `${logPrefix} Sync job successfully requested.`);
       } else {
-        this.logger.info(`${logPrefix} Sync job request skipped (already exists/pending).`);
+        this.logger.debug(`${logPrefix} Sync job request skipped (already exists/pending).`);
       }
     } catch (error) {
       this.logger.error({ err: error }, `${logPrefix} Failed to request event trigger sync job.`);
@@ -369,12 +369,12 @@ export class Task<T = unknown, R = unknown> extends BaseQueue {
    */
   async update(options?: TaskOptions, triggers?: SingleOrArray<TaskTrigger<T>>): Promise<void> {
     const logPrefix = `[Task Update: ${this.name}]`;
-    this.logger.info({ hasNewOptions: !!options, hasNewTriggers: !!triggers }, `${logPrefix} Starting update...`);
+    this.logger.debug({ hasNewOptions: !!options, hasNewTriggers: !!triggers }, `${logPrefix} Starting update...`);
     let needsSyncRequest = false; // Renamed for clarity
 
     if (options !== undefined) {
       this.defaultJobOptions = options;
-      this.logger.info(`${logPrefix} Updated default job options.`);
+      this.logger.debug(`${logPrefix} Updated default job options.`);
       // Sync local cron/every schedulers immediately if options change
       await this._synchronizeCronEverySchedulers();
       needsSyncRequest = true; // Still request event sync
@@ -382,7 +382,7 @@ export class Task<T = unknown, R = unknown> extends BaseQueue {
 
     if (triggers !== undefined) {
       this._initializeTriggers(triggers); // Re-initializes internal maps
-      this.logger.info(
+      this.logger.debug(
         `${logPrefix} Processed triggers. New total count: ${this.triggers.length}, Event triggers: ${this.currentEventTriggers.size}.`
       );
       needsSyncRequest = true; // Request sync if triggers changed
@@ -392,7 +392,7 @@ export class Task<T = unknown, R = unknown> extends BaseQueue {
       this.logger.info(`${logPrefix} Changes detected, requesting trigger synchronization...`);
       await this.requestTriggerSync(); // Request sync via EventManager
     } else {
-      this.logger.info(`${logPrefix} No changes requiring trigger synchronization request.`);
+      this.logger.debug(`${logPrefix} No changes requiring trigger synchronization request.`);
     }
     this.logger.info(`${logPrefix} Task update complete.`);
   }
