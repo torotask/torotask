@@ -39,14 +39,14 @@ export class Task<T = unknown, R = unknown> extends BaseQueue {
   public readonly group: TaskGroup;
   public defaultJobOptions: TaskOptions;
   public readonly handler: TaskHandler<T, R>;
-  private readonly subTasks: Map<string, SubTask<any, any>>;
-  private readonly allowCatchAll: boolean;
+  protected readonly subTasks: Map<string, SubTask<any, any>>;
+  protected readonly allowCatchAll: boolean;
   // Store the normalized triggers with an internal ID
   public triggers: InternalTaskTrigger<T>[] = [];
   // Map for easy lookup of *current* event triggers by their internalId
-  private currentEventTriggers: Map<number, InternalTaskTriggerEvent<T>> = new Map();
+  protected currentEventTriggers: Map<number, InternalTaskTriggerEvent<T>> = new Map();
   // Remove internal tracking of registered state, EventManager handles comparison
-  // private _registeredEventTriggers: Map<number, EventSubscriptionInfo> = new Map();
+  // protected _registeredEventTriggers: Map<number, EventSubscriptionInfo> = new Map();
 
   constructor(
     taskGroup: TaskGroup,
@@ -220,7 +220,7 @@ export class Task<T = unknown, R = unknown> extends BaseQueue {
    * Synchronizes BullMQ Job Schedulers based on the task's triggers with cron/every.
    * This remains local to the Task instance.
    */
-  private async _synchronizeCronEverySchedulers(): Promise<void> {
+  protected async _synchronizeCronEverySchedulers(): Promise<void> {
     const queue = this.queue;
     // Add distinct log prefix
     const logPrefix = `(Cron/Every Sync: ${this.name})`;
@@ -321,7 +321,7 @@ export class Task<T = unknown, R = unknown> extends BaseQueue {
   /**
    * Collects desired event subscriptions and requests synchronization via the EventManager.
    */
-  private async _requestEventTriggerSync(): Promise<void> {
+  protected async _requestEventTriggerSync(): Promise<void> {
     const logPrefix = `[Event Sync Request: ${this.name}]`;
     this.logger.debug(`${logPrefix} Collecting desired event subscriptions...`);
     const manager = this.group.client.events.manager; // Access manager
@@ -432,7 +432,7 @@ export class Task<T = unknown, R = unknown> extends BaseQueue {
   }
 
   /** Helper method to normalize trigger input and update internal state */
-  private _initializeTriggers(triggersInput?: SingleOrArray<TaskTrigger<T>>): void {
+  protected _initializeTriggers(triggersInput?: SingleOrArray<TaskTrigger<T>>): void {
     const logPrefix = `[Init Triggers: ${this.name}]`;
     this.logger.debug(`${logPrefix} Normalizing triggers and updating internal trigger maps...`);
     const normalizedTriggers: InternalTaskTrigger<T>[] = [];
