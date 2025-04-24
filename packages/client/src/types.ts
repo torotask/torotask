@@ -1,5 +1,6 @@
 import type { Job, JobsOptions, Queue, RepeatOptions } from 'bullmq';
 import type { Logger } from 'pino';
+import type { BaseTask } from './base-task.js';
 import type { ToroTaskClient } from './client.js'; // Assuming client export is in client.ts
 import type { TaskGroup } from './task-group.js';
 import type { Task } from './task.js'; // Needed for TaskHandlerContext
@@ -47,7 +48,7 @@ export interface TaskHandlerContext {
   logger: Logger; // Job-specific logger
   client: ToroTaskClient;
   group: TaskGroup;
-  task: Task<any, any>; // Reference to the Task instance
+  task: BaseTask<any, any>; // Reference to the Task instance
   job: Job;
   queue: Queue; // The queue instance (from BaseQueue)
 }

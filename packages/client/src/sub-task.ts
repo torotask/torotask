@@ -65,6 +65,29 @@ export class SubTask<ST = unknown, SR = unknown> {
     return this.parentTask._runJob<ST, SR>(this.name, data, finalOptions);
   }
 
+  async processSubJob(job: Job, jobName: string, jobLogger: Logger): Promise<any> {
+    const typedJob = job as Job<ST, SR>;
+    const handlerOptions: SubTaskHandlerOptions<ST> = { id: job.id, name: jobName, data: typedJob.data };
+    const handlerContext: SubTaskHandlerContext = {
+      logger: jobLogger,
+      client: this.parentTask.client,
+      group: this.parentTask.group,
+      parentTask: this.parentTask,
+      subTaskName: this.name,
+      job: typedJob,
+      queue: this.parentTask.queue,
+    };
+    try {
+      return await this.handler(handlerOptions, handlerContext);
+    } catch (error) {
+      jobLogger.error(
+        { err: error instanceof Error ? error : new Error(String(error)) },
+        `Job processing failed for job name "${job.name}"`
+      );
+      throw error;
+    }
+  }
+
   /**
    * Adds a job for this subtask and waits for it to complete.
    *
