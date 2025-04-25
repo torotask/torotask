@@ -4,6 +4,7 @@ import type { BaseTask } from '../base-task.js';
 import type { ToroTaskClient } from '../client.js'; // Assuming client export is in client.ts
 import type { TaskGroup } from '../task-group.js';
 import type { Prettify } from './utils.js';
+import { Task } from '../task.js';
 
 /**
  * Options for defining a Task, extending BullMQ's JobsOptions.
@@ -26,20 +27,22 @@ export interface TaskHandlerOptions<T = unknown> {
   data: T;
 }
 
-/** Context passed to the task handler */
-export interface TaskHandlerContext<TJob extends Job = Job, TTask extends BaseTask<any, any> = BaseTask<any, any>> {
+export interface BaseHandlerContext {
   logger: Logger; // Job-specific logger
   client: ToroTaskClient;
   group: TaskGroup;
-  task: TTask; // Reference to the Task instance
-  job: TJob;
   queue: Queue; // The queue instance (from BaseQueue)
+}
+/** Context passed to the task handler */
+export interface TaskHandlerContext<T = unknown, R = unknown> extends BaseHandlerContext {
+  task: Task<T, R>; // Reference to the Task instance
+  job: Job<T, R>;
 }
 
 /** Task handler function type */
 export type TaskHandler<T = unknown, R = unknown> = (
   options: TaskHandlerOptions<T>,
-  context: TaskHandlerContext
+  context: TaskHandlerContext<T, R>
 ) => Promise<R>;
 
 export interface TaskTriggerBase<TData> {

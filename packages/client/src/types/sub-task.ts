@@ -10,8 +10,8 @@ export interface SubTaskHandlerOptions<ST = unknown> {
 }
 
 /** Context passed to the subtask handler */
-export interface SubTaskHandlerContext extends Omit<TaskHandlerContext<Job>, 'task'> {
-  parentTask: Task<any, any>; // Reference to the parent Task instance
+export interface SubTaskHandlerContext<T = unknown, R = unknown> extends Omit<TaskHandlerContext<T, R>, 'task'> {
+  parentTask: Task<T, R>; // Reference to the parent Task instance
   subTaskName: string; // The name of this subtask
 }
 

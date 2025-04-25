@@ -105,7 +105,7 @@ export class Task<T = unknown, R = unknown> extends BaseTask<T, R, TaskOptions> 
     jobLogger = jobLogger ?? this.getJobLogger(job);
     const typedJob = job as Job<T, R>;
     const handlerOptions: TaskHandlerOptions<T> = { id: job.id, name: this.name, data: typedJob.data };
-    const handlerContext: TaskHandlerContext = {
+    const handlerContext: TaskHandlerContext<T, R> = {
       logger: jobLogger,
       client: this.client,
       group: this.group,

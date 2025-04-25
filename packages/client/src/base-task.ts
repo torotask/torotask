@@ -117,7 +117,9 @@ export abstract class BaseTask<T = unknown, R = unknown, TOptions extends TaskOp
     return result;
   }
 
-  abstract processJob(job: Job, jobLogger?: Logger): Promise<any>;
+  processJob(_job: Job, _jobLogger?: Logger): Promise<any> {
+    throw new Error('processJob method must be implemented in a subclass.');
+  }
 
   /**
    * Requests synchronization of all trigger types via the EventManager queue.

@@ -1,4 +1,4 @@
-export * from './batch-task.js';
+export * from './batch.js';
 export * from './events.js';
 export * from './sub-task.js';
 export * from './task.js';

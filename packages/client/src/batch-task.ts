@@ -1,9 +1,10 @@
 import { Job, WorkerOptions } from 'bullmq';
 import type { Logger } from 'pino';
 import { BaseTask } from './base-task.js'; // Assuming standard BullMQ worker setup
-import { BatchJob } from './batch-job.js';
+import { BatchContainer } from './batch-container.js';
 import type { TaskGroup } from './task-group.js';
 import type {
+  BatchHandlerOptions,
   BatchTaskHandler,
   BatchTaskHandlerContext,
   BatchTaskOptions,
@@ -65,7 +66,8 @@ export class BatchTask<T = unknown, R = unknown> extends BaseTask<T, R, BatchTas
 
   getWorkerOptions(): Partial<WorkerOptions> {
     const options: Partial<WorkerOptions> = {
-      concurrency: this.taskOptions.concurrency,
+      maxStalledCount: 5,
+
       ...super.getWorkerOptions(),
     };
 
@@ -154,6 +156,9 @@ export class BatchTask<T = unknown, R = unknown> extends BaseTask<T, R, BatchTas
 
     // Add job to the current batch
     this.jobBatch.push(typedJob);
+    typedJob.log(
+      `Adding to batch queue for task "${this.name}". Item ${this.jobBatch.length} of ${this.taskOptions.batchSize}`
+    );
 
     // Capture the promise for the *current* batch
     const currentBatchPromise = this.jobBatchProcessPromise;
@@ -235,10 +240,10 @@ export class BatchTask<T = unknown, R = unknown> extends BaseTask<T, R, BatchTas
     this.logger.info(`Processing ${batchInfo} for task "${this.name}".`);
 
     try {
-      const batchJob = new BatchJob<any, R>(this.queue, this.name, {}, this.taskOptions);
-      batchJob.setBatches(batchToProcess); // Set the jobs to process
+      const batch = new BatchContainer<T, R>(this.queue, this.name, this.logger);
+      batch.setJobs(batchToProcess); // Set the jobs to process
       // --- Execute actual batch processing logic ---
-      await this.processJob(batchJob);
+      await this.processBatch(batch);
 
       // --- Success ---
       this.logger.info(`Successfully processed ${batchInfo} for task "${this.name}".`);
@@ -258,6 +263,10 @@ export class BatchTask<T = unknown, R = unknown> extends BaseTask<T, R, BatchTas
     }
   }
 
+  protected getBatchLogger(batch: BatchContainer): Logger {
+    return this.logger.child({ batchId: batch.id });
+  }
+
   /**
    * Processes a single job using the configured handler.
    * Called internally by `processBatch`.
@@ -267,23 +276,25 @@ export class BatchTask<T = unknown, R = unknown> extends BaseTask<T, R, BatchTas
    * @returns The result returned by the task handler.
    * @throws Throws an error if the handler fails.
    */
-  async processJob(job: BatchJob<T, R>, jobLogger?: Logger): Promise<any> {
-    jobLogger = jobLogger ?? this.getJobLogger(job);
-    const handlerOptions: TaskHandlerOptions<T> = { id: job.id, name: this.name, data: job.data };
-    const handlerContext: BatchTaskHandlerContext = {
-      logger: jobLogger,
+  async processBatch(batch: BatchContainer<T, R>): Promise<any> {
+    batch.log(`Processing ${batch.id} with ${batch.length} jobs...`);
+    const handlerOptions: BatchHandlerOptions<T> = { id: batch.id, name: this.name, data: batch.data };
+    const handlerContext: BatchTaskHandlerContext<T, R> = {
+      logger: batch.logger,
       client: this.client,
       group: this.group,
       task: this,
-      job,
+      container: batch,
       queue: this.queue,
     };
     try {
-      return await this.handler(handlerOptions, handlerContext);
+      const result = await this.handler(handlerOptions, handlerContext);
+      batch.log(`Finished processing ${batch.id} with ${batch.length} jobs...`);
+      return result;
     } catch (error) {
-      jobLogger.error(
+      batch.logger.error(
         { err: error instanceof Error ? error : new Error(String(error)) },
-        `Job processing failed for batch job name "${job.name}"`
+        `Job processing failed for batch job id "${batch.id}"`
       );
       throw error;
     }
