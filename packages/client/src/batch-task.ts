@@ -10,7 +10,7 @@ import type {
 } from './types.js';
 import { BaseTask } from './base-task.js'; // Assuming standard BullMQ worker setup
 import { BatchJob } from './batch-job.js';
-import { Job } from 'bullmq';
+import { Job, WorkerOptions } from 'bullmq';
 
 /**
  * Extends BaseTask to emulate BullMQ Pro's batch processing behavior
@@ -75,6 +75,12 @@ export class BatchTask<T = unknown, R = unknown> extends BaseTask<T, R, BatchTas
     this.initializeJobBatch(); // Set up the first batch promise
   }
 
+  getDefaultOptions(): Partial<WorkerOptions> {
+    return {
+      // Make sure the concurrency is at least the batch size
+      concurrency: this.options.batchSize,
+    };
+  }
   /**
    * Initializes or resets the state for a new batch.
    * Creates promise, stores resolve/reject functions.
