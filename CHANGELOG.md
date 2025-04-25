@@ -1,3 +1,19 @@
+## 0.5.0 (2025-04-25)
+
+### 🚀 Features
+
+- **client:** add first steps for batch task ([becbd73](https://github.com/torotask/torotask/commit/becbd73))
+- **client:** Add worker options into taskOptions, so defaults can be set using definitions ([599fb8a](https://github.com/torotask/torotask/commit/599fb8a))
+
+### 🩹 Fixes
+
+- **client:** set default concurrency for batch tasks to match batchSize ([029079b](https://github.com/torotask/torotask/commit/029079b))
+- **client:** make sure batch timeout is required option ([65dc6d1](https://github.com/torotask/torotask/commit/65dc6d1))
+
+### ❤️ Thank You
+
+- Ben Osman @benosman
+
 ## 0.4.0 (2025-04-17)
 
 ### 🚀 Features
