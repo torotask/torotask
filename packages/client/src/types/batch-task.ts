@@ -7,7 +7,10 @@ import type { Prettify } from './utils.js';
 export interface BatchOptions {
   batchSize: number;
   batchMinSize?: number;
-  batchTimeout?: number;
+  /**
+   * The maximum time in milliseconds to wait before processing a batch.
+   */
+  batchTimeout: number;
 }
 
 export type BatchJobOptions = Prettify<JobsOptions & BatchOptions>;

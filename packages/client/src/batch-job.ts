@@ -10,19 +10,8 @@ export class BatchJob<DataType = any, ReturnType = any, NameType extends string 
 
   constructor(
     queue: MinimalQueue,
-    /**
-     * The name of the Job
-     */
     name: NameType,
-
-    /**
-     * The payload for this job.
-     */
     data: DataType,
-
-    /**
-     * The options object for this job.
-     */
     public opts: BatchJobOptions,
     id?: string
   ) {

@@ -48,37 +48,34 @@ export class BatchTask<T = unknown, R = unknown> extends BaseTask<T, R, BatchTas
       throw new Error(`BatchTask "${name}" requires a positive integer batchSize option.`);
     }
 
+    if (typeof batchTimeout !== 'number' || batchTimeout <= 0) {
+      throw new Error(`BatchTask "${name}" requires a positive integer batchTimeout option.`);
+    }
+
     // Validate dependent options
-    if (batchMinSize !== undefined && (typeof batchMinSize !== 'number' || batchMinSize <= 0)) {
-      this.logger.warn(`BatchTask "${name}" has invalid batchMinSize. It will be ignored.`);
-      this.taskOptions.batchMinSize = undefined;
-    }
-    if (batchTimeout !== undefined && (typeof batchTimeout !== 'number' || batchTimeout <= 0)) {
-      this.logger.warn(`BatchTask "${name}" has invalid batchTimeout. It will be ignored.`);
-      this.taskOptions.batchTimeout = undefined;
-    }
-    if (batchMinSize !== undefined && batchTimeout === undefined) {
-      this.logger.warn(
-        `BatchTask "${name}" has batchMinSize set but no batchTimeout. Batch may wait indefinitely if batchSize is not reached.`
-      );
-    }
-    if (batchMinSize === undefined && batchTimeout !== undefined) {
-      this.logger.warn(
-        `BatchTask "${name}" has batchTimeout set but no batchMinSize. Timeout will effectively trigger batch processing after the specified duration if batch is not empty.`
-      );
-      // Set minSize to 1 to make timeout meaningful according to pro docs simulation.
-      this.taskOptions.batchMinSize = 1;
+    if (batchMinSize == undefined || typeof batchMinSize !== 'number' || batchMinSize <= 0) {
+      if (batchMinSize !== undefined) {
+        this.logger.warn(`BatchTask "${name}" has invalid batchMinSize. It will be ignored.`);
+      }
+      this.taskOptions.batchMinSize = 1; // Default to 1 if not specified or invalid
     }
 
     this.initializeJobBatch(); // Set up the first batch promise
   }
 
   getWorkerOptions(): Partial<WorkerOptions> {
-    const options = super.getWorkerOptions();
+    const options: Partial<WorkerOptions> = {
+      concurrency: this.taskOptions.concurrency,
+      ...super.getWorkerOptions(),
+    };
 
     // Make sure concurrency is at least batchSize
     if (!options.concurrency || options.concurrency < this.taskOptions.batchSize) {
       options.concurrency = this.taskOptions.batchSize;
+    }
+
+    if (!options.lockDuration || options.lockDuration < this.taskOptions.batchTimeout * 1.5) {
+      options.lockDuration = this.taskOptions.batchTimeout * 1.5;
     }
     return options;
   }
