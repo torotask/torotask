@@ -30,7 +30,9 @@ type InternalTaskTriggerEvent<T> = TaskTriggerEvent<T> & { internalId: number };
 export abstract class BaseTask<T = unknown, R = unknown, TOptions extends TaskOptions = TaskOptions> extends BaseQueue {
   public readonly name: string;
   public readonly group: TaskGroup;
-  public defaultJobOptions: TOptions;
+
+  public jobsOptions: JobsOptions;
+  public workerOptions: Partial<WorkerOptions> | undefined;
   // Store the normalized triggers with an internal ID
   public triggers: InternalTaskTrigger<T>[] = [];
   // Map for easy lookup of *current* event triggers by their internalId
@@ -41,7 +43,7 @@ export abstract class BaseTask<T = unknown, R = unknown, TOptions extends TaskOp
   constructor(
     taskGroup: TaskGroup,
     name: string,
-    options: TOptions,
+    public taskOptions: TOptions,
     trigger: SingleOrArray<TaskTrigger<T>> | undefined,
     groupLogger: Logger
   ) {
@@ -60,7 +62,10 @@ export abstract class BaseTask<T = unknown, R = unknown, TOptions extends TaskOp
 
     this.group = taskGroup;
     this.name = name;
-    this.defaultJobOptions = options;
+    const { workerOptions, ...jobsOptions } = taskOptions ?? {};
+
+    this.workerOptions = workerOptions;
+    this.jobsOptions = jobsOptions;
 
     // Initialize triggers and internal maps
     this._initializeTriggers(trigger);
@@ -76,9 +81,15 @@ export abstract class BaseTask<T = unknown, R = unknown, TOptions extends TaskOp
     });
   }
 
+  getWorkerOptions(): Partial<WorkerOptions> {
+    return {
+      ...this.workerOptions,
+    };
+  }
+
   async run(data: T, overrideOptions?: JobsOptions): Promise<Job<T, R>> {
     const finalOptions: JobsOptions = {
-      ...this.defaultJobOptions,
+      ...this.jobsOptions,
       ...overrideOptions,
     };
     return this._runJob<T, R>(this.name, data, finalOptions);
@@ -86,7 +97,7 @@ export abstract class BaseTask<T = unknown, R = unknown, TOptions extends TaskOp
 
   async runAndWait(data: T, overrideOptions?: JobsOptions): Promise<R> {
     const finalOptions: JobsOptions = {
-      ...this.defaultJobOptions,
+      ...this.jobsOptions,
       ...overrideOptions,
     };
     return this._runJobAndWait<T, R>(this.name, data, finalOptions);
@@ -192,7 +203,7 @@ export abstract class BaseTask<T = unknown, R = unknown, TOptions extends TaskOp
         const schedulerKey = `trigger:${trigger.internalId}:${trigger.type}-${slug}`;
         desiredSchedulerKeys.add(schedulerKey);
 
-        const jobOptions: Omit<JobsOptions, 'repeat' | 'jobId'> = { ...(this.defaultJobOptions ?? {}) };
+        const jobOptions: Omit<JobsOptions, 'repeat' | 'jobId'> = { ...(this.jobsOptions ?? {}) };
 
         this.logger.debug(`${logPrefix} ${logSuffix} Upserting scheduler '${schedulerKey}'`);
         upsertPromises.push(
@@ -285,7 +296,7 @@ export abstract class BaseTask<T = unknown, R = unknown, TOptions extends TaskOp
     let needsSyncRequest = false; // Renamed for clarity
 
     if (options !== undefined) {
-      this.defaultJobOptions = options;
+      this.jobsOptions = options;
       this.logger.debug(`${logPrefix} Updated default job options.`);
       // Sync local cron/every schedulers immediately if options change
       await this._synchronizeCronEverySchedulers();

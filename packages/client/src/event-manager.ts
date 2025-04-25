@@ -41,7 +41,7 @@ export class EventManager extends BaseQueue {
   /**
    * Overrides BaseQueue's startWorker with concurrency option
    */
-  getDefaultOptions(): Partial<WorkerOptions> {
+  getWorkerOptions(): Partial<WorkerOptions> {
     return {
       concurrency: 1, // Ensure only one sync job runs at a time globally
     };

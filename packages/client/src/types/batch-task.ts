@@ -1,7 +1,7 @@
 import type { JobsOptions } from 'bullmq';
 import type { BatchJob } from '../batch-job.js';
 import type { BatchTask } from '../batch-task.js';
-import type { TaskHandlerContext, TaskHandlerOptions } from './task.js';
+import type { TaskHandlerContext, TaskHandlerOptions, TaskOptions } from './task.js';
 import type { Prettify } from './utils.js';
 
 export interface BatchOptions {
@@ -11,7 +11,7 @@ export interface BatchOptions {
 }
 
 export type BatchJobOptions = Prettify<JobsOptions & BatchOptions>;
-export type BatchTaskOptions = Prettify<BatchJobOptions>;
+export type BatchTaskOptions = Prettify<TaskOptions & BatchOptions>;
 
 export interface BatchTaskHandlerContext extends TaskHandlerContext<BatchJob<any, any, string>, BatchTask<any, any>> {}
 

@@ -29,7 +29,6 @@ export class BatchTask<T = unknown, R = unknown> extends BaseTask<T, R, BatchTas
   private rejectJobBatchProcessPromise: ((error: Error) => void) | null = null;
   private batchProcessingRunning: boolean = false;
   private batchTimeoutTimer: NodeJS.Timeout | null = null; // For batchTimeout
-  public options: BatchTaskOptions; // Override to use batch-specific options
 
   constructor(
     taskGroup: TaskGroup,
@@ -42,7 +41,6 @@ export class BatchTask<T = unknown, R = unknown> extends BaseTask<T, R, BatchTas
     // Pass standard options to BaseTask, batch options are handled here
     super(taskGroup, name, options, trigger, groupLogger);
 
-    this.options = options; // Store the options for later use
     const { batchSize, batchMinSize, batchTimeout } = options;
 
     // --- Batching Initialization ---
@@ -53,11 +51,11 @@ export class BatchTask<T = unknown, R = unknown> extends BaseTask<T, R, BatchTas
     // Validate dependent options
     if (batchMinSize !== undefined && (typeof batchMinSize !== 'number' || batchMinSize <= 0)) {
       this.logger.warn(`BatchTask "${name}" has invalid batchMinSize. It will be ignored.`);
-      this.options.batchMinSize = undefined;
+      this.taskOptions.batchMinSize = undefined;
     }
     if (batchTimeout !== undefined && (typeof batchTimeout !== 'number' || batchTimeout <= 0)) {
       this.logger.warn(`BatchTask "${name}" has invalid batchTimeout. It will be ignored.`);
-      this.options.batchTimeout = undefined;
+      this.taskOptions.batchTimeout = undefined;
     }
     if (batchMinSize !== undefined && batchTimeout === undefined) {
       this.logger.warn(
@@ -69,17 +67,20 @@ export class BatchTask<T = unknown, R = unknown> extends BaseTask<T, R, BatchTas
         `BatchTask "${name}" has batchTimeout set but no batchMinSize. Timeout will effectively trigger batch processing after the specified duration if batch is not empty.`
       );
       // Set minSize to 1 to make timeout meaningful according to pro docs simulation.
-      this.options.batchMinSize = 1;
+      this.taskOptions.batchMinSize = 1;
     }
 
     this.initializeJobBatch(); // Set up the first batch promise
   }
 
-  getDefaultOptions(): Partial<WorkerOptions> {
-    return {
-      // Make sure the concurrency is at least the batch size
-      concurrency: this.options.batchSize,
-    };
+  getWorkerOptions(): Partial<WorkerOptions> {
+    const options = super.getWorkerOptions();
+
+    // Make sure concurrency is at least batchSize
+    if (!options.concurrency || options.concurrency < this.taskOptions.batchSize) {
+      options.concurrency = this.taskOptions.batchSize;
+    }
+    return options;
   }
   /**
    * Initializes or resets the state for a new batch.
@@ -119,8 +120,8 @@ export class BatchTask<T = unknown, R = unknown> extends BaseTask<T, R, BatchTas
     // 2. A minimum size is relevant (batchMinSize > 0).
     // 3. The timer isn't already running.
     // 4. The batch isn't empty (implicitly handled by calling this when jobBatch.length === 1).
-    if (this.options.batchTimeout && (this.options.batchMinSize ?? 0) > 0 && !this.batchTimeoutTimer) {
-      this.logger.debug(`Starting batch timeout timer (${this.options.batchTimeout}ms) for task "${this.name}".`);
+    if (this.taskOptions.batchTimeout && (this.taskOptions.batchMinSize ?? 0) > 0 && !this.batchTimeoutTimer) {
+      this.logger.debug(`Starting batch timeout timer (${this.taskOptions.batchTimeout}ms) for task "${this.name}".`);
       this.batchTimeoutTimer = setTimeout(() => {
         this.logger.info(`Batch timeout reached for task "${this.name}".`);
         this.batchTimeoutTimer = null; // Mark timer as inactive
@@ -135,7 +136,7 @@ export class BatchTask<T = unknown, R = unknown> extends BaseTask<T, R, BatchTas
         } else {
           this.logger.debug(`Batch timeout reached for task "${this.name}", but batch is empty. Ignoring.`);
         }
-      }, this.options.batchTimeout);
+      }, this.taskOptions.batchTimeout);
     }
   }
 
@@ -171,9 +172,9 @@ export class BatchTask<T = unknown, R = unknown> extends BaseTask<T, R, BatchTas
     }
 
     // 2. Check Max Batch Size Reached
-    if (this.jobBatch.length >= this.options.batchSize) {
+    if (this.jobBatch.length >= this.taskOptions.batchSize) {
       jobLogger.debug(
-        `Batch size limit (${this.options.batchSize}) reached for task "${this.name}". Triggering batch processing.`
+        `Batch size limit (${this.taskOptions.batchSize}) reached for task "${this.name}". Triggering batch processing.`
       );
       // Clear timeout timer *before* starting wrapper, as size limit takes precedence
       this.clearBatchTimeoutTimer();
@@ -237,7 +238,7 @@ export class BatchTask<T = unknown, R = unknown> extends BaseTask<T, R, BatchTas
     this.logger.info(`Processing ${batchInfo} for task "${this.name}".`);
 
     try {
-      const batchJob = new BatchJob<any, R>(this.queue, this.name, {}, this.options);
+      const batchJob = new BatchJob<any, R>(this.queue, this.name, {}, this.taskOptions);
       batchJob.setBatches(batchToProcess); // Set the jobs to process
       // --- Execute actual batch processing logic ---
       await this.processJob(batchJob);

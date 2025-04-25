@@ -37,7 +37,7 @@ export class Task<T = unknown, R = unknown> extends BaseTask<T, R, TaskOptions> 
     super(taskGroup, name, options ?? {}, trigger, groupLogger);
 
     this.subTasks = new Map();
-    this.allowCatchAll = this.defaultJobOptions.allowCatchAll ?? false;
+    this.allowCatchAll = this.taskOptions.allowCatchAll ?? false;
 
     this.logger.debug({ allowCatchAll: this.allowCatchAll, triggerCount: this.triggers.length }, 'Task initialized');
   }

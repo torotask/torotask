@@ -82,7 +82,7 @@ export abstract class BaseQueue extends EventEmitter {
    */
   abstract process(job: Job): Promise<any>;
 
-  getDefaultOptions(): Partial<WorkerOptions> {
+  getWorkerOptions(): Partial<WorkerOptions> {
     return {};
   }
 
@@ -101,7 +101,7 @@ export abstract class BaseQueue extends EventEmitter {
     const mergedOptions = {
       connection: this.client.connectionOptions,
       prefix: this.client.queuePrefix,
-      ...this.getDefaultOptions(),
+      ...this.getWorkerOptions(),
       ...(options ?? {}),
     };
 

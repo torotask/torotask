@@ -58,7 +58,7 @@ export class SubTask<ST = unknown, SR = unknown> {
    */
   async run(data: ST, overrideOptions?: JobsOptions): Promise<Job<ST, SR>> {
     const finalOptions: JobsOptions = {
-      ...this.parentTask.defaultJobOptions,
+      ...this.parentTask.jobsOptions,
       ...overrideOptions,
     };
     // Call parent task's public helper method directly
@@ -98,7 +98,7 @@ export class SubTask<ST = unknown, SR = unknown> {
    */
   async runAndWait(data: ST, overrideOptions?: JobsOptions): Promise<SR> {
     const finalOptions: JobsOptions = {
-      ...this.parentTask.defaultJobOptions,
+      ...this.parentTask.jobsOptions,
       ...overrideOptions,
     };
     // Call parent task's public helper method directly

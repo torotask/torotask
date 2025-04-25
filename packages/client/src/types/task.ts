@@ -1,4 +1,4 @@
-import type { Job, JobsOptions, Queue } from 'bullmq';
+import type { Job, JobsOptions, Queue, WorkerOptions } from 'bullmq';
 import type { Logger } from 'pino';
 import type { BaseTask } from '../base-task.js';
 import type { ToroTaskClient } from '../client.js'; // Assuming client export is in client.ts
@@ -16,6 +16,7 @@ export type TaskOptions = Prettify<
      * Defaults to false (unrecognized job names will throw an error).
      */
     allowCatchAll?: boolean;
+    workerOptions?: Partial<WorkerOptions>;
   }
 >;
 /** Handler details passed to the task handler */
