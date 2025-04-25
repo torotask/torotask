@@ -1,8 +1,9 @@
-import type { ToroTaskClient } from './client.js';
-import { Task } from './task.js';
-import type { TaskHandler, TaskOptions, TaskTrigger } from './types.js';
 import type { WorkerOptions } from 'bullmq';
 import { Logger } from 'pino';
+import { BatchTask } from './batch-task.js';
+import type { ToroTaskClient } from './client.js';
+import { Task } from './task.js';
+import type { AnyTask, BatchTaskHandler, BatchTaskOptions, TaskHandler, TaskOptions, TaskTrigger } from './types.js';
 
 /**
  * Represents a logical group of related Tasks.
@@ -11,7 +12,7 @@ export class TaskGroup {
   public readonly name: string;
   public readonly client: ToroTaskClient;
   public readonly logger: Logger;
-  private readonly tasks: Map<string, Task<any, any>> = new Map();
+  private readonly tasks: Map<string, AnyTask<any, any>> = new Map();
 
   constructor(client: ToroTaskClient, name: string, parentLogger: Logger) {
     if (!client) {
@@ -60,12 +61,43 @@ export class TaskGroup {
   }
 
   /**
+   * Defines a new Task within this group using a configuration object.
+   *
+   * @template T Data type for the task. Default is `unknown`.
+   * @template R Return type for the task. Default is `unknown`.
+   * @param config The configuration object for the task.
+   * @param config.name The name of the task (must be unique within the group).
+   * @param config.options Optional default job options for this task.
+   * @param config.triggers Optional TaskTrigger or array of TaskTriggers to associate with this task.
+   * @param config.handler The function to execute when the task runs.
+   * @returns The created Task instance.
+   */
+  defineBatchTask<T = unknown, R = unknown>(config: {
+    name: string;
+    options: BatchTaskOptions;
+    triggers?: TaskTrigger<T> | TaskTrigger<T>[] | undefined;
+    handler: BatchTaskHandler<T, R>;
+  }): BatchTask<T, R> {
+    const { name, options, triggers, handler } = config;
+
+    if (this.tasks.has(name)) {
+      this.logger.warn({ taskName: name }, 'Task already defined in this group. Overwriting.');
+    }
+
+    // Pass all parameters to Task constructor
+    const newTask = new BatchTask<T, R>(this, name, options, triggers, handler, this.logger);
+    this.tasks.set(name, newTask);
+    this.logger.debug({ taskName: name }, 'Task defined');
+    return newTask;
+  }
+
+  /**
    * Retrieves a defined Task by name.
    *
    * @param name The name of the task.
    * @returns The Task instance if found, otherwise undefined.
    */
-  getTask<T = any, R = any>(name: string): Task<T, R> | undefined {
+  getTask<T = any, R = any>(name: string): AnyTask<T, R> | undefined {
     return this.tasks.get(name);
   }
 
@@ -74,7 +106,7 @@ export class TaskGroup {
    *
    * @returns A map of task names to Task instances.
    */
-  getTasks(): Map<string, Task<any, any>> {
+  getTasks(): Map<string, AnyTask<any, any>> {
     return this.tasks;
   }
 
@@ -89,7 +121,7 @@ export class TaskGroup {
   async startWorkers(filter?: { tasks?: string[] }, workerOptions?: WorkerOptions): Promise<void> {
     this.logger.debug({ filter }, 'Starting workers for task group');
     const tasksToStart = filter?.tasks
-      ? filter.tasks.map((name) => this.tasks.get(name)).filter((task): task is Task<any, any> => !!task)
+      ? filter.tasks.map((name) => this.tasks.get(name)).filter((task): task is AnyTask<any, any> => !!task)
       : Array.from(this.tasks.values());
 
     if (filter?.tasks) {
@@ -123,7 +155,7 @@ export class TaskGroup {
   async stopWorkers(filter?: { tasks?: string[] }): Promise<void> {
     this.logger.info({ filter }, 'Stopping workers for task group');
     const tasksToStop = filter?.tasks
-      ? filter.tasks.map((name) => this.tasks.get(name)).filter((task): task is Task<any, any> => !!task)
+      ? filter.tasks.map((name) => this.tasks.get(name)).filter((task): task is AnyTask<any, any> => !!task)
       : Array.from(this.tasks.values());
 
     if (filter?.tasks) {

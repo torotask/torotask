@@ -4,6 +4,8 @@ import type { BaseTask } from './base-task.js';
 import type { ToroTaskClient } from './client.js'; // Assuming client export is in client.ts
 import type { TaskGroup } from './task-group.js';
 import type { Task } from './task.js'; // Needed for TaskHandlerContext
+import type { BatchJob } from './batch-job.js';
+import type { BatchTask } from './batch-task.js';
 
 /**
  * Returns generic as either itself or an array of itself.
@@ -15,6 +17,8 @@ export type SingleOrArray<T> = T | T[];
  */
 export type AsArray<T> = T extends any[] ? T : [T];
 
+export type AnyTask<T, R> = Task<T, R> | BatchTask<T, R>;
+
 // Interface for the data stored in the event set
 export interface EventSubscriptionInfo {
   taskGroup: string;
@@ -22,6 +26,15 @@ export interface EventSubscriptionInfo {
   triggerId?: number;
   eventId?: string;
   data?: Record<string, any>;
+}
+
+export type RepeatOptionsWithoutKey = Omit<RepeatOptions, 'key'>;
+
+// Return value for the EventManager sync job
+export interface SyncJobReturn {
+  registered: number;
+  unregistered: number;
+  errors: number;
 }
 
 /**
@@ -35,14 +48,6 @@ export interface TaskOptions extends JobsOptions {
    */
   allowCatchAll?: boolean;
 }
-
-export interface BatchOptions {
-  batchSize: number;
-  batchDelay: number;
-}
-
-export interface BatchTaskOptions extends TaskOptions, BatchOptions {}
-
 /** Handler details passed to the task handler */
 export interface TaskHandlerOptions<T = unknown> {
   id?: string; // Job ID
@@ -51,12 +56,12 @@ export interface TaskHandlerOptions<T = unknown> {
 }
 
 /** Context passed to the task handler */
-export interface TaskHandlerContext {
+export interface TaskHandlerContext<TJob extends Job = Job, TTask extends BaseTask<any, any> = BaseTask<any, any>> {
   logger: Logger; // Job-specific logger
   client: ToroTaskClient;
   group: TaskGroup;
-  task: BaseTask<any, any>; // Reference to the Task instance
-  job: Job;
+  task: TTask; // Reference to the Task instance
+  job: TJob;
   queue: Queue; // The queue instance (from BaseQueue)
 }
 
@@ -104,7 +109,24 @@ export type TaskTrigger<TData = Record<string, any>> =
   | TaskTriggerCron<TData>
   | TaskTriggerEvery<TData>;
 
-export type RepeatOptionsWithoutKey = Omit<RepeatOptions, 'key'>;
+// -- Batch Task Types ---
+export interface BatchOptions {
+  batchSize: number;
+  batchMinSize?: number;
+  batchTimeout?: number;
+}
+
+export interface BatchJobOptions extends JobsOptions, BatchOptions {}
+export interface BatchTaskOptions extends BatchJobOptions {}
+
+export interface BatchTaskHandlerContext extends TaskHandlerContext<BatchJob<any, any, string>, BatchTask<any, any>> {}
+
+export interface BatchHandlerOptions<T = unknown> extends TaskHandlerOptions<T> {}
+
+export type BatchTaskHandler<T = unknown, R = unknown> = (
+  options: BatchHandlerOptions<T>,
+  context: BatchTaskHandlerContext
+) => Promise<R>;
 
 // --- SubTask Types ---
 
@@ -116,14 +138,9 @@ export interface SubTaskHandlerOptions<ST = unknown> {
 }
 
 /** Context passed to the subtask handler */
-export interface SubTaskHandlerContext {
-  logger: Logger; // Job-specific logger
-  client: ToroTaskClient;
-  group: TaskGroup; // From parent task
+export interface SubTaskHandlerContext extends Omit<TaskHandlerContext<Job>, 'task'> {
   parentTask: Task<any, any>; // Reference to the parent Task instance
   subTaskName: string; // The name of this subtask
-  job: Job; // The underlying BullMQ job
-  queue: Queue; // The queue instance (from parent Task -> BaseQueue)
 }
 
 /** SubTask handler function type */
@@ -131,10 +148,3 @@ export type SubTaskHandler<ST = unknown, SR = unknown> = (
   options: SubTaskHandlerOptions<ST>,
   context: SubTaskHandlerContext
 ) => Promise<SR>;
-
-// Return value for the EventManager sync job
-export interface SyncJobReturn {
-  registered: number;
-  unregistered: number;
-  errors: number;
-}

@@ -1,15 +1,16 @@
 import type { Logger } from 'pino';
 import type { TaskGroup } from './task-group.js';
 import type {
+  BatchTaskOptions,
   TaskHandlerOptions,
-  TaskHandlerContext,
-  TaskHandler,
+  BatchTaskHandlerContext,
   TaskTrigger,
   SingleOrArray,
-  BatchTaskOptions,
+  BatchTaskHandler,
 } from './types.js';
 import { BaseTask } from './base-task.js'; // Assuming standard BullMQ worker setup
-import { TaskJob } from './task-job.js';
+import { BatchJob } from './batch-job.js';
+import { Job } from 'bullmq';
 
 /**
  * Extends BaseTask to emulate BullMQ Pro's batch processing behavior
@@ -21,58 +22,54 @@ import { TaskJob } from './task-job.js';
  */
 export class BatchTask<T = unknown, R = unknown> extends BaseTask<T, R, BatchTaskOptions> {
   // --- Batching State (Reinstated) ---
-  private jobBatch: TaskJob<T, R>[] = [];
+  private jobBatch: Job<T, R>[] = [];
   private jobBatchCreationTime: Date = new Date();
   private jobBatchProcessPromise: Promise<void> | null = null;
   private resolveJobBatchProcessPromise: (() => void) | null = null;
   private rejectJobBatchProcessPromise: ((error: Error) => void) | null = null;
   private batchProcessingRunning: boolean = false;
   private batchTimeoutTimer: NodeJS.Timeout | null = null; // For batchTimeout
-
-  // --- Batching Configuration ---
-  private readonly batchSize: number;
-  private readonly batchMinSize: number | undefined;
-  private readonly batchTimeout: number | undefined; // in milliseconds
+  public options: BatchTaskOptions; // Override to use batch-specific options
 
   constructor(
     taskGroup: TaskGroup,
     name: string,
     options: BatchTaskOptions, // Expect batchSize, batchMinSize?, batchTimeout?
     trigger: SingleOrArray<TaskTrigger<T>> | undefined,
-    handler: TaskHandler<T, R>, // Processes *individual* jobs
+    protected handler: BatchTaskHandler<T, R>, // Processes *individual* jobs
     groupLogger: Logger
   ) {
     // Pass standard options to BaseTask, batch options are handled here
-    super(taskGroup, name, options, trigger, handler, groupLogger);
+    super(taskGroup, name, options, trigger, groupLogger);
+
+    this.options = options; // Store the options for later use
+    const { batchSize, batchMinSize, batchTimeout } = options;
 
     // --- Batching Initialization ---
-    if (typeof options.batchSize !== 'number' || options.batchSize <= 0) {
+    if (typeof batchSize !== 'number' || batchSize <= 0) {
       throw new Error(`BatchTask "${name}" requires a positive integer batchSize option.`);
     }
-    this.batchSize = options.batchSize;
-    this.batchMinSize = options.batchMinSize;
-    this.batchTimeout = options.batchTimeout;
 
     // Validate dependent options
-    if (this.batchMinSize !== undefined && (typeof this.batchMinSize !== 'number' || this.batchMinSize <= 0)) {
+    if (batchMinSize !== undefined && (typeof batchMinSize !== 'number' || batchMinSize <= 0)) {
       this.logger.warn(`BatchTask "${name}" has invalid batchMinSize. It will be ignored.`);
-      this.batchMinSize = undefined;
+      this.options.batchMinSize = undefined;
     }
-    if (this.batchTimeout !== undefined && (typeof this.batchTimeout !== 'number' || this.batchTimeout <= 0)) {
+    if (batchTimeout !== undefined && (typeof batchTimeout !== 'number' || batchTimeout <= 0)) {
       this.logger.warn(`BatchTask "${name}" has invalid batchTimeout. It will be ignored.`);
-      this.batchTimeout = undefined;
+      this.options.batchTimeout = undefined;
     }
-    if (this.batchMinSize !== undefined && this.batchTimeout === undefined) {
+    if (batchMinSize !== undefined && batchTimeout === undefined) {
       this.logger.warn(
         `BatchTask "${name}" has batchMinSize set but no batchTimeout. Batch may wait indefinitely if batchSize is not reached.`
       );
     }
-    if (this.batchMinSize === undefined && this.batchTimeout !== undefined) {
+    if (batchMinSize === undefined && batchTimeout !== undefined) {
       this.logger.warn(
         `BatchTask "${name}" has batchTimeout set but no batchMinSize. Timeout will effectively trigger batch processing after the specified duration if batch is not empty.`
       );
       // Set minSize to 1 to make timeout meaningful according to pro docs simulation.
-      this.batchMinSize = 1;
+      this.options.batchMinSize = 1;
     }
 
     this.initializeJobBatch(); // Set up the first batch promise
@@ -116,8 +113,8 @@ export class BatchTask<T = unknown, R = unknown> extends BaseTask<T, R, BatchTas
     // 2. A minimum size is relevant (batchMinSize > 0).
     // 3. The timer isn't already running.
     // 4. The batch isn't empty (implicitly handled by calling this when jobBatch.length === 1).
-    if (this.batchTimeout && (this.batchMinSize ?? 0) > 0 && !this.batchTimeoutTimer) {
-      this.logger.debug(`Starting batch timeout timer (${this.batchTimeout}ms) for task "${this.name}".`);
+    if (this.options.batchTimeout && (this.options.batchMinSize ?? 0) > 0 && !this.batchTimeoutTimer) {
+      this.logger.debug(`Starting batch timeout timer (${this.options.batchTimeout}ms) for task "${this.name}".`);
       this.batchTimeoutTimer = setTimeout(() => {
         this.logger.info(`Batch timeout reached for task "${this.name}".`);
         this.batchTimeoutTimer = null; // Mark timer as inactive
@@ -132,7 +129,7 @@ export class BatchTask<T = unknown, R = unknown> extends BaseTask<T, R, BatchTas
         } else {
           this.logger.debug(`Batch timeout reached for task "${this.name}", but batch is empty. Ignoring.`);
         }
-      }, this.batchTimeout);
+      }, this.options.batchTimeout);
     }
   }
 
@@ -145,8 +142,8 @@ export class BatchTask<T = unknown, R = unknown> extends BaseTask<T, R, BatchTas
    * @param job - The standard BullMQ job object.
    * @returns A promise that resolves/rejects when the batch containing this job completes/fails.
    */
-  async process(job: TaskJob): Promise<void> {
-    const typedJob = job as TaskJob<T, R>;
+  async process(job: Job): Promise<void> {
+    const typedJob = job as Job<T, R>;
     const jobLogger = this.getJobLogger(typedJob);
 
     jobLogger.info(`Received job ${typedJob.id}. Adding to current batch.`);
@@ -168,9 +165,9 @@ export class BatchTask<T = unknown, R = unknown> extends BaseTask<T, R, BatchTas
     }
 
     // 2. Check Max Batch Size Reached
-    if (this.jobBatch.length >= this.batchSize) {
+    if (this.jobBatch.length >= this.options.batchSize) {
       jobLogger.debug(
-        `Batch size limit (${this.batchSize}) reached for task "${this.name}". Triggering batch processing.`
+        `Batch size limit (${this.options.batchSize}) reached for task "${this.name}". Triggering batch processing.`
       );
       // Clear timeout timer *before* starting wrapper, as size limit takes precedence
       this.clearBatchTimeoutTimer();
@@ -234,8 +231,10 @@ export class BatchTask<T = unknown, R = unknown> extends BaseTask<T, R, BatchTas
     this.logger.info(`Processing ${batchInfo} for task "${this.name}".`);
 
     try {
+      const batchJob = new BatchJob<any, R>(this.queue, this.name, {}, this.options);
+      batchJob.setBatches(batchToProcess); // Set the jobs to process
       // --- Execute actual batch processing logic ---
-      await this.processBatch(batchToProcess);
+      await this.processJob(batchJob);
 
       // --- Success ---
       this.logger.info(`Successfully processed ${batchInfo} for task "${this.name}".`);
@@ -256,34 +255,6 @@ export class BatchTask<T = unknown, R = unknown> extends BaseTask<T, R, BatchTas
   }
 
   /**
-   * Processes a batch of jobs by calling the original task handler for each.
-   * Emulates the *default* BullMQ Pro behavior: if any handler fails,
-   * this method throws, causing the entire batch to fail.
-   *
-   * @param jobs - An array of BullMQ job objects to process.
-   * @returns A promise that resolves when all jobs are processed successfully.
-   * @throws Re-throws the error from the first handler that fails.
-   */
-  protected async processBatch(jobs: TaskJob<T, R>[]): Promise<void> {
-    this.logger.info(`Executing handler for ${jobs.length} jobs in batch for task "${this.name}"...`);
-
-    // Process jobs sequentially. Modify for parallel if needed (Promise.all).
-    for (const job of jobs) {
-      const jobLogger = this.getJobLogger(job);
-      try {
-        // Reuse logic for consistent context/error handling per job
-        await this.processSingleJobWithinBatch(job, jobLogger);
-      } catch (error) {
-        // Logged within processSingleJobWithinBatch
-        jobLogger.error(`Job ${job.id} failed within batch processing. Failing the entire batch.`);
-        // Re-throw to fail the whole batch promise (emulates default Pro behavior)
-        throw error;
-      }
-    }
-    this.logger.info(`Finished executing handlers for ${jobs.length} jobs in batch for task "${this.name}".`);
-  }
-
-  /**
    * Processes a single job using the configured handler.
    * Called internally by `processBatch`.
    *
@@ -292,27 +263,25 @@ export class BatchTask<T = unknown, R = unknown> extends BaseTask<T, R, BatchTas
    * @returns The result returned by the task handler.
    * @throws Throws an error if the handler fails.
    */
-  protected async processSingleJobWithinBatch(job: TaskJob<T, R>, jobLogger: Logger): Promise<R | undefined> {
-    // This implementation remains largely the same as before
-    jobLogger.debug(`Executing handler for job ${job.id} within batch.`);
+  async processJob(job: BatchJob<T, R>, jobLogger?: Logger): Promise<any> {
+    jobLogger = jobLogger ?? this.getJobLogger(job);
     const handlerOptions: TaskHandlerOptions<T> = { id: job.id, name: this.name, data: job.data };
-    const handlerContext: TaskHandlerContext = {
+    const handlerContext: BatchTaskHandlerContext = {
       logger: jobLogger,
       client: this.client,
       group: this.group,
       task: this,
-      job: job, // Standard Job instance
+      job,
       queue: this.queue,
     };
-
     try {
-      const result = await this.handler(handlerOptions, handlerContext);
-      jobLogger.debug(`Handler finished successfully for job ${job.id} within batch.`);
-      return result;
+      return await this.handler(handlerOptions, handlerContext);
     } catch (error) {
-      const processingError = error instanceof Error ? error : new Error(String(error));
-      jobLogger.error({ err: processingError }, `Handler failed for job ${job.id} within batch.`);
-      throw processingError; // Re-throw to be caught by processBatch
+      jobLogger.error(
+        { err: error instanceof Error ? error : new Error(String(error)) },
+        `Job processing failed for batch job name "${job.name}"`
+      );
+      throw error;
     }
   }
 
@@ -322,15 +291,15 @@ export class BatchTask<T = unknown, R = unknown> extends BaseTask<T, R, BatchTas
    *
    * @override
    */
-  async close(doNotWaitJobs?: boolean): Promise<void> {
-    this.logger.info(`Closing BatchTask "${this.name}" (emulating Pro batching)...`);
+  async close(): Promise<void> {
+    this.logger.info(`Closing BatchTask "${this.name}"...`);
 
-    // 1. Stop any pending batch timeout timer
+    // Stop any pending batch timeout timer
     this.clearBatchTimeoutTimer();
 
-    // 2. Handle final pending batch (similar to previous custom implementation)
+    // Handle final pending batch (similar to previous custom implementation)
     // Process any remaining jobs if not already processing and not skipping.
-    if (!doNotWaitJobs && this.jobBatch.length > 0 && !this.batchProcessingRunning) {
+    if (this.jobBatch.length > 0 && !this.batchProcessingRunning) {
       this.logger.info(
         `Processing final pending batch (${this.jobBatch.length} jobs) during shutdown for task "${this.name}"...`
       );
@@ -355,11 +324,8 @@ export class BatchTask<T = unknown, R = unknown> extends BaseTask<T, R, BatchTas
 
     // 3. Call base class close (stops the worker, etc.)
     this.logger.debug(`Calling BaseTask close method for task "${this.name}".`);
-    await super.close(); //(doNotWaitJobs);
+    await super.close();
 
     this.logger.info(`BatchTask "${this.name}" closed successfully.`);
   }
-
-  // processJob is effectively replaced by the batching mechanism,
-  // but processSingleJobWithinBatch reuses its core logic.
 }

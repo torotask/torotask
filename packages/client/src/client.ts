@@ -3,10 +3,11 @@ import { Redis, RedisOptions } from 'ioredis';
 import { LRU } from 'tiny-lru';
 import { getConfigFromEnv } from './utils/get-config-from-env.js';
 import { TaskGroup } from './task-group.js';
-import { Task } from './task.js';
 import { pino, type Logger } from 'pino';
 import type { ConnectionOptions as BullMQConnectionOptions, Job } from 'bullmq';
 import { EventDispatcher } from './event-dispatcher.js';
+import { BaseTask } from './base-task.js';
+import type { AnyTask } from './types.js';
 
 const LOGGER_NAME = 'ToroTask';
 const BASE_PREFIX = 'torotask';
@@ -126,7 +127,7 @@ export class ToroTaskClient {
   /**
    * Retrieves an existing Task instance by group and name.
    */
-  public getTask<T = any, R = any>(groupName: string, name: string): Task<T, R> | undefined {
+  public getTask<T = any, R = any>(groupName: string, name: string): AnyTask<T, R> | undefined {
     const group = this.getTaskGroup(groupName);
     if (!group) return undefined;
 
@@ -140,7 +141,7 @@ export class ToroTaskClient {
    * @param data The data to pass to the task.
    * @returns A promise that resolves to the Job instance.
    */
-  public getTaskByKey<T = any, R = any>(taskKey: `${string}.${string}`): Task<T, R> | undefined {
+  public getTaskByKey<T = any, R = any>(taskKey: `${string}.${string}`): AnyTask<T, R> | undefined {
     const [groupName, taskName] = taskKey.split('.');
     return this.getTask<T, R>(groupName, taskName);
   }

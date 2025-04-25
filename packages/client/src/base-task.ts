@@ -9,9 +9,6 @@ import type {
   EventSubscriptionInfo,
   RepeatOptionsWithoutKey,
   TaskOptions,
-  TaskHandlerOptions,
-  TaskHandlerContext,
-  TaskHandler,
   TaskTrigger,
   TaskTriggerEvent,
   SingleOrArray,
@@ -34,7 +31,6 @@ export abstract class BaseTask<T = unknown, R = unknown, TOptions extends TaskOp
   public readonly name: string;
   public readonly group: TaskGroup;
   public defaultJobOptions: TOptions;
-  public readonly handler: TaskHandler<T, R>;
   // Store the normalized triggers with an internal ID
   public triggers: InternalTaskTrigger<T>[] = [];
   // Map for easy lookup of *current* event triggers by their internalId
@@ -47,7 +43,6 @@ export abstract class BaseTask<T = unknown, R = unknown, TOptions extends TaskOp
     name: string,
     options: TOptions,
     trigger: SingleOrArray<TaskTrigger<T>> | undefined,
-    handler: TaskHandler<T, R>,
     groupLogger: Logger
   ) {
     if (!taskGroup) {
@@ -55,9 +50,6 @@ export abstract class BaseTask<T = unknown, R = unknown, TOptions extends TaskOp
     }
     if (!name) {
       throw new Error('Task name is required.');
-    }
-    if (!handler || typeof handler !== 'function') {
-      throw new Error('Task handler is required and must be a function.');
     }
 
     const client = taskGroup.client;
@@ -68,7 +60,6 @@ export abstract class BaseTask<T = unknown, R = unknown, TOptions extends TaskOp
 
     this.group = taskGroup;
     this.name = name;
-    this.handler = handler;
     this.defaultJobOptions = options;
 
     // Initialize triggers and internal maps
@@ -110,39 +101,12 @@ export abstract class BaseTask<T = unknown, R = unknown, TOptions extends TaskOp
     return this.logger.child({ jobId: job.id, jobName: effectiveJobName });
   }
 
-  /**
-   * Routes the job to the appropriate handler (main task or subtask) based on job name.
-   * - `__default__` or empty string routes to the main handler.
-   * - Matching subtask name routes to the subtask handler.
-   * -
-   */
   async process(job: Job): Promise<any> {
     const result = await this.processJob(job);
     return result;
   }
 
-  async processJob(job: Job, jobLogger?: Logger): Promise<any> {
-    jobLogger = jobLogger ?? this.getJobLogger(job);
-    const typedJob = job as Job<T, R>;
-    const handlerOptions: TaskHandlerOptions<T> = { id: job.id, name: this.name, data: typedJob.data };
-    const handlerContext: TaskHandlerContext = {
-      logger: jobLogger,
-      client: this.client,
-      group: this.group,
-      task: this,
-      job: typedJob,
-      queue: this.queue,
-    };
-    try {
-      return await this.handler(handlerOptions, handlerContext);
-    } catch (error) {
-      jobLogger.error(
-        { err: error instanceof Error ? error : new Error(String(error)) },
-        `Job processing failed for job name "${job.name}"`
-      );
-      throw error;
-    }
-  }
+  abstract processJob(job: Job, jobLogger?: Logger): Promise<any>;
 
   /**
    * Requests synchronization of all trigger types via the EventManager queue.

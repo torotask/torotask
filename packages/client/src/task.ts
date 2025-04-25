@@ -3,7 +3,15 @@ import type { Logger } from 'pino';
 import { BaseTask } from './base-task.js';
 import { SubTask } from './sub-task.js';
 import type { TaskGroup } from './task-group.js';
-import type { SingleOrArray, SubTaskHandler, TaskHandler, TaskOptions, TaskTrigger } from './types.js';
+import type {
+  SingleOrArray,
+  SubTaskHandler,
+  TaskHandler,
+  TaskHandlerContext,
+  TaskHandlerOptions,
+  TaskOptions,
+  TaskTrigger,
+} from './types.js';
 
 /**
  * Represents a defined task associated with a TaskGroup.
@@ -23,10 +31,10 @@ export class Task<T = unknown, R = unknown> extends BaseTask<T, R, TaskOptions> 
     name: string,
     options: TaskOptions | undefined,
     trigger: SingleOrArray<TaskTrigger<T>> | undefined,
-    handler: TaskHandler<T, R>,
+    protected handler: TaskHandler<T, R>,
     groupLogger: Logger
   ) {
-    super(taskGroup, name, options ?? {}, trigger, handler, groupLogger);
+    super(taskGroup, name, options ?? {}, trigger, groupLogger);
 
     this.subTasks = new Map();
     this.allowCatchAll = this.defaultJobOptions.allowCatchAll ?? false;
@@ -88,6 +96,29 @@ export class Task<T = unknown, R = unknown> extends BaseTask<T, R, TaskOptions> 
       jobLogger.error(
         { err: error instanceof Error ? error : new Error(String(error)) },
         `Job processing failed for job name "${effectiveJobName}"`
+      );
+      throw error;
+    }
+  }
+
+  async processJob(job: Job, jobLogger?: Logger): Promise<any> {
+    jobLogger = jobLogger ?? this.getJobLogger(job);
+    const typedJob = job as Job<T, R>;
+    const handlerOptions: TaskHandlerOptions<T> = { id: job.id, name: this.name, data: typedJob.data };
+    const handlerContext: TaskHandlerContext = {
+      logger: jobLogger,
+      client: this.client,
+      group: this.group,
+      task: this,
+      job: typedJob,
+      queue: this.queue,
+    };
+    try {
+      return await this.handler(handlerOptions, handlerContext);
+    } catch (error) {
+      jobLogger.error(
+        { err: error instanceof Error ? error : new Error(String(error)) },
+        `Job processing failed for job name "${job.name}"`
       );
       throw error;
     }
