@@ -3,18 +3,21 @@ import type { Logger } from 'pino';
 import type { BaseTask } from '../base-task.js';
 import type { ToroTaskClient } from '../client.js'; // Assuming client export is in client.ts
 import type { TaskGroup } from '../task-group.js';
+import type { Prettify } from './utils.js';
 
 /**
  * Options for defining a Task, extending BullMQ's JobsOptions.
  */
-export interface TaskOptions extends JobsOptions {
-  /**
-   * If true, jobs with names that don't match the main task name
-   * or any defined subtask names will be routed to the main task handler.
-   * Defaults to false (unrecognized job names will throw an error).
-   */
-  allowCatchAll?: boolean;
-}
+export type TaskOptions = Prettify<
+  JobsOptions & {
+    /**
+     * If true, jobs with names that don't match the main task name
+     * or any defined subtask names will be routed to the main task handler.
+     * Defaults to false (unrecognized job names will throw an error).
+     */
+    allowCatchAll?: boolean;
+  }
+>;
 /** Handler details passed to the task handler */
 export interface TaskHandlerOptions<T = unknown> {
   id?: string; // Job ID

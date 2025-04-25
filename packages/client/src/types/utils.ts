@@ -12,3 +12,10 @@ export type SingleOrArray<T> = T | T[];
 export type AsArray<T> = T extends any[] ? T : [T];
 
 export type AnyTask<T, R> = Task<T, R> | BatchTask<T, R>;
+
+/**
+ * Reduces a complex object type to make it readable in IDEs.
+ */
+export type Prettify<T> = {
+  [K in keyof T]: T[K];
+} & unknown;
