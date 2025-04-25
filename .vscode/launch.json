@@ -19,6 +19,21 @@
       "sourceMaps": true,
       "outFiles": ["${workspaceFolder}/apps/dashboard/src/**/*.*"],
       "skipFiles": ["<node_internals>/**"]
+    },
+    {
+      "type": "node",
+      "request": "launch",
+      "name": "Debug Tester",
+      "cwd": "${workspaceFolder}/apps/tester",
+      "outputCapture": "std",
+      "runtimeExecutable": "pnpm",
+      "runtimeArgs": ["run", "dev", "--preserve-symlinks"],
+      "env": {
+        "NODE_ENV": "development",
+        "NODE_TLS_REJECT_UNAUTHORIZED": "0"
+      },
+      "sourceMaps": true,
+      "skipFiles": ["<node_internals>/**"]
     }
   ]
 }
