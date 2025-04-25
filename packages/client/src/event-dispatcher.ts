@@ -1,10 +1,10 @@
-import type { JobsOptions, Job, WorkerOptions, Worker } from 'bullmq'; // Added missing imports
+import type { Job, JobsOptions, Worker, WorkerOptions } from 'bullmq'; // Added missing imports
 import type { Logger } from 'pino';
 import { BaseQueue } from './base-queue.js';
 import type { ToroTaskClient } from './client.js'; // Assuming client path
 import { EventManager } from './event-manager.js';
 import type { Task } from './task.js'; // Assuming task path
-import type { EventSubscriptionInfo, SyncJobReturn } from './types.js';
+import type { EventSubscriptionInfo, SyncJobReturn } from './types/index.js';
 
 // Define a default queue name for events, easily configurable if needed
 const DEFAULT_EVENT_QUEUE_NAME = 'events.dispatch';

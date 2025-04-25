@@ -1,5 +1,5 @@
 import { Job, MinimalQueue } from 'bullmq';
-import type { BatchJobOptions } from './types.js';
+import type { BatchJobOptions } from './types/index.js';
 
 export class BatchJob<DataType = any, ReturnType = any, NameType extends string = string> extends Job<
   DataType,

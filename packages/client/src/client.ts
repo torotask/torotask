@@ -1,13 +1,13 @@
-import { ConnectionOptions, WorkerOptions, Queue } from 'bullmq';
-import { Redis, RedisOptions } from 'ioredis';
-import { LRU } from 'tiny-lru';
-import { getConfigFromEnv } from './utils/get-config-from-env.js';
-import { TaskGroup } from './task-group.js';
-import { pino, type Logger } from 'pino';
+import { ConnectionOptions, Queue, WorkerOptions } from 'bullmq';
 import type { ConnectionOptions as BullMQConnectionOptions, Job } from 'bullmq';
-import { EventDispatcher } from './event-dispatcher.js';
+import { Redis, RedisOptions } from 'ioredis';
+import { type Logger, pino } from 'pino';
+import { LRU } from 'tiny-lru';
 import { BaseTask } from './base-task.js';
-import type { AnyTask } from './types.js';
+import { EventDispatcher } from './event-dispatcher.js';
+import { TaskGroup } from './task-group.js';
+import type { AnyTask } from './types/index.js';
+import { getConfigFromEnv } from './utils/get-config-from-env.js';
 
 const LOGGER_NAME = 'ToroTask';
 const BASE_PREFIX = 'torotask';

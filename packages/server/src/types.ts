@@ -1,13 +1,13 @@
 import type {
   BatchTaskHandler,
-  ToroTaskClient,
+  BatchTaskOptions,
   SingleOrArray,
   TaskHandler,
   TaskOptions,
   TaskTrigger,
-  BatchTaskOptions,
+  ToroTaskClient,
 } from '@torotask/client';
-import type { Logger, DestinationStream, LoggerOptions } from 'pino';
+import type { DestinationStream, Logger, LoggerOptions } from 'pino';
 
 /** Options for configuring the TaskServer */
 export interface TaskServerOptions {

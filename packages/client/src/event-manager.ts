@@ -1,8 +1,8 @@
-import { Queue, Worker, Job, JobsOptions, WorkerOptions } from 'bullmq';
+import { Job, JobsOptions, Queue, Worker, WorkerOptions } from 'bullmq';
 import type { Logger } from 'pino';
-import type { EventDispatcher } from './event-dispatcher.js';
-import type { EventSubscriptionInfo, SyncJobReturn } from './types.js';
 import { BaseQueue } from './base-queue.js';
+import type { EventDispatcher } from './event-dispatcher.js';
+import type { EventSubscriptionInfo, SyncJobReturn } from './types/index.js';
 
 const SYNC_QUEUE_NAME = 'events.sync';
 

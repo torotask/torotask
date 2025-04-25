@@ -1,18 +1,18 @@
-import { JobsOptions, Job, Worker, WorkerOptions } from 'bullmq';
+import slugify from '@sindresorhus/slugify';
+import { Job, JobsOptions, Worker, WorkerOptions } from 'bullmq';
 import cronstrue from 'cronstrue';
 import type { Logger } from 'pino';
 import prettyMilliseconds from 'pretty-ms';
-import slugify from '@sindresorhus/slugify';
 import { BaseQueue } from './base-queue.js';
 import type { TaskGroup } from './task-group.js';
 import type {
   EventSubscriptionInfo,
   RepeatOptionsWithoutKey,
+  SingleOrArray,
   TaskOptions,
   TaskTrigger,
   TaskTriggerEvent,
-  SingleOrArray,
-} from './types.js';
+} from './types/index.js';
 
 // Add internalId to TaskTrigger type for tracking purposes within the Task class
 type InternalTaskTrigger<T> = TaskTrigger<T> & { internalId: number };

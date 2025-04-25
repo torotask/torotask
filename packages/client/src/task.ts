@@ -11,7 +11,7 @@ import type {
   TaskHandlerOptions,
   TaskOptions,
   TaskTrigger,
-} from './types.js';
+} from './types/index.js';
 
 /**
  * Represents a defined task associated with a TaskGroup.

@@ -1,6 +1,6 @@
 import { TaskServer } from '@torotask/server';
-import { pino } from 'pino';
 import path from 'path';
+import { pino } from 'pino';
 import { fileURLToPath } from 'url'; // Make sure this import is present
 
 const __filename = fileURLToPath(import.meta.url);

@@ -1,16 +1,16 @@
+import { Job, WorkerOptions } from 'bullmq';
 import type { Logger } from 'pino';
-import type { TaskGroup } from './task-group.js';
-import type {
-  BatchTaskOptions,
-  TaskHandlerOptions,
-  BatchTaskHandlerContext,
-  TaskTrigger,
-  SingleOrArray,
-  BatchTaskHandler,
-} from './types.js';
 import { BaseTask } from './base-task.js'; // Assuming standard BullMQ worker setup
 import { BatchJob } from './batch-job.js';
-import { Job, WorkerOptions } from 'bullmq';
+import type { TaskGroup } from './task-group.js';
+import type {
+  BatchTaskHandler,
+  BatchTaskHandlerContext,
+  BatchTaskOptions,
+  SingleOrArray,
+  TaskHandlerOptions,
+  TaskTrigger,
+} from './types/index.js';
 
 /**
  * Extends BaseTask to emulate BullMQ Pro's batch processing behavior

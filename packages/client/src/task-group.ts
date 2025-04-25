@@ -3,7 +3,14 @@ import { Logger } from 'pino';
 import { BatchTask } from './batch-task.js';
 import type { ToroTaskClient } from './client.js';
 import { Task } from './task.js';
-import type { AnyTask, BatchTaskHandler, BatchTaskOptions, TaskHandler, TaskOptions, TaskTrigger } from './types.js';
+import type {
+  AnyTask,
+  BatchTaskHandler,
+  BatchTaskOptions,
+  TaskHandler,
+  TaskOptions,
+  TaskTrigger,
+} from './types/index.js';
 
 /**
  * Represents a logical group of related Tasks.
