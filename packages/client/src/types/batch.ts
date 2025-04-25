@@ -20,7 +20,7 @@ export type BatchTaskOptions = Prettify<TaskOptions & BatchOptions>;
 
 export interface BatchTaskHandlerContext<T, R> extends BaseHandlerContext {
   task: BatchTask<T, R>;
-  container: BatchContainer<T, R>;
+  batch: BatchContainer<T, R>;
 }
 
 export type BatchHandlerOptions<T = unknown> = Omit<TaskHandlerOptions<T>, 'data'> & {

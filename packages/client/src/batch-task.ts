@@ -284,7 +284,7 @@ export class BatchTask<T = unknown, R = unknown> extends BaseTask<T, R, BatchTas
       client: this.client,
       group: this.group,
       task: this,
-      container: batch,
+      batch,
       queue: this.queue,
     };
     try {
