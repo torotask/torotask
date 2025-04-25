@@ -1,4 +1,12 @@
-import type { ToroTaskClient, SingleOrArray, TaskHandler, TaskOptions, TaskTrigger } from '@torotask/client';
+import type {
+  BatchTaskHandler,
+  ToroTaskClient,
+  SingleOrArray,
+  TaskHandler,
+  TaskOptions,
+  TaskTrigger,
+  BatchTaskOptions,
+} from '@torotask/client';
 import type { Logger, DestinationStream, LoggerOptions } from 'pino';
 
 /** Options for configuring the TaskServer */
@@ -34,13 +42,32 @@ export interface TaskServerOptions {
   rootDir?: string;
 }
 
-export type TaskModuleOptions = TaskOptions & {
+type TaskModuleOptions = TaskOptions & {
   name?: string;
 };
 
-/** Type definition for the expected export from a task file */
-export interface TaskModule<T = unknown, R = unknown> {
-  handler: TaskHandler<T, R>;
-  triggers: SingleOrArray<TaskTrigger<T>>;
+export type BatchTaskModuleOptions = BatchTaskOptions & {
+  name?: string;
+};
+
+export type BaseConfig<T = unknown> = {
+  triggers?: SingleOrArray<TaskTrigger<T>>;
+};
+
+export type TaskConfig<T = unknown, R = unknown> = BaseConfig<T> & {
   options?: TaskModuleOptions;
-}
+  handler: TaskHandler<T, R>;
+};
+
+export type BatchTaskConfig<T = unknown, R = unknown> = BaseConfig<T> & {
+  options: BatchTaskModuleOptions;
+  handler: BatchTaskHandler<T, R>;
+};
+
+export type AnyTaskModule<T = unknown, R = unknown> =
+  | ({
+      type: 'task';
+    } & TaskConfig<T, R>)
+  | ({
+      type: 'batch';
+    } & BatchTaskConfig<T, R>);

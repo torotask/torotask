@@ -1,5 +1,4 @@
-import type { SingleOrArray, TaskHandler, TaskTrigger } from '@torotask/client';
-import type { TaskModule, TaskModuleOptions } from './types.js'; // Added .js extension
+import type { AnyTaskModule, BatchTaskConfig, TaskConfig } from './types.js'; // Added .js extension
 
 /**
  * Factory function to create a valid TaskModule definition.
@@ -11,14 +10,28 @@ import type { TaskModule, TaskModuleOptions } from './types.js'; // Added .js ex
  * @param handler The task handler function.
  * @returns A TaskModule object.
  */
-export function defineTask<T = unknown, R = unknown>(config: {
-  options: TaskModuleOptions;
-  triggers: SingleOrArray<TaskTrigger<T>>;
-  handler: TaskHandler<T, R>;
-}): TaskModule<T, R> {
+export function defineTask<T = unknown, R = unknown>(config: TaskConfig<T, R>): AnyTaskModule<T, R> {
   const { options, triggers, handler } = config;
   if (!handler || typeof handler !== 'function') {
     throw new Error('defineTask requires a valid handler function.');
   }
-  return { options, triggers, handler };
+  return { type: 'task', options, triggers, handler };
+}
+
+/**
+ * Factory function to create a valid TaskModule definition.
+ * Simplifies the creation of task definition files.
+ *
+ * @template T Data type for the task handler.
+ * @template R Return type for the task handler.
+ * @param options Default job options for the task.
+ * @param handler The task handler function.
+ * @returns A TaskModule object.
+ */
+export function defineBatchTask<T = unknown, R = unknown>(config: BatchTaskConfig<T, R>): AnyTaskModule<T, R> {
+  const { options, triggers, handler } = config;
+  if (!handler || typeof handler !== 'function') {
+    throw new Error('defineBatchTask requires a valid handler function.');
+  }
+  return { type: 'batch', options, triggers, handler };
 }

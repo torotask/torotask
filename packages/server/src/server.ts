@@ -5,7 +5,7 @@ import { glob } from 'glob';
 import path from 'path';
 import fs from 'fs';
 import { pathToFileURL } from 'url';
-import type { TaskServerOptions, TaskModule } from './types.js';
+import type { TaskServerOptions, AnyTaskModule } from './types.js';
 import { EventDispatcher } from '@torotask/client';
 const LOGGER_NAME = 'TaskServer';
 
@@ -173,11 +173,11 @@ export class TaskServer {
 
         const fileUrl = pathToFileURL(filePath).href;
         const taskModule = (await import(fileUrl)) as {
-          default?: TaskModule & { trigger?: TaskTrigger; triggers?: TaskTrigger[] };
+          default?: AnyTaskModule & { trigger?: TaskTrigger; triggers?: TaskTrigger[] };
         };
 
         let finalTaskName: string = derivedTaskName;
-        let moduleToUse: TaskModule & { trigger?: TaskTrigger; triggers?: TaskTrigger[] };
+        let moduleToUse: AnyTaskModule & { trigger?: TaskTrigger; triggers?: TaskTrigger[] };
 
         if (taskModule.default?.handler && typeof taskModule.default.handler === 'function') {
           moduleToUse = taskModule.default;
@@ -193,22 +193,32 @@ export class TaskServer {
           );
         }
 
-        const { name: explicitName, ...optionsToUse } = moduleToUse.options || {};
+        const group = this.client.createTaskGroup(groupName);
+        this.managedGroups.add(group);
+
+        const explicitName = moduleToUse.options?.name;
         if (explicitName) {
           finalTaskName = explicitName;
           this.logger.debug({ derivedTaskName, explicitName: finalTaskName }, 'Using explicit task name from options.');
         }
 
-        const triggerOrTriggers = moduleToUse.triggers ?? moduleToUse.trigger;
-
-        const group = this.client.createTaskGroup(groupName);
-        this.managedGroups.add(group);
-        group.defineTask({
-          name: finalTaskName,
-          options: optionsToUse,
-          triggers: triggerOrTriggers,
-          handler: moduleToUse.handler,
-        });
+        if (moduleToUse.type === 'task') {
+          const { name: _n, ...optionsToUse } = moduleToUse.options || {};
+          group.defineTask({
+            name: finalTaskName,
+            options: optionsToUse,
+            triggers: moduleToUse.triggers ?? moduleToUse.trigger,
+            handler: moduleToUse.handler,
+          });
+        } else {
+          const { name: _n, ...optionsToUse } = moduleToUse.options;
+          group.defineBatchTask({
+            name: finalTaskName,
+            options: optionsToUse,
+            triggers: moduleToUse.triggers ?? moduleToUse.trigger,
+            handler: moduleToUse.handler,
+          });
+        }
 
         this.logger.debug({ groupName, taskName: finalTaskName }, 'Successfully loaded and defined task.');
         loadedCount++;
