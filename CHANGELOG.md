@@ -1,3 +1,13 @@
+## 0.5.2 (2025-04-30)
+
+### 🩹 Fixes
+
+- **client:** add event trigger data to event process ([ef8399d](https://github.com/torotask/torotask/commit/ef8399d))
+
+### ❤️ Thank You
+
+- Ben Osman @benosman
+
 ## 0.5.1 (2025-04-25)
 
 This was a version bump only, there were no code changes.
