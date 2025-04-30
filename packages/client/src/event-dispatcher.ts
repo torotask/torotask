@@ -220,9 +220,12 @@ export class EventDispatcher extends BaseQueue {
           );
           continue; // Skip this subscription if queue cannot be obtained
         }
-
+        const mergedData = {
+          ...eventData,
+          ...subInfo.data,
+        };
         if (taskInstance) {
-          dispatchPromises.push(taskInstance.run(eventData));
+          dispatchPromises.push(taskInstance.run(mergedData));
         } else {
           jobLogger.error(
             { taskGroup: subInfo.taskGroup, taskName: subInfo.taskName },
