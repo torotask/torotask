@@ -1,3 +1,14 @@
+## 0.6.0 (2025-05-02)
+
+### 🚀 Features
+
+- **client:** add bulk tasks / flow producer suport ([8dfc65b](https://github.com/torotask/torotask/commit/8dfc65b))
+- **client:** pass token through to process ([e85d902](https://github.com/torotask/torotask/commit/e85d902))
+
+### ❤️ Thank You
+
+- Ben Osman @benosman
+
 ## 0.5.2 (2025-04-30)
 
 ### 🩹 Fixes
