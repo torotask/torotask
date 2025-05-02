@@ -37,6 +37,7 @@ export interface BaseHandlerContext {
 export interface TaskHandlerContext<T = unknown, R = unknown> extends BaseHandlerContext {
   task: Task<T, R>; // Reference to the Task instance
   job: Job<T, R>;
+  token?: string | undefined; // Optional token for authentication or authorization
 }
 
 /** Task handler function type */

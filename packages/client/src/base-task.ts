@@ -128,12 +128,12 @@ export abstract class BaseTask<T = unknown, R = unknown, TOptions extends TaskOp
     return this.logger.child({ jobId: job.id, jobName: effectiveJobName });
   }
 
-  async process(job: Job): Promise<any> {
-    const result = await this.processJob(job);
+  async process(job: Job, token?: string): Promise<any> {
+    const result = await this.processJob(job, token);
     return result;
   }
 
-  processJob(_job: Job, _jobLogger?: Logger): Promise<any> {
+  processJob(_job: Job, _token?: string, _jobLogger?: Logger): Promise<any> {
     throw new Error('processJob method must be implemented in a subclass.');
   }
 

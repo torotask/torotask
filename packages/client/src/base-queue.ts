@@ -81,7 +81,7 @@ export abstract class BaseQueue extends EventEmitter {
    * @param job The BullMQ job object.
    * @returns A promise that resolves with the result of the job.
    */
-  abstract process(job: Job): Promise<any>;
+  abstract process(job: Job, token?: string): Promise<any>;
 
   getWorkerOptions(): Partial<WorkerOptions> {
     return {};
@@ -108,7 +108,7 @@ export abstract class BaseQueue extends EventEmitter {
 
     this.logger.info({ workerOptions: mergedOptions }, 'Starting worker');
 
-    const newWorker = new Worker(this.queueName, async (job) => this.process(job), mergedOptions);
+    const newWorker = new Worker(this.queueName, async (job, token) => this.process(job, token), mergedOptions);
 
     // --- Event Forwarding ---
     // Define handlers that emit events from `this` (the BaseQueue instance)

@@ -67,7 +67,7 @@ export class Task<T = unknown, R = unknown> extends BaseTask<T, R, TaskOptions> 
    * - Matching subtask name routes to the subtask handler.
    * - Other names route to main handler if `allowCatchAll` is true, otherwise error.
    */
-  async process(job: Job): Promise<any> {
+  async process(job: Job, token?: string): Promise<any> {
     const { id, name: jobName } = job;
     const effectiveJobName = jobName === '' || jobName === '__default__' ? this.name : jobName;
     const jobLogger = this.logger.child({ jobId: id, jobName: effectiveJobName });
@@ -81,7 +81,7 @@ export class Task<T = unknown, R = unknown> extends BaseTask<T, R, TaskOptions> 
         jobLogger.info(`SubTask job completed successfully`);
         return result;
       } else if (effectiveJobName === this.name || this.allowCatchAll) {
-        const result = await this.processJob(job);
+        const result = await this.processJob(job, token);
         jobLogger.debug(`Main task job completed successfully`);
         return result;
       } else {
@@ -101,7 +101,7 @@ export class Task<T = unknown, R = unknown> extends BaseTask<T, R, TaskOptions> 
     }
   }
 
-  async processJob(job: Job, jobLogger?: Logger): Promise<any> {
+  async processJob(job: Job, token?: string, jobLogger?: Logger): Promise<any> {
     jobLogger = jobLogger ?? this.getJobLogger(job);
     const typedJob = job as Job<T, R>;
     const handlerOptions: TaskHandlerOptions<T> = { id: job.id, name: this.name, data: typedJob.data };
@@ -111,6 +111,7 @@ export class Task<T = unknown, R = unknown> extends BaseTask<T, R, TaskOptions> 
       group: this.group,
       task: this,
       job: typedJob,
+      token,
       queue: this.queue,
     };
     try {
