@@ -1,12 +1,11 @@
-import { ConnectionOptions, Queue, WorkerOptions } from 'bullmq';
-import type { ConnectionOptions as BullMQConnectionOptions, Job } from 'bullmq';
+import { ConnectionOptions, FlowProducer, Queue, WorkerOptions } from 'bullmq';
+import type { ConnectionOptions as BullMQConnectionOptions, FlowJob, FlowChildJob, Job, Child } from 'bullmq';
 import { Redis, RedisOptions } from 'ioredis';
 import { type Logger, pino } from 'pino';
 import { LRU } from 'tiny-lru';
-import { BaseTask } from './base-task.js';
 import { EventDispatcher } from './event-dispatcher.js';
 import { TaskGroup } from './task-group.js';
-import type { AnyTask } from './types/index.js';
+import type { AnyTask, BulkTaskRun, BulkTaskRunChild, BulkTaskRunNode, TaskRunOptions } from './types/index.js';
 import { getConfigFromEnv } from './utils/get-config-from-env.js';
 
 const LOGGER_NAME = 'ToroTask';
@@ -45,6 +44,7 @@ export class ToroTaskClient {
   public readonly queuePrefix: string;
   private readonly taskGroups: Record<string, TaskGroup> = {};
   private _eventDispatcher: EventDispatcher | null = null; // Backing field for lazy loading
+  private _flowProducer: FlowProducer | null = null; // Backing field for lazy loading
   private _redis: Redis | null = null;
   private _consumerQueues = new LRU<Queue>(
     100, // Max number of cached queues
@@ -83,6 +83,22 @@ export class ToroTaskClient {
       this.logger.debug('EventDispatcher initialized successfully.');
     }
     return this._eventDispatcher;
+  }
+
+  /**
+   * Gets the lazily-initialized FlowProducer instance.
+   * Creates the instance on first access.
+   */
+  public get flowProducer(): FlowProducer {
+    if (!this._flowProducer) {
+      this.logger.debug('Initializing FlowProducer...');
+      this._flowProducer = new FlowProducer({
+        connection: this.connectionOptions,
+        prefix: this.queuePrefix,
+      });
+      this.logger.debug('FlowProducer initialized successfully.');
+    }
+    return this._flowProducer;
   }
 
   /**
@@ -184,7 +200,12 @@ export class ToroTaskClient {
    * @param data The data to pass to the task.
    * @returns A promise that resolves to the Job instance.
    */
-  async runTask<T = any, R = any>(groupName: string, taskName: string, data: T): Promise<Job<T, R>> {
+  async runTask<T = any, R = any>(
+    groupName: string,
+    taskName: string,
+    data: T,
+    options?: TaskRunOptions
+  ): Promise<Job<T, R>> {
     const task = this.getTask<T, R>(groupName, taskName);
     if (task) {
       return await task.run(data);
@@ -195,7 +216,7 @@ export class ToroTaskClient {
       throw new Error(`Queue ${groupName}.${taskName} is not registered`);
     }
 
-    return await queue.add(taskName, data);
+    return await queue.add(taskName, data, options);
   }
 
   /**
@@ -208,6 +229,58 @@ export class ToroTaskClient {
   async runTaskByKey<T = any, R = any>(taskKey: `${string}.${string}`, data: T): Promise<Job<T, R>> {
     const [groupName, taskName] = taskKey.split('.');
     return this.runTask<T, R>(groupName, taskName, data);
+  }
+
+  _convertToFlow(run: BulkTaskRun): FlowJob {
+    const task = this.getTask(run.taskGroup, run.taskName);
+    if (!task) {
+      throw new Error(`Task ${run.taskGroup}.${run.taskName} not found`);
+    }
+    const queueName = task.queueName;
+    const options = {
+      ...task.jobsOptions,
+      ...run.options,
+    };
+
+    return {
+      name: run.name,
+      queueName: queueName,
+      data: run.data,
+      opts: options,
+      children: run.children?.map((child) => this._convertToChildFlow(child)) || undefined,
+    };
+  }
+
+  _convertToChildFlow(run: BulkTaskRunChild): FlowChildJob {
+    const task = this.getTask(run.taskGroup, run.taskName);
+    if (!task) {
+      throw new Error(`Task ${run.taskGroup}.${run.taskName} not found`);
+    }
+    const queueName = task.queueName;
+    const options = {
+      ...task.jobsOptions,
+      ...run.options,
+    };
+
+    return {
+      name: run.name,
+      queueName: queueName,
+      data: run.data,
+      opts: options,
+      children: run.children?.map((child) => this._convertToChildFlow(child)) || undefined,
+    };
+  }
+
+  /**
+   * Runs multiple task in the specified groups with the provided data.
+   *
+   */
+  async runBulkTasks(runs: BulkTaskRun[]): Promise<BulkTaskRunNode[]> {
+    const flows: FlowJob[] = runs.map((run) => {
+      return this._convertToFlow(run);
+    });
+
+    return await this.flowProducer.addBulk(flows);
   }
 
   /**

@@ -6,10 +6,12 @@ import prettyMilliseconds from 'pretty-ms';
 import { BaseQueue } from './base-queue.js';
 import type { TaskGroup } from './task-group.js';
 import type {
+  BulkJob,
   EventSubscriptionInfo,
   RepeatOptionsWithoutKey,
   SingleOrArray,
   TaskOptions,
+  TaskRunOptions,
   TaskTrigger,
   TaskTriggerEvent,
 } from './types/index.js';
@@ -88,11 +90,25 @@ export abstract class BaseTask<T = unknown, R = unknown, TOptions extends TaskOp
   }
 
   async run(data: T, overrideOptions?: JobsOptions): Promise<Job<T, R>> {
-    const finalOptions: JobsOptions = {
+    const finalOptions: TaskRunOptions = {
       ...this.jobsOptions,
       ...overrideOptions,
     };
     return this._runJob<T, R>(this.name, data, finalOptions);
+  }
+
+  async runBulk(jobs: BulkJob[]): Promise<Job<T, R>[]> {
+    const bulkJobs = jobs.map((job) => {
+      return {
+        ...job,
+        options: {
+          ...this.jobsOptions,
+          ...(job.options ?? {}),
+        },
+      };
+    });
+
+    return this._runBulk<T, R>(bulkJobs);
   }
 
   async runAndWait(data: T, overrideOptions?: JobsOptions): Promise<R> {

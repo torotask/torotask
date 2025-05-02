@@ -7,6 +7,9 @@ import type {
   AnyTask,
   BatchTaskHandler,
   BatchTaskOptions,
+  BulkTaskGroupRun,
+  BulkTaskRun,
+  BulkTaskRunNode,
   TaskHandler,
   TaskOptions,
   TaskTrigger,
@@ -115,6 +118,20 @@ export class TaskGroup {
    */
   getTasks(): Map<string, AnyTask<any, any>> {
     return this.tasks;
+  }
+
+  /**
+   * Runs multiple task in the specified groups with the provided data.
+   *
+   */
+  async runBulkTasks(runs: BulkTaskGroupRun[]): Promise<BulkTaskRunNode[]> {
+    const processed: BulkTaskRun[] = runs.map((run) => {
+      return {
+        ...run,
+        taskGroup: run.taskGroup || this.name,
+      };
+    });
+    return await this.client.runBulkTasks(processed);
   }
 
   // --- Worker Orchestration ---

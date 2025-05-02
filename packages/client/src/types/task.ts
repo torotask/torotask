@@ -1,11 +1,11 @@
-import type { Job, JobsOptions, Queue, WorkerOptions } from 'bullmq';
+import { Job, JobsOptions, Queue, WorkerOptions } from 'bullmq';
 import type { Logger } from 'pino';
-import type { BaseTask } from '../base-task.js';
 import type { ToroTaskClient } from '../client.js'; // Assuming client export is in client.ts
 import type { TaskGroup } from '../task-group.js';
 import type { Prettify } from './utils.js';
 import { Task } from '../task.js';
 
+export type TaskRunOptions = JobsOptions;
 /**
  * Options for defining a Task, extending BullMQ's JobsOptions.
  */

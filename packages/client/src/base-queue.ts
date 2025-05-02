@@ -1,7 +1,8 @@
-import { Queue, QueueEvents, Worker, WorkerOptions, Job, ConnectionOptions, JobsOptions } from 'bullmq';
-import type { ToroTaskClient } from './client.js';
-import { Logger } from 'pino';
+import { Queue, QueueEvents, Worker, WorkerOptions, Job, ConnectionOptions, BulkJobOptions } from 'bullmq';
 import { EventEmitter } from 'events';
+import { Logger } from 'pino';
+import type { ToroTaskClient } from './client.js';
+import { BulkJob, TaskRunOptions } from './types/index.js';
 
 /**
  * Base class for managing a dedicated BullMQ Queue, its events, and an optional Worker.
@@ -265,12 +266,32 @@ export abstract class BaseQueue extends EventEmitter {
   public async _runJob<JobData, JobReturn>(
     jobName: string,
     data: JobData,
-    options: JobsOptions
+    options: TaskRunOptions
   ): Promise<Job<JobData, JobReturn>> {
     this.logger.info({ data, options, jobName }, `Adding job "${jobName}" to queue [${this.queueName}]`);
     const job = await this.queue.add(jobName, data, options);
     this.logger.info({ jobId: job.id, jobName }, `Job "${jobName}" added to queue [${this.queueName}]`);
     return job as Job<JobData, JobReturn>;
+  }
+
+  /**
+   * Core logic to add multiple jobs to the queue.
+   * Public method intended for use by subclasses or related classes (e.g., SubTask).
+   */
+  public async _runBulk<JobData, JobReturn>(jobs: BulkJob<JobData>[]): Promise<Job<JobData, JobReturn>[]> {
+    this.logger.info({ jobs }, `Bulk adding jobs ${jobs.length} to queue [${this.queueName}]`);
+
+    const bulkJobs = jobs.map((job) => {
+      return {
+        name: job.name,
+        data: job.data,
+        opts: job.options,
+      };
+    });
+
+    const result = await this.queue.addBulk(bulkJobs);
+    this.logger.info({ result }, `${result.length} Jobs bulk added added to queue [${this.queueName}]`);
+    return result as Job<JobData, JobReturn>[];
   }
 
   /**
@@ -280,7 +301,7 @@ export abstract class BaseQueue extends EventEmitter {
   public async _runJobAndWait<JobData, JobReturn>(
     jobName: string,
     data: JobData,
-    options: JobsOptions
+    options: TaskRunOptions
   ): Promise<JobReturn> {
     const waitLogger = this.logger.child({ jobName, action: 'runAndWait' });
     waitLogger.info({ data, options }, `Adding job and waiting for completion`);

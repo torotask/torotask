@@ -9,7 +9,6 @@ import type {
   BatchTaskHandlerContext,
   BatchTaskOptions,
   SingleOrArray,
-  TaskHandlerOptions,
   TaskTrigger,
 } from './types/index.js';
 
