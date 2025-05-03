@@ -5,7 +5,6 @@ import type { TaskGroup } from '../task-group.js';
 import type { Prettify } from './utils.js';
 import { Task } from '../task.js';
 
-export type TaskRunOptions = JobsOptions;
 /**
  * Options for defining a Task, extending BullMQ's JobsOptions.
  */
