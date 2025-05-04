@@ -1,12 +1,14 @@
-import { ConnectionOptions, FlowProducer, Queue, WorkerOptions } from 'bullmq';
-import type { ConnectionOptions as BullMQConnectionOptions, FlowJob, FlowChildJob, Job, Child } from 'bullmq';
+import type { ConnectionOptions as BullMQConnectionOptions, FlowChildJob, FlowJob, Job } from 'bullmq';
+import { ConnectionOptions, WorkerOptions } from 'bullmq';
 import { Redis, RedisOptions } from 'ioredis';
 import { type Logger, pino } from 'pino';
 import { LRU } from 'tiny-lru';
 import { EventDispatcher } from './event-dispatcher.js';
+import { TaskQueue } from './queue.js';
 import { TaskGroup } from './task-group.js';
 import type { AnyTask, BulkTaskRun, BulkTaskRunChild, BulkTaskRunNode, TaskJobOptions } from './types/index.js';
 import { getConfigFromEnv } from './utils/get-config-from-env.js';
+import { TaskWorkflow } from './workflow.js';
 
 const LOGGER_NAME = 'ToroTask';
 const BASE_PREFIX = 'torotask';
@@ -44,9 +46,9 @@ export class ToroTaskClient {
   public readonly queuePrefix: string;
   private readonly taskGroups: Record<string, TaskGroup> = {};
   private _eventDispatcher: EventDispatcher | null = null; // Backing field for lazy loading
-  private _flowProducer: FlowProducer | null = null; // Backing field for lazy loading
+  private _workflow: TaskWorkflow | null = null; // Backing field for lazy loading
   private _redis: Redis | null = null;
-  private _consumerQueues = new LRU<Queue>(
+  private _consumerQueues = new LRU<TaskQueue>(
     100, // Max number of cached queues
     5 * 60_000 // TTL in ms (default: 5 minutes)
   );
@@ -86,19 +88,16 @@ export class ToroTaskClient {
   }
 
   /**
-   * Gets the lazily-initialized FlowProducer instance.
+   * Gets the lazily-initialized TaskWorkflow instance.
    * Creates the instance on first access.
    */
-  public get flowProducer(): FlowProducer {
-    if (!this._flowProducer) {
-      this.logger.debug('Initializing FlowProducer...');
-      this._flowProducer = new FlowProducer({
-        connection: this.connectionOptions,
-        prefix: this.queuePrefix,
-      });
-      this.logger.debug('FlowProducer initialized successfully.');
+  public get workflow(): TaskWorkflow {
+    if (!this._workflow) {
+      this.logger.debug('Initializing Workflow...');
+      this._workflow = new TaskWorkflow(this);
+      this.logger.debug('Workflow initialized successfully.');
     }
-    return this._flowProducer;
+    return this._workflow;
   }
 
   /**
@@ -179,7 +178,7 @@ export class ToroTaskClient {
    * @param task The task name.
    * @returns A promise that resolves to the Queue instance or null if it doesn't exist.
    */
-  private async getConsumerQueue(group: string, task: string): Promise<Queue | null> {
+  private async getConsumerQueue(group: string, task: string): Promise<TaskQueue | null> {
     const key = `${group}.${task}`;
     const cached = this._consumerQueues.get(key);
     if (cached) return cached;
@@ -187,7 +186,7 @@ export class ToroTaskClient {
     const exists = await this.queueExists(key);
     if (!exists) return null;
 
-    const queue = new Queue(key, { connection: this.redis });
+    const queue = new TaskQueue(this, key);
     this._consumerQueues.set(key, queue);
     return queue;
   }
@@ -280,7 +279,7 @@ export class ToroTaskClient {
       return this._convertToFlow(run);
     });
 
-    return await this.flowProducer.addBulk(flows);
+    return await this.workflow.addBulk(flows);
   }
 
   /**
@@ -337,18 +336,15 @@ export class ToroTaskClient {
    *
    * @returns A promise that resolves with a Record mapping queue names to Queue instances.
    */
-  async getAllQueueInstances(): Promise<Record<string, Queue>> {
+  async getAllQueueInstances(): Promise<Record<string, TaskQueue>> {
     this.logger.info('Fetching all queue names and creating Queue instances...');
     const queueNames = await this.getAllQueueNames();
-    const queueInstances: Record<string, Queue> = {};
+    const queueInstances: Record<string, TaskQueue> = {};
 
     for (const queueName of queueNames) {
       this.logger.debug({ queueName }, 'Creating Queue instance');
       // Use the client's connection options to instantiate each queue
-      queueInstances[queueName] = new Queue(queueName, {
-        prefix: this.queuePrefix,
-        connection: this.connectionOptions,
-      });
+      queueInstances[queueName] = new TaskQueue(this, queueName);
     }
 
     this.logger.info({ count: queueNames.length }, 'Finished creating Queue instances for all found queues.');
@@ -481,5 +477,5 @@ export { SubTask } from './sub-task.js';
 // Other types (SubTaskHandler etc.) are handled by index.ts exporting from types.ts
 
 // Re-export core BullMQ types users might need
-export { ConnectionOptions, JobsOptions, Job, Queue } from 'bullmq';
+export { ConnectionOptions, Job, JobsOptions, Queue } from 'bullmq';
 export { EventDispatcher } from './event-dispatcher.js'; // Re-export EventDispatcher
