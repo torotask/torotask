@@ -13,13 +13,7 @@ export class TaskJob<DataType = any, ReturnType = any, NameType extends string =
   public task?: BaseTask<DataType, ReturnType>;
   public taskQueue?: TaskQueue; // Add this new property
 
-  constructor(
-    protected queue: MinimalQueue,
-    public name: NameType,
-    public data: DataType,
-    public opts: TaskJobOptions = {},
-    public id?: string
-  ) {
+  constructor(queue: MinimalQueue, name: NameType, data: DataType, opts: TaskJobOptions = {}, id?: string) {
     super(queue, name, data, opts, id);
 
     // Check if the queue is an instance of TaskQueue

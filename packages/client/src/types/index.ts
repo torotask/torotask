@@ -7,3 +7,4 @@ export * from './queue.js';
 export * from './task.js';
 export * from './utils.js';
 export * from './worker.js';
+export * from './worker-queue.js';

@@ -1,33 +1,34 @@
-import type { Job, JobsOptions, Worker, WorkerOptions } from 'bullmq'; // Added missing imports
+import type { WorkerOptions } from 'bullmq'; // Added missing imports
 import type { Logger } from 'pino';
-import { BaseQueue } from './base-queue.js';
 import type { ToroTaskClient } from './client.js'; // Assuming client path
 import { EventManager } from './event-manager.js';
+import type { TaskJob } from './job.js';
 import type { Task } from './task.js'; // Assuming task path
-import type { EventSubscriptionInfo, SyncJobReturn } from './types/index.js';
+import type { EventSubscriptionInfo, SyncJobReturn, TaskJobOptions } from './types/index.js';
+import { TaskWorkerQueue } from './worker-queue.js';
 
 // Define a default queue name for events, easily configurable if needed
 const DEFAULT_EVENT_QUEUE_NAME = 'events.dispatch';
 const SET_ACTIVE_DEBOUNCE_MS = 500; // Debounce time in milliseconds
+
+type DataType = any;
+type ReturnType = any;
 
 /**
  * Manages the registration and dispatching of events to subscribed Tasks.
  * It uses its own BullMQ queue to process published events.
  * Maintains a local cache (`activeEvents`) of events presumed to have subscribers.
  */
-export class EventDispatcher extends BaseQueue {
+export class EventDispatcher extends TaskWorkerQueue<DataType, ReturnType> {
   public manager: EventManager;
   public activeEvents: Set<string> = new Set(); // Use Set for efficient lookups
   private setActiveEventsDebounced: () => void;
   private setActiveEventsTimeout: NodeJS.Timeout | null = null;
 
-  constructor(client: ToroTaskClient, parentLogger: Logger, eventQueueName: string = DEFAULT_EVENT_QUEUE_NAME) {
-    if (!client) {
-      throw new Error('ToroTaskClient instance is required for EventDispatcher.');
-    }
-    const dispatcherLogger = parentLogger.child({ service: 'EventDispatcher', queue: eventQueueName });
-    super(client, eventQueueName, dispatcherLogger);
-    this.manager = new EventManager(this, parentLogger);
+  constructor(taskClient: ToroTaskClient, parentLogger: Logger, name: string = DEFAULT_EVENT_QUEUE_NAME) {
+    const logger = parentLogger.child({ service: 'EventDispatcher', queue: name });
+    super(taskClient, name, { logger });
+    this.manager = new EventManager(taskClient, parentLogger);
 
     // Simple debounce implementation
     this.setActiveEventsDebounced = () => {
@@ -45,8 +46,8 @@ export class EventDispatcher extends BaseQueue {
   /**
    * Starts the event manager before the event dispatcher
    */
-  async startWorker(options?: WorkerOptions): Promise<Worker> {
-    await this.manager.startWorker(); // Start manager worker (assuming it's sync)
+  async startWorker(options?: WorkerOptions) {
+    await this.manager.startWorker();
     await this.setActiveEvents();
 
     this.manager.queueEvents.on('completed', ({ jobId, returnvalue }) => {
@@ -140,7 +141,11 @@ export class EventDispatcher extends BaseQueue {
    * @param data The data payload for the event.
    * @param options Optional BullMQ job options.
    */
-  async publish<E = unknown>(eventName: string, data: E, options?: JobsOptions): Promise<Job<E, any> | undefined> {
+  async publish<E = unknown>(
+    eventName: string,
+    data: E,
+    options?: TaskJobOptions
+  ): Promise<TaskJob<E, any> | undefined> {
     if (!eventName || typeof eventName !== 'string' || eventName.trim() === '') {
       this.logger.error({ eventName }, 'Invalid event name provided for publishing.');
       throw new Error('Event name cannot be empty.');
@@ -159,7 +164,7 @@ export class EventDispatcher extends BaseQueue {
       'Publishing event (subscribers likely exist in cache)'
     );
     // Use the queue inherited from BaseQueue to add the job
-    return this.queue.add(jobName, data, options);
+    return this.add(jobName, data, options);
   }
 
   /**
@@ -169,7 +174,7 @@ export class EventDispatcher extends BaseQueue {
    * This is intended to be used as the processor function for the BullMQ Worker.
    * @param job The job received from the event queue.
    */
-  public async process(job: Job): Promise<void> {
+  public async process(job: TaskJob): Promise<void> {
     const eventName = job.name;
     const eventData = job.data;
     const jobLogger = this.logger.child({ jobId: job.id, eventName });
@@ -181,7 +186,7 @@ export class EventDispatcher extends BaseQueue {
 
     try {
       // This method handles using HVALS and parsing the JSON strings.
-      const subscriptions: EventSubscriptionInfo[] = await this.manager.getRegisteredSubscriptionsForEvent(eventName);
+      const subscriptions: EventSubscriptionInfo[] = await this.manager.subscriptions.getForEvent(eventName);
 
       if (!subscriptions || subscriptions.length === 0) {
         jobLogger.debug('No registered task subscriptions found for this event in Redis Hash.');
@@ -212,7 +217,7 @@ export class EventDispatcher extends BaseQueue {
         // You might need to adapt this part based on your actual implementation for accessing other task queues.
         let taskInstance;
         try {
-          taskInstance = this.client.getTask(subInfo.taskGroup, subInfo.taskName) as Task<any, any> | undefined;
+          taskInstance = this.taskClient.getTask(subInfo.taskGroup, subInfo.taskName) as Task<any, any> | undefined;
         } catch (taskError) {
           jobLogger.error(
             { err: taskError, taskGroup: subInfo.taskGroup, taskName: subInfo.taskName },

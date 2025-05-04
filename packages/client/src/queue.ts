@@ -1,10 +1,23 @@
-import { Queue, QueueOptions } from 'bullmq';
+import { Queue, QueueOptions, JobsOptions } from 'bullmq'; // Import JobsOptions
 import { Logger } from 'pino';
 import { ToroTaskClient } from './client.js';
-import type { TaskQueueOptions } from './types/index.js';
+// Assuming TaskJobOptions is defined in types/index.js or similar
+import type {
+  BulkJob,
+  ExtractDataType,
+  ExtractNameType,
+  ExtractResultType,
+  TaskJobOptions,
+  TaskQueueOptions,
+} from './types/index.js';
 import { TaskJob } from './job.js';
 
-export class TaskQueue<DataTypeOrJob = any, DefaultResultType = any> extends Queue<DataTypeOrJob, DefaultResultType> {
+export class TaskQueue<
+  // --- Input Generics (like BullMQ's Queue) ---
+  DataType = any,
+  ResultType = any,
+  NameType extends string = string,
+> extends Queue<any, ResultType, NameType> {
   public readonly logger: Logger;
 
   constructor(
@@ -41,4 +54,96 @@ export class TaskQueue<DataTypeOrJob = any, DefaultResultType = any> extends Que
   async getRedisClient() {
     return this.client;
   }
+
+  /**
+   * Core logic to add a job to the queue.
+   * Public method intended for use by subclasses or related classes (e.g., SubTask).
+   */
+  public override async add(
+    name: NameType, // Use TaskQueue's derived NameType
+    data: DataType, // Use TaskQueue's derived DataType
+    options?: TaskJobOptions // Use specific TaskJobOptions
+  ): Promise<TaskJob<DataType, ResultType, NameType>> {
+    // Return specific TaskJob
+    const job = await super.add(name, data, options as JobsOptions);
+
+    // Cast the result from the base Job to the specific TaskJob
+    return job as TaskJob<DataType, ResultType, NameType>;
+  }
+
+  /**
+   * Core logic to add multiple jobs to the queue.
+   * Public method intended for use by subclasses or related classes (e.g., SubTask).
+   */
+  // Assuming BulkJob's options are compatible with BullMQ's BulkJobOptions
+  public override async addBulk(jobs: BulkJob<DataType>[]): Promise<TaskJob<DataType, ResultType>[]> {
+    this.logger.info({ jobs }, `Bulk adding jobs ${jobs.length} to queue [${this.name}]`);
+
+    const bulkJobs = jobs.map((job) => {
+      return {
+        name: job.name,
+        data: job.data,
+        opts: job.options,
+      };
+    });
+
+    const result = await super.addBulk(bulkJobs as any);
+    this.logger.info({ result }, `${result.length} Jobs bulk added added to queue [${this.name}]`);
+    return result as TaskJob<DataType, ResultType, NameType>[];
+  }
+
+  /**
+   * Core logic to add a job and wait for its completion.
+   * Public method intended for use by subclasses or related classes.
+   */
+  public async _runJobAndWait(
+    name: NameType,
+    data: DataType,
+    options: TaskJobOptions // Use TaskJobOptions
+  ): Promise<ResultType> {
+    // Use specific JobReturn generic
+    const waitLogger = this.logger.child({ jobName: name, action: 'runAndWait' });
+    waitLogger.info({ data, options }, 'Adding job and waiting for completion');
+
+    // Call the corrected _runJob
+    const job = await this.add(name, data as any, options); // Cast data if needed
+    const jobLogger = this.logger.child({ jobId: job.id, jobName: name });
+
+    try {
+      jobLogger.info('Waiting for job completion...');
+      // Make sure queueEvents is accessible (might need to be passed or stored)
+      // Assuming this.queueEvents exists similar to BaseQueue/WorkerQueue
+      if (!this.queueEvents) {
+        throw new Error('QueueEvents instance not available for waiting.');
+      }
+      await job.waitUntilFinished(this.queueEvents);
+
+      if (!job.id) {
+        jobLogger.error('Job ID is missing after waiting. Cannot get result.');
+        throw new Error('Job ID is missing after waiting. Cannot get result.');
+      }
+
+      jobLogger.debug('Refetching job after completion');
+      // Use the overridden this.Job getter which returns TaskJob
+      const finishedJob = await this.Job.fromId<DataType, ResultType>(this, job.id);
+
+      if (!finishedJob) {
+        jobLogger.error('Failed to refetch job after completion.');
+        throw new Error(`Failed to refetch job ${job.id} after completion.`);
+      }
+
+      jobLogger.info({ returnValue: finishedJob.returnvalue }, 'Job completed successfully');
+      return finishedJob.returnvalue;
+    } catch (error) {
+      jobLogger.error(
+        { err: error instanceof Error ? error : new Error(String(error)) },
+        'Job failed or could not be waited for'
+      );
+      throw error;
+    }
+  }
+
+  // Add queueEvents property if it's needed by _runJobAndWait and not already present
+  // You might need to initialize this in the constructor similar to WorkerQueue
+  protected queueEvents?: any; // Replace 'any' with the actual type, e.g., TaskQueueEvents
 }

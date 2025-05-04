@@ -17,3 +17,10 @@ export interface SyncJobReturn {
   unregistered: number;
   errors: number;
 }
+
+export interface SyncJobPayload {
+  taskGroup: string;
+  taskName: string;
+  // The complete list of event subscriptions this task *should* have
+  desiredSubscriptions: EventSubscriptionInfo[];
+}

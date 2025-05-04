@@ -10,10 +10,10 @@ const TASK_INDEX_PREFIX = 'events:task-index';
  * Manages the persistence of event subscriptions in Redis.
  * Encapsulates all direct Redis interactions related to event subscriptions.
  */
-export class EventSubscriptionRepository {
+export class EventSubscriptions {
   private readonly redis: Redis;
-  private readonly prefix: string;
   private readonly logger: Logger;
+  public readonly prefix: string;
 
   constructor(redisClient: Redis, prefix: string, logger: Logger) {
     this.redis = redisClient;
@@ -49,7 +49,7 @@ export class EventSubscriptionRepository {
    * @param info The EventSubscriptionInfo object.
    * @returns A string identifier (e.g., "group:task:trigger:123" or "group:task:event:abc").
    */
-  private getSubscriptionIdentifier(info: EventSubscriptionInfo): string {
+  public getIdentifier(info: EventSubscriptionInfo): string {
     const { taskGroup, taskName, triggerId, eventId } = info;
     let suffix = '';
     if (triggerId !== undefined) {
@@ -75,10 +75,10 @@ export class EventSubscriptionRepository {
    * @param info - The subscription information.
    * @returns A promise resolving when the registration is complete.
    */
-  async registerSubscription(eventName: string, info: EventSubscriptionInfo): Promise<void> {
+  async register(eventName: string, info: EventSubscriptionInfo): Promise<void> {
     const eventKey = this.getEventKey(eventName);
     const taskIndexKey = this.getTaskIndexKey(info.taskGroup, info.taskName);
-    const subscriptionId = this.getSubscriptionIdentifier(info);
+    const subscriptionId = this.getIdentifier(info);
     const subscriptionData = JSON.stringify(info);
 
     this.logger.debug({ eventName, info, subscriptionId }, 'Registering subscription');
@@ -137,10 +137,10 @@ export class EventSubscriptionRepository {
    * @param info - The subscription information to remove.
    * @returns A promise resolving when the unregistration is complete.
    */
-  async unregisterSubscription(eventName: string, info: EventSubscriptionInfo): Promise<void> {
+  async unregister(eventName: string, info: EventSubscriptionInfo): Promise<void> {
     const eventKey = this.getEventKey(eventName);
     const taskIndexKey = this.getTaskIndexKey(info.taskGroup, info.taskName);
-    const subscriptionId = this.getSubscriptionIdentifier(info);
+    const subscriptionId = this.getIdentifier(info);
     const { taskGroup, taskName } = info; // Destructure for clarity
 
     this.logger.debug({ eventName, info, subscriptionId }, 'Unregistering subscription');
@@ -219,7 +219,7 @@ export class EventSubscriptionRepository {
    * @param taskName - The name of the task.
    * @returns A promise resolving to an array of subscription information objects.
    */
-  async getSubscriptionsForTask(taskGroup: string, taskName: string): Promise<EventSubscriptionInfo[]> {
+  async getForTask(taskGroup: string, taskName: string): Promise<EventSubscriptionInfo[]> {
     const eventNames = await this.getTaskEventIndex(taskGroup, taskName);
     if (eventNames.length === 0) {
       return [];
@@ -268,7 +268,7 @@ export class EventSubscriptionRepository {
    * @param eventName - The name of the event.
    * @returns A promise resolving to an array of subscription information objects.
    */
-  async getSubscriptionsForEvent(eventName: string): Promise<EventSubscriptionInfo[]> {
+  async getForEvent(eventName: string): Promise<EventSubscriptionInfo[]> {
     const eventKey = this.getEventKey(eventName);
     try {
       const subscriptions = await this.redis.hvals(eventKey);
