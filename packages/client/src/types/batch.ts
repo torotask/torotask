@@ -3,6 +3,7 @@ import type { BatchContainer } from '../batch-container.js';
 import type { BatchTask } from '../batch-task.js';
 import type { BaseHandlerContext, TaskHandlerContext, TaskHandlerOptions, TaskOptions } from './task.js';
 import type { Prettify } from './utils.js';
+import type { TaskJob } from '../job.js'; // Added
 
 export interface BatchOptions {
   batchSize: number;
@@ -12,6 +13,11 @@ export interface BatchOptions {
    */
   batchTimeout: number;
 }
+
+// New: Type for the batch processor function used by TaskWorker
+export type BatchProcessor<DataType = any, ResultType = any, NameType extends string = string> = (
+  jobs: TaskJob<DataType, ResultType, NameType>[]
+) => Promise<any>;
 
 export type BatchJobOptions = Prettify<JobsOptions & BatchOptions> & {
   lockDuration?: number;
