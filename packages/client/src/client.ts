@@ -5,7 +5,7 @@ import { type Logger, pino } from 'pino';
 import { LRU } from 'tiny-lru';
 import { EventDispatcher } from './event-dispatcher.js';
 import { TaskGroup } from './task-group.js';
-import type { AnyTask, BulkTaskRun, BulkTaskRunChild, BulkTaskRunNode, TaskRunOptions } from './types/index.js';
+import type { AnyTask, BulkTaskRun, BulkTaskRunChild, BulkTaskRunNode, TaskJobOptions } from './types/index.js';
 import { getConfigFromEnv } from './utils/get-config-from-env.js';
 
 const LOGGER_NAME = 'ToroTask';
@@ -204,7 +204,7 @@ export class ToroTaskClient {
     groupName: string,
     taskName: string,
     data: T,
-    options?: TaskRunOptions
+    options?: TaskJobOptions
   ): Promise<Job<T, R>> {
     const task = this.getTask<T, R>(groupName, taskName);
     if (task) {

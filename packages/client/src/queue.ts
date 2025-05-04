@@ -5,26 +5,25 @@ import type { TaskQueueOptions } from './types/index.js';
 import { TaskJob } from './job.js';
 
 export class TaskQueue<DataTypeOrJob = any, DefaultResultType = any> extends Queue<DataTypeOrJob, DefaultResultType> {
-  public readonly taskClient: ToroTaskClient;
-  //public readonly queueEvents: QueueEvents;
   public readonly logger: Logger;
 
-  constructor(client: ToroTaskClient, name: string, parentLogger: Logger, options?: Partial<TaskQueueOptions>) {
-    if (!client) {
+  constructor(
+    public readonly taskClient: ToroTaskClient,
+    name: string,
+    options?: Partial<TaskQueueOptions>
+  ) {
+    if (!taskClient) {
       throw new Error('ToroTask instance is required.');
     }
     if (!name) {
       throw new Error('Queue name is required.');
     }
     options = options || {};
-    options.prefix = options.prefix || client.queuePrefix;
-    options.connection = options.connection = client.connectionOptions;
+    options.prefix = options.prefix || taskClient.queuePrefix;
+    options.connection = options.connection = taskClient.connectionOptions;
 
     super(name, options as QueueOptions);
-    this.taskClient = client;
-
-    // Assign logger
-    this.logger = parentLogger.child({ taskQue: this.name });
+    this.logger = options.logger || taskClient.logger.child({ taskQueue: name });
   }
 
   /**
@@ -33,5 +32,13 @@ export class TaskQueue<DataTypeOrJob = any, DefaultResultType = any> extends Que
    */
   protected get Job(): typeof TaskJob {
     return TaskJob;
+  }
+
+  /**
+   * Get the Redis client instance used by the queue.
+   * @returns The Redis client instance.
+   */
+  async getRedisClient() {
+    return this.client;
   }
 }

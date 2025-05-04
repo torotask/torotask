@@ -1,8 +1,8 @@
 import type { JobNode } from 'bullmq';
-import type { TaskRunOptions } from './task.js';
+import type { TaskJobOptions } from './job.js';
 import { P } from 'pino';
 
-export type BulkRunOptions = Omit<TaskRunOptions, 'repeat'>;
+export type BulkRunOptions = Omit<TaskJobOptions, 'repeat'>;
 
 export type BulkJob<T = any> = {
   name: string;

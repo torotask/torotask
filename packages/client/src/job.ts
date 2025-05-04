@@ -1,7 +1,7 @@
 import { Job, MinimalQueue } from 'bullmq';
 import { Logger } from 'pino';
 import { BaseTask } from './base-task.js';
-import type { TaskJobsOptions } from './types/index.js';
+import type { TaskJobOptions } from './types/index.js';
 import { TaskQueue } from './queue.js';
 
 export class TaskJob<DataType = any, ReturnType = any, NameType extends string = string> extends Job<
@@ -17,7 +17,7 @@ export class TaskJob<DataType = any, ReturnType = any, NameType extends string =
     protected queue: MinimalQueue,
     public name: NameType,
     public data: DataType,
-    public opts: TaskJobsOptions = {},
+    public opts: TaskJobOptions = {},
     public id?: string
   ) {
     super(queue, name, data, opts, id);

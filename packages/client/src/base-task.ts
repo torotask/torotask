@@ -11,7 +11,7 @@ import type {
   RepeatOptionsWithoutKey,
   SingleOrArray,
   TaskOptions,
-  TaskRunOptions,
+  TaskJobOptions,
   TaskTrigger,
   TaskTriggerEvent,
 } from './types/index.js';
@@ -90,7 +90,7 @@ export abstract class BaseTask<T = unknown, R = unknown, TOptions extends TaskOp
   }
 
   async run(data: T, overrideOptions?: JobsOptions): Promise<Job<T, R>> {
-    const finalOptions: TaskRunOptions = {
+    const finalOptions: TaskJobOptions = {
       ...this.jobsOptions,
       ...overrideOptions,
     };

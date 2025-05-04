@@ -2,7 +2,7 @@ import { Queue, QueueEvents, Worker, WorkerOptions, Job, ConnectionOptions, Bulk
 import { EventEmitter } from 'events';
 import { Logger } from 'pino';
 import type { ToroTaskClient } from './client.js';
-import { BulkJob, TaskRunOptions } from './types/index.js';
+import { BulkJob, TaskJobOptions } from './types/index.js';
 
 /**
  * Base class for managing a dedicated BullMQ Queue, its events, and an optional Worker.
@@ -266,7 +266,7 @@ export abstract class BaseQueue extends EventEmitter {
   public async _runJob<JobData, JobReturn>(
     jobName: string,
     data: JobData,
-    options: TaskRunOptions
+    options: TaskJobOptions
   ): Promise<Job<JobData, JobReturn>> {
     this.logger.info({ data, options, jobName }, `Adding job "${jobName}" to queue [${this.queueName}]`);
     const job = await this.queue.add(jobName, data, options);
@@ -301,7 +301,7 @@ export abstract class BaseQueue extends EventEmitter {
   public async _runJobAndWait<JobData, JobReturn>(
     jobName: string,
     data: JobData,
-    options: TaskRunOptions
+    options: TaskJobOptions
   ): Promise<JobReturn> {
     const waitLogger = this.logger.child({ jobName, action: 'runAndWait' });
     waitLogger.info({ data, options }, `Adding job and waiting for completion`);

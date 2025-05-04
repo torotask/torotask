@@ -5,32 +5,26 @@ import type { TaskWorkerOptions } from './types/index.js';
 import { TaskJob } from './job.js';
 
 export class TaskWorker<DataType = any, ResultType = any> extends Worker<DataType, ResultType> {
-  public readonly taskClient: ToroTaskClient;
-  //public readonly queueEvents: QueueEvents;
   public readonly logger: Logger;
 
   constructor(
-    client: ToroTaskClient,
+    public readonly taskClient: ToroTaskClient,
     name: string,
-    parentLogger: Logger,
     processor?: string | URL | null | Processor<DataType, ResultType, string>,
     options?: Partial<TaskWorkerOptions>
   ) {
-    if (!client) {
+    if (!taskClient) {
       throw new Error('ToroTask instance is required.');
     }
     if (!name) {
       throw new Error('Queue name is required.');
     }
     options = options || {};
-    options.prefix = options.prefix || client.queuePrefix;
-    options.connection = options.connection = client.connectionOptions;
+    options.prefix = options.prefix || taskClient.queuePrefix;
+    options.connection = options.connection = taskClient.connectionOptions;
 
     super(name, processor, options as WorkerOptions);
-    this.taskClient = client;
-
-    // Assign logger
-    this.logger = parentLogger.child({ taskQueue: this.name });
+    this.logger = options.logger || taskClient.logger.child({ taskQueue: name });
   }
 
   /**

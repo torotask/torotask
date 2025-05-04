@@ -1,3 +1,6 @@
 import type { WorkerOptions } from 'bullmq';
+import { Logger } from 'pino';
 
-export type TaskWorkerOptions = WorkerOptions;
+export type TaskWorkerOptions = WorkerOptions & {
+  logger?: Logger;
+};
