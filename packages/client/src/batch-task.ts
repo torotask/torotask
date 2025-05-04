@@ -239,7 +239,7 @@ export class BatchTask<T = unknown, R = unknown> extends BaseTask<T, R, BatchTas
     this.logger.info(`Processing ${batchInfo} for task "${this.name}".`);
 
     try {
-      const batch = new BatchContainer<T, R>(this.queue, this.name, this.logger);
+      const batch = new BatchContainer<T, R>(this, this.queueName, this.logger);
       batch.setJobs(batchToProcess); // Set the jobs to process
       // --- Execute actual batch processing logic ---
       await this.processBatch(batch);
@@ -280,11 +280,11 @@ export class BatchTask<T = unknown, R = unknown> extends BaseTask<T, R, BatchTas
     const handlerOptions: BatchHandlerOptions<T> = { id: batch.id, name: this.name, data: batch.data };
     const handlerContext: BatchTaskHandlerContext<T, R> = {
       logger: batch.logger,
-      client: this.client,
+      client: this.taskClient,
       group: this.group,
       task: this,
       batch,
-      queue: this.queue,
+      queue: this,
     };
     try {
       const result = await this.handler(handlerOptions, handlerContext);

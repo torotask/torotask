@@ -1,9 +1,8 @@
 import slugify from '@sindresorhus/slugify';
-import { Job, JobsOptions, Worker, WorkerOptions } from 'bullmq';
+import { Job, JobsOptions, WorkerOptions, JobScheduler, JobSchedulerJson } from 'bullmq';
 import cronstrue from 'cronstrue';
 import type { Logger } from 'pino';
 import prettyMilliseconds from 'pretty-ms';
-import { BaseQueue } from './base-queue.js';
 import type { TaskGroup } from './task-group.js';
 import type {
   BulkJob,
@@ -15,10 +14,11 @@ import type {
   TaskTrigger,
   TaskTriggerEvent,
 } from './types/index.js';
+import { TaskWorkerQueue } from './worker-queue.js';
 
 // Add internalId to TaskTrigger type for tracking purposes within the Task class
-type InternalTaskTrigger<T> = TaskTrigger<T> & { internalId: number };
-type InternalTaskTriggerEvent<T> = TaskTriggerEvent<T> & { internalId: number };
+type InternalTaskTrigger<DataType> = TaskTrigger<DataType> & { internalId: number };
+type InternalTaskTriggerEvent<DataType> = TaskTriggerEvent<DataType> & { internalId: number };
 
 /**
  * Represents a defined task associated with a TaskGroup.
@@ -29,41 +29,45 @@ type InternalTaskTriggerEvent<T> = TaskTriggerEvent<T> & { internalId: number };
  * @template T The expected type of the data payload for this task's main handler.
  * @template R The expected return type of the job associated with this task's main handler.
  */
-export abstract class BaseTask<T = unknown, R = unknown, TOptions extends TaskOptions = TaskOptions> extends BaseQueue {
-  public readonly name: string;
+export abstract class BaseTask<
+  DataType = any,
+  ResultType = any,
+  TOptions extends TaskOptions = TaskOptions,
+> extends TaskWorkerQueue<DataType, ResultType> {
+  public readonly taskName: string;
   public readonly group: TaskGroup;
 
   public jobsOptions: JobsOptions;
   public workerOptions: Partial<WorkerOptions> | undefined;
   // Store the normalized triggers with an internal ID
-  public triggers: InternalTaskTrigger<T>[] = [];
+  public triggers: InternalTaskTrigger<DataType>[] = [];
   // Map for easy lookup of *current* event triggers by their internalId
-  protected currentEventTriggers: Map<number, InternalTaskTriggerEvent<T>> = new Map();
+  protected currentEventTriggers: Map<number, InternalTaskTriggerEvent<DataType>> = new Map();
   // Remove internal tracking of registered state, EventManager handles comparison
   // protected _registeredEventTriggers: Map<number, EventSubscriptionInfo> = new Map();
 
   constructor(
     taskGroup: TaskGroup,
-    name: string,
+    taskName: string, // Renamed parameter
     public taskOptions: TOptions,
-    trigger: SingleOrArray<TaskTrigger<T>> | undefined,
-    groupLogger: Logger
+    trigger: SingleOrArray<TaskTrigger<DataType>> | undefined,
+    parentLogger?: Logger
   ) {
     if (!taskGroup) {
       throw new Error('TaskGroup instance is required.');
     }
-    if (!name) {
+    if (!taskName) {
       throw new Error('Task name is required.');
     }
+    parentLogger = parentLogger || taskGroup.logger;
 
     const client = taskGroup.client;
-    const queueName = `${taskGroup.name}.${name}`;
-    const taskLogger = groupLogger.child({ taskName: name });
-
-    super(client, queueName, taskLogger);
+    const queueName = `${taskGroup.name}.${taskName}`; // Use taskName to build queueName
+    const logger = parentLogger.child({ taskName: taskName }); // Use taskName in logger
+    super(client, queueName, { logger }); // Pass the calculated queueName
 
     this.group = taskGroup;
-    this.name = name;
+    this.taskName = taskName;
     const { workerOptions, ...jobsOptions } = taskOptions ?? {};
 
     this.workerOptions = workerOptions;
@@ -72,13 +76,11 @@ export abstract class BaseTask<T = unknown, R = unknown, TOptions extends TaskOp
     // Initialize triggers and internal maps
     this._initializeTriggers(trigger);
 
-    this.on('ready', () => {
+    this.on('worker:ready', () => {
       this.logger.debug('Task is ready. Requesting trigger synchronization...');
       // Request sync instead of running it directly
-      this.requestTriggerSync().catch(
-        (
-          err // Changed method name
-        ) => this.logger.error({ err }, 'Error requesting initial trigger synchronization')
+      this.requestTriggerSync().catch((err) =>
+        this.logger.error({ err }, 'Error requesting initial trigger synchronization')
       );
     });
   }
@@ -89,15 +91,16 @@ export abstract class BaseTask<T = unknown, R = unknown, TOptions extends TaskOp
     };
   }
 
-  async run(data: T, overrideOptions?: JobsOptions): Promise<Job<T, R>> {
+  async run(data: DataType, overrideOptions?: JobsOptions): Promise<Job<DataType, ResultType>> {
     const finalOptions: TaskJobOptions = {
       ...this.jobsOptions,
       ...overrideOptions,
     };
-    return this._runJob<T, R>(this.name, data, finalOptions);
+    // Use taskName for the default job name if needed, queue handles its own naming
+    return this.add(this.taskName, data, finalOptions);
   }
 
-  async runBulk(jobs: BulkJob[]): Promise<Job<T, R>[]> {
+  async runBulk(jobs: BulkJob[]): Promise<Job<DataType, ResultType>[]> {
     const bulkJobs = jobs.map((job) => {
       return {
         ...job,
@@ -108,24 +111,27 @@ export abstract class BaseTask<T = unknown, R = unknown, TOptions extends TaskOp
       };
     });
 
-    return this._runBulk<T, R>(bulkJobs);
+    return this.addBulk(bulkJobs);
   }
 
-  async runAndWait(data: T, overrideOptions?: JobsOptions): Promise<R> {
+  async runAndWait(data: DataType, overrideOptions?: JobsOptions): Promise<ResultType> {
     const finalOptions: JobsOptions = {
       ...this.jobsOptions,
       ...overrideOptions,
     };
-    return this._runJobAndWait<T, R>(this.name, data, finalOptions);
+    // Use taskName for the default job name if needed
+    return this._runJobAndWait(this.taskName, data, finalOptions);
   }
 
   protected getJobName(job: Job): string {
-    return job.name === '' || job.name === '__default__' ? this.name : job.name;
+    // Use taskName as the default if job.name is empty or default
+    return job.name === '' || job.name === '__default__' ? this.taskName : job.name;
   }
 
   protected getJobLogger(job: Job): Logger {
     const effectiveJobName = this.getJobName(job);
-    return this.logger.child({ jobId: job.id, jobName: effectiveJobName });
+    // Include taskName in the job logger context
+    return this.logger.child({ jobId: job.id, jobName: effectiveJobName, taskName: this.taskName });
   }
 
   async process(job: Job, token?: string): Promise<any> {
@@ -142,7 +148,7 @@ export abstract class BaseTask<T = unknown, R = unknown, TOptions extends TaskOp
    */
 
   public async requestTriggerSync(): Promise<void> {
-    const logPrefix = `[Request Sync: ${this.name}]`;
+    const logPrefix = `[Request Sync: ${this.taskName}]`; // Use taskName in log
     this.logger.debug(`${logPrefix} Requesting trigger synchronization via EventManager.`);
     try {
       // Only need to sync event triggers via the manager
@@ -162,17 +168,18 @@ export abstract class BaseTask<T = unknown, R = unknown, TOptions extends TaskOp
    * This remains local to the Task instance.
    */
   protected async _synchronizeCronEverySchedulers(): Promise<void> {
-    const queue = this.queue;
     // Add distinct log prefix
-    const logPrefix = `(Cron/Every Sync: ${this.name})`;
+    const logPrefix = `(Cron/Every Sync: ${this.taskName})`; // Use taskName in log
     this.logger.debug(`${logPrefix} Starting synchronization...`);
 
     try {
       // 1. Get existing job schedulers potentially related to this task (CRON/EVERY only)
-      const allSchedulers = await queue.getJobSchedulers();
+      const allSchedulers = await this.getJobSchedulers();
       const schedulerPrefix = `trigger:`;
-      const taskSchedulers = allSchedulers.filter((s) => s.key?.startsWith(schedulerPrefix));
-      const existingSchedulerKeys = new Set(taskSchedulers.map((s) => s.key).filter(Boolean) as string[]);
+      const taskSchedulers = allSchedulers.filter((s: JobSchedulerJson) => s.key?.startsWith(schedulerPrefix));
+      const existingSchedulerKeys = new Set(
+        taskSchedulers.map((s: JobSchedulerJson) => s.key).filter(Boolean) as string[]
+      );
       this.logger.debug(
         `${logPrefix} Found ${existingSchedulerKeys.size} existing cron/every job schedulers for this task.`
       );
@@ -225,8 +232,8 @@ export abstract class BaseTask<T = unknown, R = unknown, TOptions extends TaskOp
 
         this.logger.debug(`${logPrefix} ${logSuffix} Upserting scheduler '${schedulerKey}'`);
         upsertPromises.push(
-          queue.upsertJobScheduler(schedulerKey, repeatOpts, {
-            name: this.name,
+          this.upsertJobScheduler(schedulerKey, repeatOpts, {
+            name: this.taskName, // Use taskName for the job name within the scheduler
             data: trigger.data,
             opts: jobOptions,
           })
@@ -237,12 +244,11 @@ export abstract class BaseTask<T = unknown, R = unknown, TOptions extends TaskOp
       this.logger.info(`${logPrefix} Upserted ${upsertPromises.length} cron/every schedulers.`);
 
       // 3. Remove obsolete job schedulers (CRON/EVERY only)
-      const removePromises: Promise<void>[] = [];
+      const removePromises: Promise<boolean>[] = []; // Changed type to Promise<boolean>[]
       existingSchedulerKeys.forEach((key) => {
         if (!desiredSchedulerKeys.has(key)) {
           this.logger.info(`${logPrefix} Removing obsolete cron/every scheduler '${key}'`);
-          // @ts-expect-error Linter incorrect about return type for removeJobScheduler
-          removePromises.push(queue.removeJobScheduler(key));
+          removePromises.push(this.removeJobScheduler(key));
         }
       });
 
@@ -263,7 +269,7 @@ export abstract class BaseTask<T = unknown, R = unknown, TOptions extends TaskOp
    * Collects desired event subscriptions and requests synchronization via the EventManager.
    */
   protected async _requestEventTriggerSync(): Promise<void> {
-    const logPrefix = `[Event Sync Request: ${this.name}]`;
+    const logPrefix = `[Event Sync Request: ${this.taskName}]`; // Use taskName in log
     this.logger.debug(`${logPrefix} Collecting desired event subscriptions...`);
     const manager = this.group.client.events.manager; // Access manager
 
@@ -274,7 +280,7 @@ export abstract class BaseTask<T = unknown, R = unknown, TOptions extends TaskOp
       if (trigger.event) {
         desiredSubscriptions.push({
           taskGroup: this.group.name,
-          taskName: this.name,
+          taskName: this.taskName, // Use taskName here
           triggerId: trigger.internalId,
           eventId: trigger.event, // Include event name
           ...(trigger.data && { data: trigger.data }),
@@ -293,7 +299,7 @@ export abstract class BaseTask<T = unknown, R = unknown, TOptions extends TaskOp
 
     // 2. Request the sync job via the manager
     try {
-      const job = await manager.requestSync(this.group.name, this.name, desiredSubscriptions);
+      const job = await manager.requestSync(this.group.name, this.taskName, desiredSubscriptions); // Use taskName
       if (job) {
         this.logger.debug({ jobId: job.id }, `${logPrefix} Sync job successfully requested.`);
       } else {
@@ -308,8 +314,8 @@ export abstract class BaseTask<T = unknown, R = unknown, TOptions extends TaskOp
   /**
    * Updates the task's default job options and triggers, then requests synchronization.
    */
-  async update(options?: TOptions, triggers?: SingleOrArray<TaskTrigger<T>>): Promise<void> {
-    const logPrefix = `[Task Update: ${this.name}]`;
+  async update(options?: TOptions, triggers?: SingleOrArray<TaskTrigger<DataType>>): Promise<void> {
+    const logPrefix = `[Task Update: ${this.taskName}]`; // Use taskName in log
     this.logger.debug({ hasNewOptions: !!options, hasNewTriggers: !!triggers }, `${logPrefix} Starting update...`);
     let needsSyncRequest = false; // Renamed for clarity
 
@@ -342,7 +348,7 @@ export abstract class BaseTask<T = unknown, R = unknown, TOptions extends TaskOp
    * Removes all BullMQ job schedulers (cron/every) and requests event trigger unregistration.
    */
   async removeAllTriggers(): Promise<void> {
-    const logPrefix = `[Remove Triggers: ${this.name}]`;
+    const logPrefix = `[Remove Triggers: ${this.taskName}]`; // Use taskName in log
     this.logger.info(`${logPrefix} Starting removal of all triggers...`);
     const manager = this.group.client.events.manager;
 
@@ -364,7 +370,7 @@ export abstract class BaseTask<T = unknown, R = unknown, TOptions extends TaskOp
     this.logger.info(`${logPrefix} Requesting removal of all event triggers via EventManager...`);
     try {
       // Pass empty array to signal removal
-      await manager.requestSync(this.group.name, this.name, []);
+      await manager.requestSync(this.group.name, this.taskName, []); // Use taskName
       this.logger.info(`${logPrefix} Event trigger removal requested successfully.`);
     } catch (error) {
       this.logger.error({ err: error }, `${logPrefix} Failed to request event trigger removal.`);
@@ -373,20 +379,20 @@ export abstract class BaseTask<T = unknown, R = unknown, TOptions extends TaskOp
   }
 
   /** Helper method to normalize trigger input and update internal state */
-  protected _initializeTriggers(triggersInput?: SingleOrArray<TaskTrigger<T>>): void {
-    const logPrefix = `[Init Triggers: ${this.name}]`;
+  protected _initializeTriggers(triggersInput?: SingleOrArray<TaskTrigger<DataType>>): void {
+    const logPrefix = `[Init Triggers: ${this.taskName}]`; // Use taskName in log
     this.logger.debug(`${logPrefix} Normalizing triggers and updating internal trigger maps...`);
-    const normalizedTriggers: InternalTaskTrigger<T>[] = [];
+    const normalizedTriggers: InternalTaskTrigger<DataType>[] = [];
 
     const inputArray = !triggersInput ? [] : Array.isArray(triggersInput) ? [...triggersInput] : [triggersInput];
-    inputArray.forEach((trigger, index) => {
+    inputArray.forEach((trigger: TaskTrigger<DataType>, index) => {
       normalizedTriggers.push({ ...trigger, internalId: index });
     });
     this.triggers = normalizedTriggers;
 
     // Rebuild the internal map of current event triggers keyed by internalId
-    const newEventTriggers = new Map<number, InternalTaskTriggerEvent<T>>();
-    this.triggers.forEach((trigger) => {
+    const newEventTriggers = new Map<number, InternalTaskTriggerEvent<DataType>>();
+    this.triggers.forEach((trigger: InternalTaskTrigger<DataType>) => {
       if (trigger.type === 'event') {
         // Type guard to ensure it's an event trigger before accessing 'event'
         if (trigger.event && typeof trigger.event === 'string' && trigger.event.trim() !== '') {

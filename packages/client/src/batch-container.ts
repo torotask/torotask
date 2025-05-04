@@ -1,6 +1,7 @@
-import { Job, MinimalQueue } from 'bullmq';
+import { MinimalQueue } from 'bullmq';
 import type { Logger } from 'pino'; // Assuming a logger interface
 import { v4 as uuidv4 } from 'uuid'; // For generating IDs
+import { TaskJob } from './job.js';
 
 /**
  * Represents an in-memory container for managing a batch of actual BullMQ Job instances
@@ -18,7 +19,7 @@ export class BatchContainer<DataType = any, ReturnType = any, NameType extends s
   /**
    * The array of actual BullMQ Job instances that constitute this batch.
    */
-  private jobs: Job<DataType, ReturnType, NameType>[] = [];
+  private jobs: TaskJob<DataType, ReturnType, NameType>[] = [];
 
   /**
    * A unique identifier for this specific batch instance (useful for logging).
@@ -64,7 +65,7 @@ export class BatchContainer<DataType = any, ReturnType = any, NameType extends s
    * Sets/replaces the internal list of Job instances managed by this container.
    * @param jobs The array of Job instances representing the batch.
    */
-  setJobs(jobs: Job<DataType, ReturnType, NameType>[]) {
+  setJobs(jobs: TaskJob<DataType, ReturnType, NameType>[]) {
     this.jobs = jobs;
   }
 
@@ -72,7 +73,7 @@ export class BatchContainer<DataType = any, ReturnType = any, NameType extends s
    * Adds a single job to the internal list for this batch container.
    * @param job The job to add.
    */
-  addJob(job: Job<DataType, ReturnType, NameType>) {
+  addJob(job: TaskJob<DataType, ReturnType, NameType>) {
     this.jobs.push(job);
   }
 
@@ -80,7 +81,7 @@ export class BatchContainer<DataType = any, ReturnType = any, NameType extends s
    * Adds multiple jobs to the internal list for this batch container.
    * @param jobs The jobs to add.
    */
-  addJobs(jobs: Job<DataType, ReturnType, NameType>[]) {
+  addJobs(jobs: TaskJob<DataType, ReturnType, NameType>[]) {
     this.jobs.push(...jobs);
   }
 
@@ -88,7 +89,7 @@ export class BatchContainer<DataType = any, ReturnType = any, NameType extends s
    * Returns the array of actual BullMQ Job instances managed by this batch container.
    * @returns The array of jobs.
    */
-  getJobs(): Job<DataType, ReturnType, NameType>[] {
+  getJobs(): TaskJob<DataType, ReturnType, NameType>[] {
     return this.jobs;
   }
 
@@ -193,7 +194,7 @@ export class BatchContainer<DataType = any, ReturnType = any, NameType extends s
     this.logger.warn(
       `Attempting to move ${this.jobs.length} jobs in batch ${this.id} to failed state due to error: ${error.message}`
     );
-    const promises = this.jobs.map((job) => {
+    const promises = this.jobs.map(async (job) => {
       if (!job.token) {
         this.logger.error(`Job ${job.id} inside batch ${this.id} is missing its lock token. Cannot move to failed.`);
         return Promise.resolve(); // Skip this job

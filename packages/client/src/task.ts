@@ -107,12 +107,12 @@ export class Task<T = unknown, R = unknown> extends BaseTask<T, R, TaskOptions> 
     const handlerOptions: TaskHandlerOptions<T> = { id: job.id, name: this.name, data: typedJob.data };
     const handlerContext: TaskHandlerContext<T, R> = {
       logger: jobLogger,
-      client: this.client,
+      client: this.taskClient,
       group: this.group,
       task: this,
       job: typedJob,
       token,
-      queue: this.queue,
+      queue: this,
     };
     try {
       return await this.handler(handlerOptions, handlerContext);
