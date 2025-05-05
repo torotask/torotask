@@ -14,11 +14,6 @@ export interface BatchOptions {
   batchTimeout: number;
 }
 
-// New: Type for the batch processor function used by TaskWorker
-export type BatchProcessor<DataType = any, ResultType = any, NameType extends string = string> = (
-  jobs: TaskJob<DataType, ResultType, NameType>[]
-) => Promise<any>;
-
 export type BatchJobOptions = Prettify<JobsOptions & BatchOptions> & {
   lockDuration?: number;
 };

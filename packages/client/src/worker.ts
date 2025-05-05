@@ -1,17 +1,19 @@
 import type { WorkerOptions } from 'bullmq';
 import { Worker } from 'bullmq'; // Keep Worker import for extends
-import type { Logger } from 'pino';
+import type { Logger, P } from 'pino';
 import type { ToroTaskClient } from './client.js';
-import type { TaskWorkerOptions, TaskProcessor, BatchProcessor } from './types/index.js';
+import type { TaskWorkerOptions, TaskProcessor } from './types/index.js';
 import { TaskJob } from './job.js';
+import { connect } from 'http2';
+import { Task } from './task.js';
 
+const BatchMaxStalledCount = 5;
 export class TaskWorker<DataType = unknown, ResultType = unknown, NameType extends string = string> extends Worker<
   DataType,
   ResultType,
   NameType
 > {
   public readonly logger: Logger;
-  private readonly batchProcessor?: BatchProcessor<DataType, ResultType, NameType>;
   private readonly isBatchingEnabled: boolean;
   public readonly options: Partial<TaskWorkerOptions>;
 
@@ -27,8 +29,8 @@ export class TaskWorker<DataType = unknown, ResultType = unknown, NameType exten
   constructor(
     public readonly taskClient: ToroTaskClient,
     name: string,
-    processorOrOptions?: string | URL | null | TaskProcessor<DataType, ResultType, string> | Partial<TaskWorkerOptions>,
-    maybeOptions?: Partial<TaskWorkerOptions>
+    processor?: string | URL | null | TaskProcessor<DataType, ResultType, string>,
+    options?: Partial<TaskWorkerOptions>
   ) {
     if (!taskClient) {
       throw new Error('ToroTask instance is required.');
@@ -36,113 +38,78 @@ export class TaskWorker<DataType = unknown, ResultType = unknown, NameType exten
     if (!name) {
       throw new Error('Queue name is required.');
     }
-
-    let processorArg: string | URL | null | TaskProcessor<DataType, ResultType, string> | undefined;
-    let options: Partial<TaskWorkerOptions>;
-
-    // Determine overload
-    if (
-      typeof processorOrOptions === 'function' ||
-      typeof processorOrOptions === 'string' ||
-      processorOrOptions instanceof URL ||
-      processorOrOptions === null
-    ) {
-      processorArg = processorOrOptions;
-      options = maybeOptions || {};
-    } else {
-      processorArg = undefined;
-      options = processorOrOptions || {};
-    }
-
-    // --- Prepare arguments for super() ---
-    const finalOptions: Partial<WorkerOptions> = {
-      ...options,
-      prefix: options.prefix || taskClient.queuePrefix,
-      connection: options.connection || taskClient.connectionOptions,
-    };
-    const logger = options.logger || taskClient.logger.child({ taskQueue: name });
-
     let isBatchingEnabled = false;
-    let batchProcessor: BatchProcessor<DataType, ResultType, NameType> | undefined;
-    let finalProcessor: string | URL | null | TaskProcessor<DataType, ResultType, NameType> | undefined;
+    let mergedOptions: Partial<TaskWorkerOptions> = {
+      ...options,
+      prefix: options?.prefix || taskClient.queuePrefix,
+      connection: taskClient.connectionOptions,
+    };
 
-    // --- Batching Setup Logic (before super) ---
-    if (options.batch) {
-      if (!options.batchProcessor) {
-        throw new Error('TaskWorker: batchProcessor is required when batch options are provided.');
-      }
-      if (processorArg) {
-        logger.warn(
-          'TaskWorker: A standard processor was provided but batching is enabled. The standard processor will be ignored.'
-        );
-      }
+    const logger = mergedOptions.logger || taskClient.logger.child({ taskQueue: name });
 
+    if (mergedOptions.batch) {
       isBatchingEnabled = true;
-      const batchOptions = options.batch;
-      batchProcessor = options.batchProcessor as BatchProcessor<DataType, ResultType, NameType>;
-
-      // Validate batch options
-      if (typeof batchOptions.size !== 'number' || batchOptions.size <= 0) {
-        throw new Error(`TaskWorker for "${name}" requires a positive integer batchSize option.`);
-      }
-      if (typeof batchOptions.timeout !== 'number' || batchOptions.timeout <= 0) {
-        throw new Error(`TaskWorker for "${name}" requires a positive integer batchTimeout option.`);
-      }
-      if (batchOptions.minSize !== undefined) {
-        if (typeof batchOptions.minSize !== 'number' || batchOptions.minSize <= 0) {
-          logger.warn(`TaskWorker for "${name}" has invalid batchMinSize. Defaulting to 1.`);
-          batchOptions.minSize = 1;
-        }
-      } else {
-        batchOptions.minSize = 1;
-      }
-
-      // Adjust concurrency and lockDuration in finalOptions
-      if (!finalOptions.concurrency || finalOptions.concurrency < batchOptions.size) {
-        logger.debug(`Adjusting worker concurrency to batchSize (${batchOptions.size}) for "${name}".`);
-        finalOptions.concurrency = batchOptions.size;
-      }
-      const requiredLockDuration = batchOptions.timeout * 1.5;
-      if (!finalOptions.lockDuration || finalOptions.lockDuration < requiredLockDuration) {
-        logger.debug(`Adjusting worker lockDuration based on batchTimeout (${requiredLockDuration}ms) for "${name}".`);
-        finalOptions.lockDuration = requiredLockDuration;
-      }
-
-      // Set the batch collector as the final processor - binding happens *after* super()
-      finalProcessor = undefined; // Placeholder, will be set correctly after `this` is available
-    } else {
-      // Standard (non-batching) worker
-      isBatchingEnabled = false;
-      finalProcessor = processorArg as TaskProcessor<DataType, ResultType, NameType> | string | URL | null | undefined;
-
-      // Validate standard processor if not sandboxed
-      const isSandboxed = typeof finalProcessor === 'string' || finalProcessor instanceof URL;
-      if (!finalProcessor && !isSandboxed) {
-        throw new Error('TaskWorker: A processor function or path is required when batching is not enabled.');
-      }
+      mergedOptions = TaskWorker.validateBatchOptions(name, mergedOptions, logger);
     }
 
-    // --- Call super() ---
-    // Pass the processor directly if not batching. If batching, pass undefined initially.
-    super(name, isBatchingEnabled ? undefined : finalProcessor, finalOptions as WorkerOptions);
-
-    // --- Assign properties after super() ---
+    super(name, processor as any, options as WorkerOptions);
+    this.options = mergedOptions;
     this.logger = logger;
-    this.options = options;
     this.isBatchingEnabled = isBatchingEnabled;
+  }
 
-    if (this.isBatchingEnabled) {
-      this.batchProcessor = batchProcessor;
+  static validateBatchOptions(
+    name: string,
+    options: Partial<TaskWorkerOptions>,
+    logger?: Logger
+  ): Partial<TaskWorkerOptions> {
+    if (!options.batch) {
+      return options;
+    }
+    if (typeof options.batch.size !== 'number' || options.batch.size <= 0) {
+      throw new Error(`TaskWorker for "${name}" requires a positive integer batchSize option.`);
+    }
+    if (typeof options.batch.timeout !== 'number' || options.batch.timeout <= 0) {
+      throw new Error(`TaskWorker for "${name}" requires a positive integer batchTimeout option.`);
+    }
+    if (options.batch.minSize !== undefined) {
+      if (typeof options.batch.minSize !== 'number' || options.batch.minSize <= 0) {
+        logger?.warn(`TaskWorker for "${name}" has invalid batchMinSize. Defaulting to 1.`);
+        options.batch.minSize = 1;
+      }
+    } else {
+      options.batch.minSize = 1;
+    }
 
-      // Now that `this` is available, bind and set the actual processor
-      // for the running worker instance via the public `processor` setter if available,
-      // or fallback to internal property access (use carefully).
-      // NOTE: BullMQ Worker does not have a public `processor` setter.
-      // We must rely on the internal property.
-      (this as any).processor = this.batchJobCollector.bind(this);
+    options.maxStalledCount = BatchMaxStalledCount;
 
-      this.initializeJobBatch(); // Initialize batch state now
-    } // No else needed for standard processor, it was passed to super()
+    // Make sure concurrency is at least batchSize
+    if (!options.concurrency || options.concurrency < options.batch.size) {
+      options.concurrency = options.batch.size;
+    }
+
+    if (!options.lockDuration || options.lockDuration < options.batch.timeout * 1.5) {
+      options.lockDuration = options.batch.timeout * 1.5;
+    }
+    return options;
+  }
+
+  /**
+   * If batching is enabled, this method is called to process a job.
+   * Adds the job to the current batch, manages the timeout timer, triggers
+   * processing if size limit is reached, and awaits batch completion.
+   *
+   * @override
+   * @param job - The standard BullMQ job object.
+   * @returns A promise that resolves/rejects when the batch containing this job completes/fails.
+   */
+
+  protected async callProcessJob(job: TaskJob<DataType, ResultType, NameType>, token: string): Promise<ResultType> {
+    const batchOptions = this.options.batch;
+    if (!this.isBatchingEnabled || !batchOptions) {
+      return super.callProcessJob(job, token);
+    }
+    return (await this.batchJobCollector(job, token)) as any;
   }
 
   /**
@@ -250,8 +217,8 @@ export class TaskWorker<DataType = unknown, ResultType = unknown, NameType exten
   }
 
   private async processBatchWrapper(): Promise<void> {
-    if (!this.isBatchingEnabled || !this.batchProcessor) {
-      this.logger.error('processBatchWrapper called but batching is not enabled or processor is missing.');
+    if (!this.isBatchingEnabled) {
+      this.logger.error('processBatchWrapper called but batching is not enabled.');
       return;
     }
     if (this.batchProcessingRunning) {
@@ -302,21 +269,29 @@ export class TaskWorker<DataType = unknown, ResultType = unknown, NameType exten
     this.logger.info(`Processing ${batchInfo} for worker "${this.name}".`);
     const batchLogger = this.logger.child({ batchId: batchCreationTime.getTime() });
 
+    this.logger.info(`Processing ${batchInfo} for task "${this.name}".`);
+
     try {
-      batchLogger.info(`Calling batchProcessor for ${batchToProcess.length} jobs.`);
-      await this.batchProcessor(batchToProcess);
-      batchLogger.info(`Successfully processed ${batchInfo}.`);
-      batchPromiseResolver();
+      const batchJob = new TaskJob<DataType, ResultType, NameType>(this, this.name as any, {} as any, {});
+      batchJob.setBatch(batchToProcess);
+      // --- Execute actual batch processing logic ---
+      await this.callProcessJob(batchJob, batchJob.token ?? '');
+
+      // --- Success ---
+      batchLogger.info(`Successfully processed ${batchInfo} for task "${this.name}".`);
+      batchPromiseResolver(); // Resolve promise for all waiting jobs in this batch.
     } catch (error) {
+      // --- Failure (emulating default Pro behavior) ---
       const processingError = error instanceof Error ? error : new Error(String(error));
-      batchLogger.error({ err: processingError }, `Error processing ${batchInfo}. Failing entire batch.`);
-      batchPromiseRejector(processingError);
+      batchLogger.error(
+        { err: processingError },
+        `Error processing ${batchInfo} for task "${this.name}". Failing entire batch.`
+      );
+      batchPromiseRejector(processingError); // Reject promise for all waiting jobs.
     } finally {
+      // --- Cleanup ---
       this.batchProcessingRunning = false;
       batchLogger.debug(`Finished processing wrapper for ${batchInfo}.`);
-      if (this.jobBatch.length > 0) {
-        this.startBatchTimeoutTimerIfNeeded();
-      }
     }
   }
 
