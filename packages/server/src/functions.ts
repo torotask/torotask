@@ -10,7 +10,9 @@ import type { AnyTaskModule, BatchTaskConfig, TaskConfig } from './types.js'; //
  * @param handler The task handler function.
  * @returns A TaskModule object.
  */
-export function defineTask<T = unknown, R = unknown>(config: TaskConfig<T, R>): AnyTaskModule<T, R> {
+export function defineTask<DataType = any, ResultType = any>(
+  config: TaskConfig<DataType, ResultType>
+): AnyTaskModule<DataType, ResultType> {
   const { options, triggers, handler } = config;
   if (!handler || typeof handler !== 'function') {
     throw new Error('defineTask requires a valid handler function.');

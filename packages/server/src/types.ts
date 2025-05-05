@@ -50,24 +50,24 @@ export type BatchTaskModuleOptions = BatchTaskOptions & {
   name?: string;
 };
 
-export type BaseConfig<T = unknown> = {
-  triggers?: SingleOrArray<TaskTrigger<T>>;
+export type BaseConfig<DataType = unknown> = {
+  triggers?: SingleOrArray<TaskTrigger<DataType>>;
 };
 
-export type TaskConfig<T = unknown, R = unknown> = BaseConfig<T> & {
+export type TaskConfig<DataType = unknown, ResultType = unknown> = BaseConfig<DataType> & {
   options?: TaskModuleOptions;
-  handler: TaskHandler<T, R>;
+  handler: TaskHandler<DataType, ResultType>;
 };
 
-export type BatchTaskConfig<T = unknown, R = unknown> = BaseConfig<T> & {
+export type BatchTaskConfig<DataType = unknown, ResultType = unknown> = BaseConfig<DataType> & {
   options: BatchTaskModuleOptions;
-  handler: BatchTaskHandler<T, R>;
+  handler: BatchTaskHandler<DataType, ResultType>;
 };
 
-export type AnyTaskModule<T = unknown, R = unknown> =
+export type AnyTaskModule<DataType = unknown, ResultType = unknown> =
   | ({
       type: 'task';
-    } & TaskConfig<T, R>)
+    } & TaskConfig<DataType, ResultType>)
   | ({
       type: 'batch';
-    } & BatchTaskConfig<T, R>);
+    } & BatchTaskConfig<DataType, ResultType>);

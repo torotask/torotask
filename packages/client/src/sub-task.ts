@@ -1,18 +1,9 @@
-import { Job, JobsOptions, Queue } from 'bullmq';
+import { JobsOptions } from 'bullmq';
 import type { Logger } from 'pino';
-import type { ToroTaskClient } from './client.js';
-import type { TaskGroup } from './task-group.js';
 import type { Task } from './task.js';
 // Import types from the types file
 import type { SubTaskHandler, SubTaskHandlerContext, SubTaskHandlerOptions } from './types/index.js';
-
-// --- SubTask Types ---
-
-// Removed SubTaskHandlerOptions interface
-
-// Removed SubTaskHandlerContext interface
-
-// Removed SubTaskHandler type
+import { TaskJob } from './job.js';
 
 // --- SubTask Class ---
 
@@ -21,16 +12,16 @@ import type { SubTaskHandler, SubTaskHandlerContext, SubTaskHandlerOptions } fro
  * Provides methods to enqueue jobs specifically for this subtask's handler,
  * utilizing the parent Task's queue.
  *
- * @template ST The expected type of the data payload for this subtask.
- * @template SR The expected return type of the job associated with this subtask.
+ * @template DataType The expected type of the data payload for this subtask.
+ * @template ResultType The expected return type of the job associated with this subtask.
  */
-export class SubTask<ST = unknown, SR = unknown> {
+export class SubTask<DataType = unknown, ResultType = unknown> {
   public readonly parentTask: Task<any, any>; // Keep less specific for simplicity
   public readonly name: string;
-  public readonly handler: SubTaskHandler<ST, SR>; // Uses imported type
+  public readonly handler: SubTaskHandler<DataType, ResultType>; // Uses imported type
   public readonly logger: Logger;
 
-  constructor(parentTask: Task<any, any>, name: string, handler: SubTaskHandler<ST, SR>) {
+  constructor(parentTask: Task<any, any>, name: string, handler: SubTaskHandler<DataType, ResultType>) {
     if (!parentTask) {
       throw new Error('Parent Task instance is required for SubTask.');
     }
@@ -56,26 +47,25 @@ export class SubTask<ST = unknown, SR = unknown> {
    * @param overrideOptions Optional JobOptions to override the parent task's defaults.
    * @returns A promise resolving to the enqueued BullMQ Job object.
    */
-  async run(data: ST, overrideOptions?: JobsOptions): Promise<Job<ST, SR>> {
+  async run(data: DataType, overrideOptions?: JobsOptions): Promise<TaskJob<DataType, ResultType>> {
     const finalOptions: JobsOptions = {
       ...this.parentTask.jobsOptions,
       ...overrideOptions,
     };
     // Call parent task's public helper method directly
-    return this.parentTask._runJob<ST, SR>(this.name, data, finalOptions);
+    return this.parentTask.add(this.name, data, finalOptions);
   }
 
-  async processSubJob(job: Job, jobName: string, jobLogger: Logger): Promise<any> {
-    const typedJob = job as Job<ST, SR>;
-    const handlerOptions: SubTaskHandlerOptions<ST> = { id: job.id, name: jobName, data: typedJob.data };
-    const handlerContext: SubTaskHandlerContext = {
+  async processSubJob(job: TaskJob<DataType, ResultType, string>, jobName: string, jobLogger: Logger): Promise<any> {
+    const handlerOptions: SubTaskHandlerOptions<DataType> = { id: job.id, name: jobName, data: job.data };
+    const handlerContext: SubTaskHandlerContext<DataType, ResultType> = {
       logger: jobLogger,
-      client: this.parentTask.client,
+      client: this.parentTask.taskClient,
       group: this.parentTask.group,
       parentTask: this.parentTask,
       subTaskName: this.name,
-      job: typedJob,
-      queue: this.parentTask.queue,
+      job: job,
+      queue: this.parentTask,
     };
     try {
       return await this.handler(handlerOptions, handlerContext);
@@ -96,12 +86,12 @@ export class SubTask<ST = unknown, SR = unknown> {
    * @returns A promise resolving to the return value of the completed job.
    * @throws Throws an error if the job fails or cannot be awaited.
    */
-  async runAndWait(data: ST, overrideOptions?: JobsOptions): Promise<SR> {
+  async runAndWait(data: DataType, overrideOptions?: JobsOptions): Promise<ResultType> {
     const finalOptions: JobsOptions = {
       ...this.parentTask.jobsOptions,
       ...overrideOptions,
     };
     // Call parent task's public helper method directly
-    return this.parentTask._runJobAndWait<ST, SR>(this.name, data, finalOptions);
+    return this.parentTask._runJobAndWait(this.name, data, finalOptions);
   }
 }

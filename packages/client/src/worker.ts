@@ -52,10 +52,13 @@ export class TaskWorker<DataType = unknown, ResultType = unknown, NameType exten
       mergedOptions = TaskWorker.validateBatchOptions(name, mergedOptions, logger);
     }
 
-    super(name, processor as any, options as WorkerOptions);
+    super(name, processor as any, mergedOptions as WorkerOptions);
     this.options = mergedOptions;
     this.logger = logger;
     this.isBatchingEnabled = isBatchingEnabled;
+    if (this.isBatchingEnabled) {
+      this.initializeJobBatch(); // Set up the first batch promise
+    }
   }
 
   static validateBatchOptions(
@@ -106,7 +109,7 @@ export class TaskWorker<DataType = unknown, ResultType = unknown, NameType exten
 
   protected async callProcessJob(job: TaskJob<DataType, ResultType, NameType>, token: string): Promise<ResultType> {
     const batchOptions = this.options.batch;
-    if (!this.isBatchingEnabled || !batchOptions) {
+    if (!this.isBatchingEnabled || !batchOptions || job.isBatch) {
       return super.callProcessJob(job, token);
     }
     return (await this.batchJobCollector(job, token)) as any;
@@ -276,7 +279,6 @@ export class TaskWorker<DataType = unknown, ResultType = unknown, NameType exten
       batchJob.setBatch(batchToProcess);
       // --- Execute actual batch processing logic ---
       await this.callProcessJob(batchJob, batchJob.token ?? '');
-
       // --- Success ---
       batchLogger.info(`Successfully processed ${batchInfo} for task "${this.name}".`);
       batchPromiseResolver(); // Resolve promise for all waiting jobs in this batch.

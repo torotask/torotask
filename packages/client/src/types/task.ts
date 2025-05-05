@@ -19,7 +19,8 @@ export type TaskOptions = Prettify<
      * Defaults to false (unrecognized job names will throw an error).
      */
     allowCatchAll?: boolean;
-    workerOptions?: Partial<TaskWorkerOptions>;
+    batch?: TaskWorkerOptions['batch'];
+    workerOptions?: Partial<Omit<TaskWorkerOptions, 'batch'>>;
   }
 >;
 /** Handler details passed to the task handler */

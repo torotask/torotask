@@ -13,6 +13,7 @@ import type {
   TaskJobOptions,
   TaskTrigger,
   TaskTriggerEvent,
+  TaskWorkerOptions,
 } from './types/index.js';
 import { TaskWorkerQueue } from './worker-queue.js';
 
@@ -38,7 +39,7 @@ export abstract class BaseTask<
   public readonly group: TaskGroup;
 
   public jobsOptions: JobsOptions;
-  public workerOptions: Partial<WorkerOptions> | undefined;
+  public workerOptions: Partial<TaskWorkerOptions> | undefined;
   // Store the normalized triggers with an internal ID
   public triggers: InternalTaskTrigger<DataType>[] = [];
   // Map for easy lookup of *current* event triggers by their internalId
@@ -68,10 +69,13 @@ export abstract class BaseTask<
 
     this.group = taskGroup;
     this.taskName = taskName;
-    const { workerOptions, ...jobsOptions } = taskOptions ?? {};
+    const { workerOptions, batch: batchOptions, ...jobsOptions } = taskOptions ?? {};
 
-    this.workerOptions = workerOptions;
     this.jobsOptions = jobsOptions;
+    this.workerOptions = {
+      batch: batchOptions,
+      ...workerOptions,
+    };
 
     // Initialize triggers and internal maps
     this._initializeTriggers(trigger);
@@ -85,7 +89,7 @@ export abstract class BaseTask<
     });
   }
 
-  getWorkerOptions(): Partial<WorkerOptions> {
+  getWorkerOptions(): Partial<TaskWorkerOptions> {
     return {
       ...this.workerOptions,
     };
