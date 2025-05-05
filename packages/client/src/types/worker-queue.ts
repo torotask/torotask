@@ -1,4 +1,4 @@
-import type { QueueListener, WorkerListener } from 'bullmq'; // Assuming these are accessible
+import type { JobProgress, QueueListener, WorkerListener } from 'bullmq'; // Assuming these are accessible
 import type { TaskJob } from '../job.js'; // Your specific Job type
 
 // Combine Queue and Worker listeners with prefixing for worker events
@@ -21,8 +21,10 @@ export interface TaskWorkerQueueListener<DataType = any, ResultType = any, NameT
   // Note: Queue events like 'cleaned', 'error', 'paused', 'progress', 'removed', 'resumed', 'waiting'
   // are inherited directly from QueueListener without prefix.
 }
-
-export type WorkerEventHandlers<DataType = any, ResultType = any, NameType extends string = string> = {
-  // Map over the keys of WorkerListener using the extracted generic types
-  [K in keyof WorkerListener<DataType, ResultType, NameType>]?: WorkerListener<DataType, ResultType, NameType>[K];
-};
+export interface WorkerEventHandlers<DataType = any, ResultType = any, NameType extends string = string>
+  extends Omit<WorkerListener, 'active' | 'completed' | 'failed' | 'progress'> {
+  active: (job: TaskJob<DataType, ResultType, NameType>, prev: string) => void;
+  completed: (job: TaskJob<DataType, ResultType, NameType>, result: ResultType, prev: string) => void;
+  failed: (job: TaskJob<DataType, ResultType, NameType> | undefined, error: Error, prev: string) => void;
+  progress: (job: TaskJob<DataType, ResultType, NameType>, progress: JobProgress) => void;
+}

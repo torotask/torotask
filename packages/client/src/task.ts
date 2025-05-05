@@ -12,6 +12,7 @@ import type {
   TaskOptions,
   TaskTrigger,
 } from './types/index.js';
+import { TaskJob } from './job.js';
 
 /**
  * Represents a defined task associated with a TaskGroup.
@@ -67,7 +68,7 @@ export class Task<T = unknown, R = unknown> extends BaseTask<T, R, TaskOptions> 
    * - Matching subtask name routes to the subtask handler.
    * - Other names route to main handler if `allowCatchAll` is true, otherwise error.
    */
-  async process(job: Job, token?: string): Promise<any> {
+  async process(job: TaskJob, token?: string): Promise<any> {
     const { id, name: jobName } = job;
     const effectiveJobName = jobName === '' || jobName === '__default__' ? this.name : jobName;
     const jobLogger = this.logger.child({ jobId: id, jobName: effectiveJobName });
@@ -101,7 +102,7 @@ export class Task<T = unknown, R = unknown> extends BaseTask<T, R, TaskOptions> 
     }
   }
 
-  async processJob(job: Job, token?: string, jobLogger?: Logger): Promise<any> {
+  async processJob(job: TaskJob, token?: string, jobLogger?: Logger): Promise<any> {
     jobLogger = jobLogger ?? this.getJobLogger(job);
     const typedJob = job as Job<T, R>;
     const handlerOptions: TaskHandlerOptions<T> = { id: job.id, name: this.name, data: typedJob.data };
@@ -110,7 +111,7 @@ export class Task<T = unknown, R = unknown> extends BaseTask<T, R, TaskOptions> 
       client: this.taskClient,
       group: this.group,
       task: this,
-      job: typedJob,
+      job: job,
       token,
       queue: this,
     };

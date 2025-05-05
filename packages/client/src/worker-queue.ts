@@ -21,7 +21,7 @@ export abstract class TaskWorkerQueue<
   public readonly queueEvents: TaskQueueEvents;
   protected worker?: TaskWorker<DataType, ResultType>;
   // Store listeners to remove them later
-  private workerEventHandlers: WorkerEventHandlers<DataType, ResultType, NameType> = {};
+  private workerEventHandlers: Partial<WorkerEventHandlers<DataType, ResultType, NameType>> = {};
 
   constructor(taskClient: ToroTaskClient, queueName: string, options?: Partial<TaskQueueOptions>) {
     super(taskClient, queueName, options);
@@ -72,7 +72,7 @@ export abstract class TaskWorkerQueue<
     // --- Event Forwarding (with prefixing) ---
     // Define handlers that emit events from `this` (the BaseQueue instance)
     this.workerEventHandlers = {
-      active: (job: TaskJob, prev: string) => {
+      active: (job: TaskJob<DataType, ResultType, NameType>, prev: string) => {
         this.logger.debug({ jobId: job.id, prev }, 'Worker event: active');
         // Emit with 'worker:' prefix
         this.emit('worker:active', job, prev);

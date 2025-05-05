@@ -240,7 +240,7 @@ export class BatchTask<T = unknown, R = unknown> extends BaseTask<T, R, BatchTas
 
     try {
       const batch = new BatchContainer<T, R>(this, this.queueName, this.logger);
-      batch.setJobs(batchToProcess); // Set the jobs to process
+      batch.setJobs([]); // Set the jobs to process
       // --- Execute actual batch processing logic ---
       await this.processBatch(batch);
 
