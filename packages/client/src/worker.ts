@@ -1,18 +1,17 @@
 import type { WorkerOptions } from 'bullmq';
 import { Worker } from 'bullmq'; // Keep Worker import for extends
-import type { Logger, P } from 'pino';
+import type { Logger } from 'pino';
 import type { ToroTaskClient } from './client.js';
-import type { TaskWorkerOptions, TaskProcessor } from './types/index.js';
+import type { TaskWorkerOptions, TaskProcessor, TaskJobPayload, TaskJobData } from './types/index.js';
 import { TaskJob } from './job.js';
-import { connect } from 'http2';
-import { Task } from './task.js';
 
 const BatchMaxStalledCount = 5;
-export class TaskWorker<DataType = unknown, ResultType = unknown, NameType extends string = string> extends Worker<
-  DataType,
-  ResultType,
-  NameType
-> {
+export class TaskWorker<
+  PayloadType extends TaskJobPayload = TaskJobPayload,
+  ResultType = unknown,
+  NameType extends string = string,
+  const DataType extends TaskJobData = TaskJobData<PayloadType>,
+> extends Worker<TaskJobData<PayloadType>, ResultType, NameType> {
   public readonly logger: Logger;
   private readonly isBatchingEnabled: boolean;
   public readonly options: Partial<TaskWorkerOptions>;
@@ -29,7 +28,7 @@ export class TaskWorker<DataType = unknown, ResultType = unknown, NameType exten
   constructor(
     public readonly taskClient: ToroTaskClient,
     name: string,
-    processor?: string | URL | null | TaskProcessor<DataType, ResultType, string>,
+    processor?: string | URL | null | TaskProcessor<PayloadType, ResultType, string>,
     options?: Partial<TaskWorkerOptions>
   ) {
     if (!taskClient) {
@@ -275,7 +274,7 @@ export class TaskWorker<DataType = unknown, ResultType = unknown, NameType exten
     this.logger.info(`Processing ${batchInfo} for task "${this.name}".`);
 
     try {
-      const batchJob = new TaskJob<DataType, ResultType, NameType>(this, this.name as any, {} as any, {});
+      const batchJob = new TaskJob<PayloadType, ResultType, NameType>(this, this.name as any, {} as any, {});
       batchJob.setBatch(batchToProcess);
       // --- Execute actual batch processing logic ---
       await this.callProcessJob(batchJob, batchJob.token ?? '');
@@ -366,7 +365,7 @@ export class TaskWorker<DataType = unknown, ResultType = unknown, NameType exten
    * Override the Job class to use TaskJob
    * @returns {typeof TaskJob}
    */
-  protected get Job(): typeof TaskJob {
+  protected get Job(): typeof Job {
     return TaskJob;
   }
 }

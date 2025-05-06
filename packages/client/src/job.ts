@@ -1,24 +1,33 @@
 import { Job, MinimalQueue } from 'bullmq';
 import { Logger } from 'pino';
 import { BaseTask } from './base-task.js';
-import type { TaskJobOptions } from './types/index.js';
+import type { TaskJobData, TaskJobOptions, TaskJobPayload, TaskJobState } from './types/index.js';
 import { TaskQueue } from './queue.js';
+import { stat } from 'fs';
+import { Task } from './task.js';
 
-export class TaskJob<DataType = any, ReturnType = any, NameType extends string = string> extends Job<
-  DataType,
-  ReturnType,
-  NameType
-> {
+export class TaskJob<
+  DataType extends TaskJobData = TaskJobData,
+  ReturnType = any,
+  NameType extends string = string,
+  const PayloadType extends TaskJobPayload = DataType['payload'],
+  const StateType extends TaskJobPayload = DataType['state'],
+> extends Job<DataType, ReturnType, NameType> {
   public logger?: Logger;
-  public task?: BaseTask<DataType, ReturnType>;
+  public task?: BaseTask<typeof this.data, ReturnType>;
   public taskQueue?: TaskQueue;
   /**
    * The array of real TaskJob instances that constitute a batch.
    */
-  private batch: TaskJob<DataType, ReturnType, NameType>[];
+  private batch: (typeof this)[];
+  public payload: PayloadType;
+  public state: typeof this.data.state;
 
-  constructor(queue: MinimalQueue, name: NameType, data: DataType, opts: TaskJobOptions = {}, id?: string) {
+  constructor(queue: MinimalQueue, name: NameType, data: DataType, opts: TaskJobOptions<StateType> = {}, id?: string) {
     super(queue, name, data, opts, id);
+
+    this.payload = this.data.payload as PayloadType;
+    this.state = this.data.state;
 
     // Check if the queue is an instance of TaskQueue
     if (queue instanceof TaskQueue) {
@@ -29,10 +38,64 @@ export class TaskJob<DataType = any, ReturnType = any, NameType extends string =
   }
 
   /**
+   * Sets a job's payload
+   *
+   * @param payload - the payload that will replace the current jobs payload.
+   */
+  async setPayload(payload: PayloadType): Promise<void> {
+    this.payload = payload;
+    const data = {
+      ...this.data,
+      payload: this.payload,
+    };
+    return this.updateData(data);
+  }
+
+  /**
+   * Partially updates a job's payload
+   *
+   * @param payload - the payload that will merge with the current jobs payload.
+   */
+  async updatePayload(payload: Partial<PayloadType>): Promise<void> {
+    const newPayload = {
+      ...this.payload,
+      ...payload,
+    };
+    return this.setPayload(newPayload);
+  }
+
+  /**
+   * Sets a job's state
+   *
+   * @param state - the state that will replace the current jobs state.
+   */
+  async setState(state: StateType): Promise<void> {
+    this.state = state;
+    const data = {
+      ...this.data,
+      state: this.state,
+    };
+    return this.updateData(data);
+  }
+
+  /**
+   * Partially updates a job's state
+   *
+   * @param state - the state that will merge with the current jobs state.
+   */
+  async updateState(state: Partial<StateType>): Promise<void> {
+    const newState = {
+      ...this.state,
+      ...state,
+    };
+    return this.setState(newState as StateType);
+  }
+
+  /**
    * Sets/replaces the internal list of Job instances managed by this container.
    * @param jobs The array of Job instances representing the batch.
    */
-  setBatch(batch: TaskJob<DataType, ReturnType, NameType>[]) {
+  setBatch(batch: (typeof this)[]) {
     this.batch = batch;
   }
 
@@ -40,7 +103,7 @@ export class TaskJob<DataType = any, ReturnType = any, NameType extends string =
    * Adds a single job to the internal list for this batch container.
    * @param job The job to add.
    */
-  addBatchJob(job: TaskJob<DataType, ReturnType, NameType>) {
+  addBatchJob(job: typeof this) {
     this.batch.push(job);
   }
 
@@ -48,7 +111,7 @@ export class TaskJob<DataType = any, ReturnType = any, NameType extends string =
    * Adds multiple jobs to the internal list for this batch container.
    * @param jobs The jobs to add.
    */
-  addBatchJobs(jobs: TaskJob<DataType, ReturnType, NameType>[]) {
+  addBatchJobs(jobs: (typeof this)[]) {
     this.batch.push(...jobs);
   }
 
@@ -56,7 +119,7 @@ export class TaskJob<DataType = any, ReturnType = any, NameType extends string =
    * Returns the array of actual TaskJob instances managed by this batch container.
    * @returns The array of jobs.
    */
-  getBatch(): TaskJob<DataType, ReturnType, NameType>[] {
+  getBatch(): (typeof this)[] {
     return this.batch;
   }
 
