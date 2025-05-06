@@ -107,12 +107,12 @@ export class TaskWorker<DataType = unknown, ResultType = unknown, NameType exten
    * @returns A promise that resolves/rejects when the batch containing this job completes/fails.
    */
 
-  protected async callProcessJob(job: TaskJob<DataType, ResultType, NameType>, token: string): Promise<ResultType> {
+  protected callProcessJob(job: TaskJob<DataType, ResultType, NameType>, token: string): Promise<ResultType> {
     const batchOptions = this.options.batch;
     if (!this.isBatchingEnabled || !batchOptions || job.isBatch) {
       return super.callProcessJob(job, token);
     }
-    return (await this.batchJobCollector(job, token)) as any;
+    return this.batchJobCollector(job, token) as any;
   }
 
   /**
