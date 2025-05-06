@@ -1,4 +1,3 @@
-export * from './batch.js';
 export * from './bulk.js';
 export * from './events.js';
 export * from './job.js'; // Export the renamed interface TaskRun';

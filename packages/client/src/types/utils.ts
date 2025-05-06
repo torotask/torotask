@@ -1,5 +1,4 @@
 import type { Job } from 'bullmq';
-import type { BatchTask } from '../batch-task.js';
 import type { Task } from '../task.js';
 
 export type ExtractDataType<DataTypeOrJob, Default> = DataTypeOrJob extends Job<infer D, any, any> ? D : Default;
@@ -17,8 +16,6 @@ export type SingleOrArray<T> = T | T[];
  * With type `T`, return it as an array even if not already an array.
  */
 export type AsArray<T> = T extends any[] ? T : [T];
-
-export type AnyTask<T, R> = Task<T, R> | BatchTask<T, R>;
 
 /**
  * Reduces a complex object type to make it readable in IDEs.

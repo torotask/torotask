@@ -46,28 +46,11 @@ type TaskModuleOptions = TaskOptions & {
   name?: string;
 };
 
-export type BatchTaskModuleOptions = BatchTaskOptions & {
-  name?: string;
-};
-
 export type BaseConfig<DataType = unknown> = {
   triggers?: SingleOrArray<TaskTrigger<DataType>>;
 };
 
-export type TaskConfig<DataType = unknown, ResultType = unknown> = BaseConfig<DataType> & {
+export type TaskConfig<PayloadType = unknown, ResultType = unknown> = BaseConfig<DataType> & {
   options?: TaskModuleOptions;
   handler: TaskHandler<DataType, ResultType>;
 };
-
-export type BatchTaskConfig<DataType = unknown, ResultType = unknown> = BaseConfig<DataType> & {
-  options: BatchTaskModuleOptions;
-  handler: BatchTaskHandler<DataType, ResultType>;
-};
-
-export type AnyTaskModule<DataType = unknown, ResultType = unknown> =
-  | ({
-      type: 'task';
-    } & TaskConfig<DataType, ResultType>)
-  | ({
-      type: 'batch';
-    } & BatchTaskConfig<DataType, ResultType>);

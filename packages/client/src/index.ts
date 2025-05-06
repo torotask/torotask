@@ -1,5 +1,4 @@
 // Export Classes/Functions directly
-export * from './batch-task.js';
 export * from './client.js';
 export * from './event-dispatcher.js';
 export * from './event-manager.js';

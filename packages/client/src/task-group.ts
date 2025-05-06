@@ -64,38 +64,7 @@ export class TaskGroup {
     }
 
     // Pass all parameters to Task constructor
-    const newTask = new Task<T, R>(this, name, options, triggers, handler, this.logger);
-    this.tasks.set(name, newTask);
-    this.logger.debug({ taskName: name }, 'Task defined');
-    return newTask;
-  }
-
-  /**
-   * Defines a new Task within this group using a configuration object.
-   *
-   * @template T Data type for the task. Default is `unknown`.
-   * @template R Return type for the task. Default is `unknown`.
-   * @param config The configuration object for the task.
-   * @param config.name The name of the task (must be unique within the group).
-   * @param config.options Optional default job options for this task.
-   * @param config.triggers Optional TaskTrigger or array of TaskTriggers to associate with this task.
-   * @param config.handler The function to execute when the task runs.
-   * @returns The created Task instance.
-   */
-  defineBatchTask<T = unknown, R = unknown>(config: {
-    name: string;
-    options: BatchTaskOptions;
-    triggers?: TaskTrigger<T> | TaskTrigger<T>[] | undefined;
-    handler: BatchTaskHandler<T, R>;
-  }): BatchTask<T, R> {
-    const { name, options, triggers, handler } = config;
-
-    if (this.tasks.has(name)) {
-      this.logger.warn({ taskName: name }, 'Task already defined in this group. Overwriting.');
-    }
-
-    // Pass all parameters to Task constructor
-    const newTask = new BatchTask<T, R>(this, name, options, triggers, handler, this.logger);
+    const newTask = new Task<PayloadType, ResultType>(this, name, options, triggers, handler, this.logger);
     this.tasks.set(name, newTask);
     this.logger.debug({ taskName: name }, 'Task defined');
     return newTask;

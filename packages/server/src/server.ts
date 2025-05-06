@@ -210,14 +210,6 @@ export class TaskServer {
             triggers: moduleToUse.triggers ?? moduleToUse.trigger,
             handler: moduleToUse.handler,
           });
-        } else {
-          const { name: _n, ...optionsToUse } = moduleToUse.options;
-          group.defineBatchTask({
-            name: finalTaskName,
-            options: optionsToUse,
-            triggers: moduleToUse.triggers ?? moduleToUse.trigger,
-            handler: moduleToUse.handler,
-          });
         }
 
         this.logger.debug({ groupName, taskName: finalTaskName }, 'Successfully loaded and defined task.');
