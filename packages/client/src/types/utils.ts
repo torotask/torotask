@@ -1,5 +1,4 @@
 import type { Job } from 'bullmq';
-import type { Task } from '../task.js';
 
 export type ExtractDataType<DataTypeOrJob, Default> = DataTypeOrJob extends Job<infer D, any, any> ? D : Default;
 export type ExtractResultType<DataTypeOrJob, Default> = DataTypeOrJob extends Job<any, infer R, any> ? R : Default;
@@ -11,11 +10,25 @@ export type ExtractNameType<DataTypeOrJob, Default extends string> = DataTypeOrJ
  * Returns generic as either itself or an array of itself.
  */
 export type SingleOrArray<T> = T | T[];
-
+export type UnpackList<Item> = Item extends any[] ? Item[number] : Item;
 /**
  * With type `T`, return it as an array even if not already an array.
  */
 export type AsArray<T> = T extends any[] ? T : [T];
+
+/**
+ * Tests and fallbacks
+ */
+export type NeverToUnknown<T> = IfNever<T, unknown>;
+export type IfNever<T, Y, N = T> = [T] extends [never] ? Y : N;
+
+export type IfAny<T, Y, N> = 0 extends 1 & T ? Y : N;
+export type IsAny<T> = IfAny<T, true, never>;
+
+export type IsNullable<T, Y = true, N = never> = T | null extends T ? Y : N;
+export type IsDateTime<T, Y, N> = T extends 'datetime' ? Y : N;
+export type IsNumber<T, Y, N> = T extends number ? Y : N;
+export type IsString<T, Y, N> = T extends string ? Y : N;
 
 /**
  * Reduces a complex object type to make it readable in IDEs.
