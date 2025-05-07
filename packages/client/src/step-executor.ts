@@ -131,7 +131,8 @@ export class StepExecutor<JobType extends TaskJob = TaskJob> {
       );
       return result;
     } catch (error: any) {
-      if (error instanceof WorkflowPendingError && error.stepInternalId === internalStepId) {
+      // CORRECTED CHECK: Use isWorkflowPendingError property
+      if (error?.isWorkflowPendingError === true && error.stepInternalId === internalStepId) {
         // coreLogic (or its caller) has set the pending state and persisted it.
         // currentStepIndex was NOT incremented for pending states.
         this.logger.info(
@@ -312,7 +313,9 @@ export class StepExecutor<JobType extends TaskJob = TaskJob> {
         this.job.state.stepState![internalStepId] = { status: 'waiting_for_children', childTaskIds: childTaskIds };
         await this.persistState();
 
-        const shouldWait = await this.job.moveToWaitingChildren(this.job.token || '');
+        // Ensure token is a string
+        const token = this.job.token || '';
+        const shouldWait = await this.job.moveToWaitingChildren(token);
 
         if (shouldWait) {
           this.logger.info(
@@ -325,9 +328,7 @@ export class StepExecutor<JobType extends TaskJob = TaskJob> {
             { internalStepId, userStepId, childTaskIds },
             `Step '${userStepId}' does not need to wait for children (moveToWaitingChildren returned false). Completing step.`
           );
-          // If moveToWaitingChildren returns false, it implies children are already processed or no waiting is needed.
-          // The step completes now. _executeStep will mark it as 'completed' with this return value.
-          return []; // Placeholder for actual children results if they were fetched.
+          return [];
         }
       },
       async (memoizedResult, internalStepId) => {
@@ -337,7 +338,8 @@ export class StepExecutor<JobType extends TaskJob = TaskJob> {
             `Handling intermediate 'waiting_for_children' state for step '${userStepId}'. Re-checking with moveToWaitingChildren.`
           );
 
-          const shouldStillWait = await this.job.moveToWaitingChildren(this.job.token || '');
+          const token = this.job.token || '';
+          const shouldStillWait = await this.job.moveToWaitingChildren(token);
 
           if (shouldStillWait) {
             this.logger.info(
@@ -353,10 +355,10 @@ export class StepExecutor<JobType extends TaskJob = TaskJob> {
               { internalStepId, userStepId },
               `Children for step '${userStepId}' are now complete (moveToWaitingChildren returned false). Marking step as completed.`
             );
-            this.job.state.stepState![internalStepId] = { status: 'completed', data: [] }; // Placeholder for actual results
+            this.job.state.stepState![internalStepId] = { status: 'completed', data: [] };
             this.currentStepIndex++;
             await this.persistState();
-            return { processed: true, result: [] }; // Placeholder for actual results
+            return { processed: true, result: [] };
           }
         }
         return { processed: false };
