@@ -1,9 +1,9 @@
 import type { Task } from '../task.js';
 import type { TaskHandlerContext } from './task.js';
-import type { TaskJobData, TaskJobPayload } from './job.js';
+import type { TaskJobData } from './job.js';
 
 /** Handler details passed to the subtask handler */
-export interface SubTaskHandlerOptions<PayloadType extends TaskJobPayload = TaskJobPayload> {
+export interface SubTaskHandlerOptions<PayloadType = any> {
   id?: string; // Job ID
   name: string; // SubTask name
   payload: PayloadType;
@@ -11,7 +11,7 @@ export interface SubTaskHandlerOptions<PayloadType extends TaskJobPayload = Task
 
 /** Context passed to the subtask handler */
 export interface SubTaskHandlerContext<
-  PayloadType extends TaskJobPayload = TaskJobPayload,
+  PayloadType = any,
   ResultType = unknown,
   DataType extends TaskJobData = TaskJobData<PayloadType>,
 > extends Omit<TaskHandlerContext<PayloadType, ResultType>, 'task'> {
@@ -20,7 +20,7 @@ export interface SubTaskHandlerContext<
 }
 
 /** SubTask handler function type */
-export type SubTaskHandler<PayloadType extends TaskJobPayload = TaskJobPayload, ResultType = unknown> = (
+export type SubTaskHandler<PayloadType = any, ResultType = unknown> = (
   options: SubTaskHandlerOptions<PayloadType>,
   context: SubTaskHandlerContext<PayloadType, ResultType>
 ) => Promise<ResultType>;

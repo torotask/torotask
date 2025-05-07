@@ -6,7 +6,7 @@ import { LRU } from 'tiny-lru';
 import { EventDispatcher } from './event-dispatcher.js';
 import { TaskQueue } from './queue.js';
 import { TaskGroup } from './task-group.js';
-import type { BulkTaskRun, BulkTaskRunChild, BulkTaskRunNode, TaskJobOptions, TaskJobPayload } from './types/index.js';
+import type { BulkTaskRun, BulkTaskRunChild, BulkTaskRunNode, TaskJobOptions } from './types/index.js';
 import { getConfigFromEnv } from './utils/get-config-from-env.js';
 import { TaskWorkflow } from './workflow.js';
 import type { Task } from './task.js';
@@ -143,7 +143,7 @@ export class ToroTaskClient {
   /**
    * Retrieves an existing Task instance by group and name.
    */
-  public getTask<PayloadType extends TaskJobPayload = TaskJobPayload, ResultType = unknown>(
+  public getTask<PayloadType = any, ResultType = unknown>(
     groupName: string,
     name: string
   ): Task<PayloadType, ResultType> | undefined {
@@ -160,7 +160,7 @@ export class ToroTaskClient {
    * @param data The data to pass to the task.
    * @returns A promise that resolves to the Job instance.
    */
-  public getTaskByKey<PayloadType extends TaskJobPayload = TaskJobPayload, ResultType = unknown>(
+  public getTaskByKey<PayloadType = any, ResultType = unknown>(
     taskKey: `${string}.${string}`
   ): Task<PayloadType, ResultType> | undefined {
     const [groupName, taskName] = taskKey.split('.');
@@ -184,10 +184,7 @@ export class ToroTaskClient {
    * @param task The task name.
    * @returns A promise that resolves to the Queue instance or null if it doesn't exist.
    */
-  private async getConsumerQueue<PayloadType extends TaskJobPayload = any, ResultType = any>(
-    group: string,
-    task: string
-  ) {
+  private async getConsumerQueue<PayloadType = any, ResultType = any>(group: string, task: string) {
     const key = `${group}.${task}`;
     const cached = this._consumerQueues.get(key);
     if (cached) return cached;
@@ -208,7 +205,7 @@ export class ToroTaskClient {
    * @param data The data to pass to the task.
    * @returns A promise that resolves to the Job instance.
    */
-  async runTask<PayloadType extends TaskJobPayload = TaskJobPayload, ResultType = any>(
+  async runTask<PayloadType = any, ResultType = any>(
     groupName: string,
     taskName: string,
     payload: PayloadType,
@@ -234,10 +231,7 @@ export class ToroTaskClient {
    * @param data The data to pass to the task.
    * @returns A promise that resolves to the Job instance.
    */
-  async runTaskByKey<PayloadType extends TaskJobPayload = TaskJobPayload, ResultType = any>(
-    taskKey: `${string}.${string}`,
-    payload: PayloadType
-  ) {
+  async runTaskByKey<PayloadType = any, ResultType = any>(taskKey: `${string}.${string}`, payload: PayloadType) {
     const [groupName, taskName] = taskKey.split('.');
     return this.runTask<PayloadType, ResultType>(groupName, taskName, payload);
   }

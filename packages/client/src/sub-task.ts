@@ -2,13 +2,7 @@ import { JobsOptions } from 'bullmq';
 import type { Logger } from 'pino';
 import type { Task } from './task.js';
 // Import types from the types file
-import type {
-  SubTaskHandler,
-  SubTaskHandlerContext,
-  SubTaskHandlerOptions,
-  TaskJobData,
-  TaskJobPayload,
-} from './types/index.js';
+import type { SubTaskHandler, SubTaskHandlerContext, SubTaskHandlerOptions, TaskJobData } from './types/index.js';
 import { TaskJob } from './job.js';
 
 // --- SubTask Class ---
@@ -22,7 +16,7 @@ import { TaskJob } from './job.js';
  * @template ResultType The expected return type of the job associated with this subtask.
  */
 export class SubTask<
-  PayloadType extends TaskJobPayload = TaskJobPayload,
+  PayloadType = any,
   ResultType = unknown,
   const DataType extends TaskJobData = TaskJobData<PayloadType>,
 > {

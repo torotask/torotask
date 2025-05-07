@@ -3,18 +3,12 @@ import { ToroTaskClient } from './client.js';
 import { TaskJob } from './job.js';
 import { TaskQueueEvents } from './queue-events.js';
 import { TaskQueue } from './queue.js';
-import type {
-  TaskJobData,
-  TaskJobPayload,
-  TaskQueueOptions,
-  TaskWorkerOptions,
-  WorkerEventHandlers,
-} from './types/index.js';
+import type { TaskQueueOptions, TaskWorkerOptions, WorkerEventHandlers } from './types/index.js';
 import type { TaskWorkerQueueListener } from './types/index.js'; // Adjust path if needed
 import { TaskWorker } from './worker.js';
 
 export abstract class TaskWorkerQueue<
-  PayloadType extends TaskJobPayload = TaskJobPayload,
+  PayloadType = any,
   ResultType = any,
   NameType extends string = string,
   const JobType extends TaskJob<PayloadType, ResultType, NameType> = TaskJob<PayloadType, ResultType, NameType>,

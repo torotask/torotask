@@ -1,4 +1,3 @@
-import { Job } from 'bullmq';
 import type { Logger, P } from 'pino';
 import { BaseTask } from './base-task.js';
 import { SubTask } from './sub-task.js';
@@ -9,8 +8,6 @@ import type {
   TaskHandler,
   TaskHandlerContext,
   TaskHandlerOptions,
-  TaskJobData,
-  TaskJobPayload,
   TaskOptions,
   TaskTrigger,
 } from './types/index.js';
@@ -25,11 +22,7 @@ import { TaskJob } from './job.js';
  * @template T The expected type of the data payload for this task's main handler.
  * @template R The expected return type of the job associated with this task's main handler.
  */
-export class Task<PayloadType extends TaskJobPayload = TaskJobPayload, ResultType = unknown> extends BaseTask<
-  PayloadType,
-  ResultType,
-  TaskOptions
-> {
+export class Task<PayloadType = any, ResultType = unknown> extends BaseTask<PayloadType, ResultType, TaskOptions> {
   protected readonly subTasks: Map<string, SubTask<any, any>>;
   protected readonly allowCatchAll: boolean;
 
@@ -49,7 +42,7 @@ export class Task<PayloadType extends TaskJobPayload = TaskJobPayload, ResultTyp
     this.logger.debug({ allowCatchAll: this.allowCatchAll, triggerCount: this.triggers.length }, 'Task initialized');
   }
 
-  defineSubTask<SubTaskPayloadType extends TaskJobPayload = PayloadType, SubTaskResultType = ResultType>(
+  defineSubTask<SubTaskPayloadType = PayloadType, SubTaskResultType = ResultType>(
     subTaskName: string,
     subTaskHandler: SubTaskHandler<SubTaskPayloadType, SubTaskResultType>
   ): SubTask<SubTaskPayloadType, SubTaskResultType> {

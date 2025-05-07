@@ -1,7 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 import { pathToFileURL } from 'url';
-import { TaskGroup, TaskJobPayload, TaskTrigger, ToroTaskClient, WorkerFilter } from '@torotask/client';
+import { TaskGroup, TaskTrigger, ToroTaskClient, WorkerFilter } from '@torotask/client';
 import { EventDispatcher } from '@torotask/client';
 import { WorkerOptions } from 'bullmq';
 import { glob } from 'glob';
@@ -230,7 +230,7 @@ export class TaskServer {
   /**
    * Retrieves an existing Task instance by group and name.
    */
-  getTask<PayloadType extends TaskJobPayload = TaskJobPayload, ResultType = any>(groupName: string, name: string) {
+  getTask<PayloadType = any, ResultType = any>(groupName: string, name: string) {
     return this.client.getTask<PayloadType, ResultType>(groupName, name);
   }
 
@@ -241,7 +241,7 @@ export class TaskServer {
    * @param data The data to pass to the task.
    * @returns A promise that resolves to the Job instance.
    */
-  getTaskByKey<PayloadType extends TaskJobPayload = TaskJobPayload, ResultType = any>(taskKey: `${string}.${string}`) {
+  getTaskByKey<PayloadType = any, ResultType = any>(taskKey: `${string}.${string}`) {
     return this.client.getTaskByKey<PayloadType, ResultType>(taskKey);
   }
 
@@ -254,11 +254,7 @@ export class TaskServer {
    * @returns A promise that resolves to the Job instance.
    */
 
-  async runTask<PayloadType extends TaskJobPayload = TaskJobPayload, ResultType = any>(
-    groupName: string,
-    taskName: string,
-    payload: PayloadType
-  ) {
+  async runTask<PayloadType = any, ResultType = any>(groupName: string, taskName: string, payload: PayloadType) {
     return this.client.runTask<PayloadType, ResultType>(groupName, taskName, payload);
   }
 
@@ -269,10 +265,7 @@ export class TaskServer {
    * @param data The data to pass to the task.
    * @returns A promise that resolves to the Job instance.
    */
-  async runTaskByKey<PayloadType extends TaskJobPayload = TaskJobPayload, ResultType = any>(
-    key: `${string}.${string}`,
-    payload: PayloadType
-  ) {
+  async runTaskByKey<PayloadType = any, ResultType = any>(key: `${string}.${string}`, payload: PayloadType) {
     return this.client.runTaskByKey<PayloadType, ResultType>(key, payload);
   }
 

@@ -1,11 +1,11 @@
 import { Queue, QueueOptions, JobsOptions, Job } from 'bullmq'; // Import JobsOptions
 import { Logger } from 'pino';
 import { ToroTaskClient } from './client.js';
-import type { BulkJob, TaskJobData, TaskJobOptions, TaskJobPayload, TaskQueueOptions } from './types/index.js';
+import type { BulkJob, TaskJobData, TaskJobOptions, TaskQueueOptions } from './types/index.js';
 import { TaskJob } from './job.js';
 
 export class TaskQueue<
-  PayloadType extends TaskJobPayload = TaskJobPayload,
+  PayloadType = any,
   ResultType = any,
   NameType extends string = string,
   const DataType extends TaskJobData = TaskJobData<PayloadType>,

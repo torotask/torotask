@@ -1,4 +1,4 @@
-import { Task, TaskJobPayload } from 'packages/client/dist/index.js';
+import { Task } from 'packages/client/dist/index.js';
 import type { TaskConfig } from './types.js'; // Added .js extension
 
 /**
@@ -11,7 +11,7 @@ import type { TaskConfig } from './types.js'; // Added .js extension
  * @param handler The task handler function.
  * @returns A TaskModule object.
  */
-export function defineTask<PayloadType extends TaskJobPayload = TaskJobPayload, ResultType = any>(
+export function defineTask<PayloadType = any, ResultType = any>(
   config: TaskConfig<PayloadType, ResultType>
 ): TaskConfig<PayloadType, ResultType> {
   const { options, triggers, handler } = config;

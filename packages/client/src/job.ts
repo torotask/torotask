@@ -1,13 +1,13 @@
 import { Job, MinimalQueue } from 'bullmq';
 import { Logger } from 'pino';
 import { BaseTask } from './base-task.js';
-import type { TaskJobData, TaskJobDataItem, TaskJobOptions, TaskJobPayload, TaskJobState } from './types/index.js';
+import type { TaskJobData, TaskJobOptions, TaskJobState } from './types/index.js';
 import { TaskQueue } from './queue.js';
 import { stat } from 'fs';
 import { Task } from './task.js';
 
 export class TaskJob<
-  PayloadType extends TaskJobPayload = TaskJobPayload,
+  PayloadType = any,
   ReturnType = any,
   NameType extends string = string,
   const DataType extends TaskJobData = TaskJobData<PayloadType>,

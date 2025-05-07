@@ -7,7 +7,6 @@ import type {
   BulkTaskRun,
   BulkTaskRunNode,
   TaskHandler,
-  TaskJobPayload,
   TaskOptions,
   TaskTrigger,
 } from './types/index.js';
@@ -48,7 +47,7 @@ export class TaskGroup {
    * @param config.handler The function to execute when the task runs.
    * @returns The created Task instance.
    */
-  defineTask<PayloadType extends TaskJobPayload = TaskJobPayload, ResultType = unknown>(config: {
+  defineTask<PayloadType = any, ResultType = unknown>(config: {
     name: string;
     options?: TaskOptions | undefined;
     triggers?: TaskTrigger<PayloadType> | TaskTrigger<PayloadType>[] | undefined;
@@ -73,9 +72,7 @@ export class TaskGroup {
    * @param name The name of the task.
    * @returns The Task instance if found, otherwise undefined.
    */
-  getTask<PayloadType extends TaskJobPayload = TaskJobPayload, ResultType = unknown>(
-    name: string
-  ): Task<PayloadType, ResultType> | undefined {
+  getTask<PayloadType = any, ResultType = unknown>(name: string): Task<PayloadType, ResultType> | undefined {
     return this.tasks.get(name);
   }
 

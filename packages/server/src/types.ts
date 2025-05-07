@@ -1,11 +1,4 @@
-import type {
-  SingleOrArray,
-  TaskHandler,
-  TaskJobPayload,
-  TaskOptions,
-  TaskTrigger,
-  ToroTaskClient,
-} from '@torotask/client';
+import type { SingleOrArray, TaskHandler, TaskOptions, TaskTrigger, ToroTaskClient } from '@torotask/client';
 import type { DestinationStream, Logger, LoggerOptions } from 'pino';
 
 /** Options for configuring the TaskServer */
@@ -45,14 +38,11 @@ type TaskModuleOptions = TaskOptions & {
   name?: string;
 };
 
-export type BaseConfig<PayloadType extends TaskJobPayload = TaskJobPayload> = {
+export type BaseConfig<PayloadType = any> = {
   triggers?: SingleOrArray<TaskTrigger<PayloadType>>;
 };
 
-export type TaskConfig<
-  PayloadType extends TaskJobPayload = TaskJobPayload,
-  ResultType = unknown,
-> = BaseConfig<PayloadType> & {
+export type TaskConfig<PayloadType = any, ResultType = unknown> = BaseConfig<PayloadType> & {
   options?: TaskModuleOptions;
   handler: TaskHandler<PayloadType, ResultType>;
 };

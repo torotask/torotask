@@ -5,7 +5,7 @@ import type { Prettify } from './utils.js';
 import type { Task } from '../task.js';
 import type { TaskJob } from '../job.js';
 import type { TaskQueue } from '../queue.js';
-import type { TaskJobData, TaskJobOptions, TaskJobPayload } from './job.js';
+import type { TaskJobData, TaskJobOptions } from './job.js';
 import type { TaskWorkerOptions } from './worker.js';
 
 /**
@@ -24,20 +24,20 @@ export type TaskOptions = Prettify<
   }
 >;
 /** Handler details passed to the task handler */
-export interface TaskHandlerOptions<PayloadType extends TaskJobPayload = TaskJobPayload> {
+export interface TaskHandlerOptions<PayloadType = any> {
   id?: string; // Job ID
   name: string; // Task name
   payload: PayloadType;
 }
 
-export interface BaseHandlerContext<PayloadType extends TaskJobPayload = TaskJobPayload, ResultType = any> {
+export interface BaseHandlerContext<PayloadType = any, ResultType = any> {
   logger: Logger; // Job-specific logger
   client: ToroTaskClient;
   group: TaskGroup;
   queue: TaskQueue<PayloadType, ResultType>;
 }
 /** Context passed to the task handler */
-export interface TaskHandlerContext<PayloadType extends TaskJobPayload = TaskJobPayload, ResultType = any>
+export interface TaskHandlerContext<PayloadType = any, ResultType = any>
   extends BaseHandlerContext<PayloadType, ResultType> {
   task: Task<PayloadType, ResultType>; // Reference to the Task instance
   job: TaskJob<PayloadType, ResultType>;
@@ -45,18 +45,18 @@ export interface TaskHandlerContext<PayloadType extends TaskJobPayload = TaskJob
 }
 
 /** Task handler function type */
-export type TaskHandler<PayloadType extends TaskJobPayload = TaskJobPayload, ResultType = any> = (
+export type TaskHandler<PayloadType = any, ResultType = any> = (
   options: TaskHandlerOptions<PayloadType>,
   context: TaskHandlerContext<PayloadType, ResultType>
 ) => Promise<ResultType>;
 
-export interface TaskTriggerBase<PayloadType extends TaskJobPayload = TaskJobPayload> {
+export interface TaskTriggerBase<PayloadType = any> {
   /** Payload to associate with jobs created by this trigger. */
   payload?: PayloadType;
 }
 
 /** Defines a potential event trigger condition for a Task */
-export interface TaskTriggerEvent<PayloadType extends TaskJobPayload> extends TaskTriggerBase<PayloadType> {
+export interface TaskTriggerEvent<PayloadType> extends TaskTriggerBase<PayloadType> {
   type: 'event';
   /** Event name that could trigger the task */
   event?: string;
@@ -65,7 +65,7 @@ export interface TaskTriggerEvent<PayloadType extends TaskJobPayload> extends Ta
 }
 
 /** Defines a potential cron trigger condition for a Task */
-export interface TaskTriggerCron<PayloadType extends TaskJobPayload> extends TaskTriggerBase<PayloadType> {
+export interface TaskTriggerCron<PayloadType> extends TaskTriggerBase<PayloadType> {
   type: 'cron';
   /** Optional name for the this trigger */
   name?: string;
@@ -74,7 +74,7 @@ export interface TaskTriggerCron<PayloadType extends TaskJobPayload> extends Tas
 }
 
 /** Defines a potential repeat trigger condition for a Task */
-export interface TaskTriggerEvery<PayloadType extends TaskJobPayload> extends TaskTriggerBase<PayloadType> {
+export interface TaskTriggerEvery<PayloadType> extends TaskTriggerBase<PayloadType> {
   type: 'every';
   /** Optional name for the this trigger */
   name?: string;
@@ -83,7 +83,7 @@ export interface TaskTriggerEvery<PayloadType extends TaskJobPayload> extends Ta
 }
 
 /** Defines a potential trigger condition for a Task */
-export type TaskTrigger<PayloadType extends TaskJobPayload = TaskJobPayload> =
+export type TaskTrigger<PayloadType = any> =
   | TaskTriggerEvent<PayloadType>
   | TaskTriggerCron<PayloadType>
   | TaskTriggerEvery<PayloadType>;

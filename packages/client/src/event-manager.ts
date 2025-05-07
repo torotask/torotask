@@ -3,13 +3,7 @@ import type { Logger } from 'pino';
 import type { ToroTaskClient } from './client.js';
 import { EventSubscriptions } from './event-subscriptions.js';
 import { TaskJob } from './job.js';
-import type {
-  EventSubscriptionInfo,
-  SyncJobPayload,
-  SyncJobReturn,
-  TaskJobOptions,
-  TaskJobPayload,
-} from './types/index.js';
+import type { EventSubscriptionInfo, SyncJobPayload, SyncJobReturn, TaskJobOptions } from './types/index.js';
 import { TaskWorkerQueue } from './worker-queue.js';
 
 const SYNC_QUEUE_NAME = 'events.sync';

@@ -2,12 +2,12 @@ import type { Job, WorkerOptions } from 'bullmq';
 import { Worker } from 'bullmq'; // Keep Worker import for extends
 import type { Logger } from 'pino';
 import type { ToroTaskClient } from './client.js';
-import type { TaskWorkerOptions, TaskProcessor, TaskJobPayload, TaskJobData } from './types/index.js';
+import type { TaskWorkerOptions, TaskProcessor, TaskJobData } from './types/index.js';
 import { TaskJob } from './job.js';
 
 const BatchMaxStalledCount = 5;
 export class TaskWorker<
-  PayloadType extends TaskJobPayload = TaskJobPayload,
+  PayloadType = any,
   ResultType = unknown,
   NameType extends string = string,
   const DataType extends TaskJobData = TaskJobData<PayloadType>,

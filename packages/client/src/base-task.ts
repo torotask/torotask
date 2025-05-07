@@ -14,15 +14,13 @@ import type {
   TaskTrigger,
   TaskTriggerEvent,
   TaskWorkerOptions,
-  TaskJobPayload,
-  TaskJobData,
 } from './types/index.js';
 import { TaskWorkerQueue } from './worker-queue.js';
 import type { TaskJob } from './job.js';
 
 // Add internalId to TaskTrigger type for tracking purposes within the Task class
-type InternalTaskTrigger<PayloadType extends TaskJobPayload> = TaskTrigger<PayloadType> & { internalId: number };
-type InternalTaskTriggerEvent<PayloadType extends TaskJobPayload> = TaskTriggerEvent<PayloadType> & {
+type InternalTaskTrigger<PayloadType> = TaskTrigger<PayloadType> & { internalId: number };
+type InternalTaskTriggerEvent<PayloadType> = TaskTriggerEvent<PayloadType> & {
   internalId: number;
 };
 
@@ -36,7 +34,7 @@ type InternalTaskTriggerEvent<PayloadType extends TaskJobPayload> = TaskTriggerE
  * @template R The expected return type of the job associated with this task's main handler.
  */
 export abstract class BaseTask<
-  PayloadType extends TaskJobPayload = TaskJobPayload,
+  PayloadType = any,
   ResultType = any,
   TOptions extends TaskOptions = TaskOptions,
 > extends TaskWorkerQueue<PayloadType, ResultType> {

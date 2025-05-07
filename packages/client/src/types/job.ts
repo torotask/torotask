@@ -9,12 +9,7 @@ export type TaskJobState = {
   customData?: Record<string, any>;
 };
 
-export type TaskJobPayload = { [key: string]: any };
-
-export type TaskJobData<
-  PayloadType extends TaskJobPayload = TaskJobPayload,
-  StateType extends TaskJobState = TaskJobState,
-> = {
+export type TaskJobData<PayloadType = any, StateType extends TaskJobState = TaskJobState> = {
   payload: PayloadType;
   state: StateType;
 };
