@@ -3,11 +3,17 @@ import type { Logger } from 'pino';
 import type { ToroTaskClient } from './client.js';
 import { EventSubscriptions } from './event-subscriptions.js';
 import { TaskJob } from './job.js';
-import type { EventSubscriptionInfo, SyncJobPayload, SyncJobReturn, TaskJobOptions } from './types/index.js';
+import type {
+  EventSubscriptionInfo,
+  SyncJobPayload,
+  SyncJobReturn,
+  TaskJobOptions,
+  TaskJobPayload,
+} from './types/index.js';
 import { TaskWorkerQueue } from './worker-queue.js';
 
 const SYNC_QUEUE_NAME = 'events.sync';
-type DataType = SyncJobPayload;
+type PayloadType = SyncJobPayload;
 type ReturnType = SyncJobReturn;
 
 /**
@@ -15,7 +21,7 @@ type ReturnType = SyncJobReturn;
  * processed by a single worker. Ensures atomic updates across multiple Task instances.
  * Uses EventSubscriptionRepository for persistence.
  */
-export class EventManager extends TaskWorkerQueue<DataType, ReturnType> {
+export class EventManager extends TaskWorkerQueue<PayloadType, ReturnType> {
   // Store reference to the repository for persistence operations
   public readonly subscriptions: EventSubscriptions;
   public readonly prefix: string;
@@ -60,8 +66,8 @@ export class EventManager extends TaskWorkerQueue<DataType, ReturnType> {
     taskName: string,
     desiredSubscriptions: EventSubscriptionInfo[],
     options?: TaskJobOptions
-  ): Promise<TaskJob<DataType, ReturnType, string>> {
-    const payload: DataType = {
+  ): Promise<TaskJob<PayloadType, ReturnType, string>> {
+    const payload: PayloadType = {
       taskGroup,
       taskName,
       desiredSubscriptions,
@@ -89,8 +95,8 @@ export class EventManager extends TaskWorkerQueue<DataType, ReturnType> {
    *
    * @param job The synchronization job.
    */
-  async process(job: TaskJob<DataType, ReturnType, string>): Promise<ReturnType> {
-    const { taskGroup, taskName, desiredSubscriptions } = job.data;
+  async process(job: TaskJob<PayloadType, ReturnType, string>): Promise<ReturnType> {
+    const { taskGroup, taskName, desiredSubscriptions } = job.payload;
     const logPrefix = `[Sync Process: ${taskGroup}:${taskName} (Job ${job.id})]`;
     this.logger.debug(`${logPrefix} Starting synchronization using Repository.`);
 

@@ -1,6 +1,7 @@
 import type { WorkerOptions } from 'bullmq';
 import { Logger } from 'pino';
 import { TaskJob } from '../job.js';
+import { TaskJobData, TaskJobPayload } from './job.js';
 
 export type TaskWorkerBatchOptions = {
   size: number;
@@ -17,7 +18,8 @@ export type TaskWorkerOptions = WorkerOptions & {
   batch?: TaskWorkerBatchOptions;
 };
 
-export type TaskProcessor<T = any, R = any, N extends string = string> = (
-  job: TaskJob<T, R, N>,
-  token?: string
-) => Promise<R>;
+export type TaskProcessor<
+  PayloadType extends TaskJobPayload = TaskJobPayload,
+  ResultType = any,
+  NameType extends string = string,
+> = (job: TaskJob<PayloadType, ResultType, NameType>, token?: string) => Promise<ResultType>;

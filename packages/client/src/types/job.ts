@@ -1,4 +1,5 @@
-import type { JobsOptions } from 'bullmq'; // Added JobProgress
+import type { JobsOptions } from 'bullmq';
+import type { IfAny, UnpackList } from './utils.js';
 
 export type TaskJobState = {
   lastStep?: string;
@@ -18,6 +19,12 @@ export type TaskJobData<
   state: StateType;
 };
 
-export type TaskJobOptions<StateType extends TaskJobState = TaskJobState> = JobsOptions & {
+export type TaskJobDataItem<DataType, Item> = IfAny<
+  DataType,
+  any,
+  Item extends keyof DataType ? (UnpackList<DataType[Item]> extends object ? UnpackList<DataType[Item]> : never) : never
+>;
+
+export type TaskJobOptions<Datatype = any, StateType = TaskJobDataItem<Datatype, 'state'>> = JobsOptions & {
   state?: StateType;
 };

@@ -1,5 +1,5 @@
 import { Job } from 'bullmq';
-import type { Logger } from 'pino';
+import type { Logger, P } from 'pino';
 import { BaseTask } from './base-task.js';
 import { SubTask } from './sub-task.js';
 import type { TaskGroup } from './task-group.js';
@@ -9,6 +9,8 @@ import type {
   TaskHandler,
   TaskHandlerContext,
   TaskHandlerOptions,
+  TaskJobData,
+  TaskJobPayload,
   TaskOptions,
   TaskTrigger,
 } from './types/index.js';
@@ -23,7 +25,11 @@ import { TaskJob } from './job.js';
  * @template T The expected type of the data payload for this task's main handler.
  * @template R The expected return type of the job associated with this task's main handler.
  */
-export class Task<T = unknown, R = unknown> extends BaseTask<T, R, TaskOptions> {
+export class Task<PayloadType extends TaskJobPayload = TaskJobPayload, ResultType = unknown> extends BaseTask<
+  PayloadType,
+  ResultType,
+  TaskOptions
+> {
   protected readonly subTasks: Map<string, SubTask<any, any>>;
   protected readonly allowCatchAll: boolean;
 
@@ -31,8 +37,8 @@ export class Task<T = unknown, R = unknown> extends BaseTask<T, R, TaskOptions> 
     taskGroup: TaskGroup,
     name: string,
     options: TaskOptions | undefined,
-    trigger: SingleOrArray<TaskTrigger<T>> | undefined,
-    protected handler: TaskHandler<T, R>,
+    trigger: SingleOrArray<TaskTrigger<PayloadType>> | undefined,
+    protected handler: TaskHandler<PayloadType, ResultType>,
     groupLogger: Logger
   ) {
     super(taskGroup, name, options ?? {}, trigger, groupLogger);
@@ -43,7 +49,10 @@ export class Task<T = unknown, R = unknown> extends BaseTask<T, R, TaskOptions> 
     this.logger.debug({ allowCatchAll: this.allowCatchAll, triggerCount: this.triggers.length }, 'Task initialized');
   }
 
-  defineSubTask<ST = T, SR = R>(subTaskName: string, subTaskHandler: SubTaskHandler<ST, SR>): SubTask<ST, SR> {
+  defineSubTask<SubTaskPayloadType extends TaskJobPayload = PayloadType, SubTaskResultType = ResultType>(
+    subTaskName: string,
+    subTaskHandler: SubTaskHandler<SubTaskPayloadType, SubTaskResultType>
+  ): SubTask<SubTaskPayloadType, SubTaskResultType> {
     if (this.subTasks.has(subTaskName)) {
       this.logger.warn({ subTaskName }, 'SubTask already defined. Overwriting.');
     }
@@ -52,7 +61,7 @@ export class Task<T = unknown, R = unknown> extends BaseTask<T, R, TaskOptions> 
       throw new Error(`SubTask name "${subTaskName}" cannot be the same as the parent Task name "${this.name}".`);
     }
 
-    const newSubTask = new SubTask<ST, SR>(this, subTaskName, subTaskHandler);
+    const newSubTask = new SubTask<SubTaskPayloadType, SubTaskResultType>(this, subTaskName, subTaskHandler);
     this.subTasks.set(subTaskName, newSubTask);
     this.logger.debug({ subTaskName }, 'SubTask defined');
     return newSubTask;
@@ -68,7 +77,7 @@ export class Task<T = unknown, R = unknown> extends BaseTask<T, R, TaskOptions> 
    * - Matching subtask name routes to the subtask handler.
    * - Other names route to main handler if `allowCatchAll` is true, otherwise error.
    */
-  async process(job: TaskJob, token?: string): Promise<any> {
+  async process(job: TaskJob<PayloadType, ResultType>, token?: string): Promise<any> {
     const { id, name: jobName } = job;
     const effectiveJobName = jobName === '' || jobName === '__default__' ? this.name : jobName;
     const jobLogger = this.logger.child({ jobId: id, jobName: effectiveJobName });
@@ -81,7 +90,7 @@ export class Task<T = unknown, R = unknown> extends BaseTask<T, R, TaskOptions> 
         const result = await subTask.processSubJob(job, effectiveJobName, jobLogger);
         jobLogger.info(`SubTask job completed successfully`);
         return result;
-      } else if (effectiveJobName === this.name || this.allowCatchAll) {
+      } else if (effectiveJobName === this.taskName || this.allowCatchAll) {
         const result = await this.processJob(job, token);
         jobLogger.debug(`Main task job completed successfully`);
         return result;
@@ -102,11 +111,14 @@ export class Task<T = unknown, R = unknown> extends BaseTask<T, R, TaskOptions> 
     }
   }
 
-  async processJob(job: TaskJob, token?: string, jobLogger?: Logger): Promise<any> {
+  async processJob(job: TaskJob<PayloadType, ResultType>, token?: string, jobLogger?: Logger): Promise<any> {
     jobLogger = jobLogger ?? this.getJobLogger(job);
-    const typedJob = job as Job<T, R>;
-    const handlerOptions: TaskHandlerOptions<T> = { id: job.id, name: this.name, data: typedJob.data };
-    const handlerContext: TaskHandlerContext<T, R> = {
+    const handlerOptions: TaskHandlerOptions<PayloadType> = {
+      id: job.id,
+      name: this.name,
+      payload: job.payload as any,
+    };
+    const handlerContext: TaskHandlerContext<PayloadType, ResultType> = {
       logger: jobLogger,
       client: this.taskClient,
       group: this.group,

@@ -1,16 +1,13 @@
 import type { WorkerOptions } from 'bullmq';
 import { Logger } from 'pino';
-import { BatchTask } from './batch-task.js';
 import type { ToroTaskClient } from './client.js';
 import { Task } from './task.js';
 import type {
-  AnyTask,
-  BatchTaskHandler,
-  BatchTaskOptions,
   BulkTaskGroupRun,
   BulkTaskRun,
   BulkTaskRunNode,
   TaskHandler,
+  TaskJobPayload,
   TaskOptions,
   TaskTrigger,
 } from './types/index.js';
@@ -22,7 +19,7 @@ export class TaskGroup {
   public readonly name: string;
   public readonly client: ToroTaskClient;
   public readonly logger: Logger;
-  private readonly tasks: Map<string, AnyTask<any, any>> = new Map();
+  private readonly tasks: Map<string, Task<any, any>> = new Map();
 
   constructor(client: ToroTaskClient, name: string, parentLogger: Logger) {
     if (!client) {
@@ -51,12 +48,12 @@ export class TaskGroup {
    * @param config.handler The function to execute when the task runs.
    * @returns The created Task instance.
    */
-  defineTask<T = unknown, R = unknown>(config: {
+  defineTask<PayloadType extends TaskJobPayload = TaskJobPayload, ResultType = unknown>(config: {
     name: string;
     options?: TaskOptions | undefined;
-    triggers?: TaskTrigger<T> | TaskTrigger<T>[] | undefined;
-    handler: TaskHandler<T, R>;
-  }): Task<T, R> {
+    triggers?: TaskTrigger<PayloadType> | TaskTrigger<PayloadType>[] | undefined;
+    handler: TaskHandler<PayloadType, ResultType>;
+  }): Task<PayloadType, ResultType> {
     const { name, options, triggers, handler } = config;
 
     if (this.tasks.has(name)) {
@@ -76,7 +73,9 @@ export class TaskGroup {
    * @param name The name of the task.
    * @returns The Task instance if found, otherwise undefined.
    */
-  getTask<T = any, R = any>(name: string): AnyTask<T, R> | undefined {
+  getTask<PayloadType extends TaskJobPayload = TaskJobPayload, ResultType = unknown>(
+    name: string
+  ): Task<PayloadType, ResultType> | undefined {
     return this.tasks.get(name);
   }
 
@@ -85,7 +84,7 @@ export class TaskGroup {
    *
    * @returns A map of task names to Task instances.
    */
-  getTasks(): Map<string, AnyTask<any, any>> {
+  getTasks(): Map<string, Task<any, any>> {
     return this.tasks;
   }
 
@@ -114,7 +113,7 @@ export class TaskGroup {
   async startWorkers(filter?: { tasks?: string[] }, workerOptions?: WorkerOptions): Promise<void> {
     this.logger.debug({ filter }, 'Starting workers for task group');
     const tasksToStart = filter?.tasks
-      ? filter.tasks.map((name) => this.tasks.get(name)).filter((task): task is AnyTask<any, any> => !!task)
+      ? filter.tasks.map((name) => this.tasks.get(name)).filter((task): task is Task<any, any> => !!task)
       : Array.from(this.tasks.values());
 
     if (filter?.tasks) {
@@ -148,7 +147,7 @@ export class TaskGroup {
   async stopWorkers(filter?: { tasks?: string[] }): Promise<void> {
     this.logger.info({ filter }, 'Stopping workers for task group');
     const tasksToStop = filter?.tasks
-      ? filter.tasks.map((name) => this.tasks.get(name)).filter((task): task is AnyTask<any, any> => !!task)
+      ? filter.tasks.map((name) => this.tasks.get(name)).filter((task): task is Task<any, any> => !!task)
       : Array.from(this.tasks.values());
 
     if (filter?.tasks) {

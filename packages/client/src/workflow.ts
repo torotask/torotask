@@ -1,4 +1,4 @@
-import { FlowProducer } from 'bullmq';
+import { FlowProducer, Job } from 'bullmq';
 import { ToroTaskClient } from './client.js';
 import type { TaskQueueOptions } from './types/index.js';
 import { TaskJob } from './job.js';
@@ -17,9 +17,9 @@ export class TaskWorkflow extends FlowProducer {
 
   /**
    * Override the Job class to use TaskJob
-   * @returns {typeof TaskJob}
+   * @returns {typeof Job}
    */
-  protected get Job(): typeof TaskJob {
-    return TaskJob;
+  protected get Job(): typeof Job {
+    return TaskJob as any;
   }
 }

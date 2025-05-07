@@ -1,9 +1,14 @@
 import type { JobProgress, QueueListener, WorkerListener } from 'bullmq'; // Assuming these are accessible
 import type { TaskJob } from '../job.js'; // Your specific Job type
+import type { TaskJobData, TaskJobPayload } from './job.js';
 
 // Combine Queue and Worker listeners with prefixing for worker events
-export interface TaskWorkerQueueListener<DataType = any, ResultType = any, NameType extends string = string>
-  extends QueueListener<TaskJob<DataType, ResultType, NameType>> {
+export interface TaskWorkerQueueListener<
+  PayloadType extends TaskJobPayload = TaskJobPayload,
+  ResultType = any,
+  NameType extends string = string,
+  DataType extends TaskJobData = TaskJobData<PayloadType>,
+> extends QueueListener<TaskJob<PayloadType, ResultType, NameType>> {
   // Worker events prefixed with 'worker:'
   'worker:active': WorkerListener<DataType, ResultType, NameType>['active'];
   'worker:closed': WorkerListener<DataType, ResultType, NameType>['closed'];
@@ -21,10 +26,13 @@ export interface TaskWorkerQueueListener<DataType = any, ResultType = any, NameT
   // Note: Queue events like 'cleaned', 'error', 'paused', 'progress', 'removed', 'resumed', 'waiting'
   // are inherited directly from QueueListener without prefix.
 }
-export interface WorkerEventHandlers<DataType = any, ResultType = any, NameType extends string = string>
-  extends Omit<WorkerListener, 'active' | 'completed' | 'failed' | 'progress'> {
-  active: (job: TaskJob<DataType, ResultType, NameType>, prev: string) => void;
-  completed: (job: TaskJob<DataType, ResultType, NameType>, result: ResultType, prev: string) => void;
-  failed: (job: TaskJob<DataType, ResultType, NameType> | undefined, error: Error, prev: string) => void;
-  progress: (job: TaskJob<DataType, ResultType, NameType>, progress: JobProgress) => void;
+export interface WorkerEventHandlers<
+  PayloadType extends TaskJobPayload = TaskJobPayload,
+  ResultType = any,
+  NameType extends string = string,
+> extends Omit<WorkerListener, 'active' | 'completed' | 'failed' | 'progress'> {
+  active: (job: TaskJob<PayloadType, ResultType, NameType>, prev: string) => void;
+  completed: (job: TaskJob<PayloadType, ResultType, NameType>, result: ResultType, prev: string) => void;
+  failed: (job: TaskJob<PayloadType, ResultType, NameType> | undefined, error: Error, prev: string) => void;
+  progress: (job: TaskJob<PayloadType, ResultType, NameType>, progress: JobProgress) => void;
 }

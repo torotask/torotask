@@ -1,4 +1,4 @@
-import type { WorkerOptions } from 'bullmq';
+import type { Job, WorkerOptions } from 'bullmq';
 import { Worker } from 'bullmq'; // Keep Worker import for extends
 import type { Logger } from 'pino';
 import type { ToroTaskClient } from './client.js';
@@ -11,13 +11,14 @@ export class TaskWorker<
   ResultType = unknown,
   NameType extends string = string,
   const DataType extends TaskJobData = TaskJobData<PayloadType>,
+  const JobType extends TaskJob<PayloadType, ResultType, NameType> = TaskJob<PayloadType, ResultType, NameType>,
 > extends Worker<TaskJobData<PayloadType>, ResultType, NameType> {
   public readonly logger: Logger;
   private readonly isBatchingEnabled: boolean;
   public readonly options: Partial<TaskWorkerOptions>;
 
   // --- Batching State ---
-  private jobBatch: TaskJob<DataType, ResultType, NameType>[] = [];
+  private jobBatch: JobType[] = [];
   private jobBatchCreationTime: Date = new Date();
   private jobBatchProcessPromise: Promise<void> | null = null;
   private resolveJobBatchProcessPromise: (() => void) | null = null;
@@ -28,7 +29,7 @@ export class TaskWorker<
   constructor(
     public readonly taskClient: ToroTaskClient,
     name: string,
-    processor?: string | URL | null | TaskProcessor<PayloadType, ResultType, string>,
+    processor?: string | URL | null | TaskProcessor<DataType, ResultType, string>,
     options?: Partial<TaskWorkerOptions>
   ) {
     if (!taskClient) {
@@ -106,19 +107,19 @@ export class TaskWorker<
    * @returns A promise that resolves/rejects when the batch containing this job completes/fails.
    */
 
-  protected callProcessJob(job: TaskJob<DataType, ResultType, NameType>, token: string): Promise<ResultType> {
+  protected callProcessJob(job: TaskJob<any, ResultType, NameType>, token: string): Promise<ResultType> {
     const batchOptions = this.options.batch;
     if (!this.isBatchingEnabled || !batchOptions || job.isBatch) {
       return super.callProcessJob(job, token);
     }
-    return this.batchJobCollector(job, token) as any;
+    return this.batchJobCollector(job as any, token) as any;
   }
 
   /**
    * The processor function used by BullMQ Worker when batching is enabled.
    * Collects jobs into a batch and triggers processing.
    */
-  private async batchJobCollector(job: TaskJob<DataType, ResultType, NameType>, _token?: string): Promise<void> {
+  private async batchJobCollector(job: JobType, _token?: string): Promise<void> {
     const jobLogger = this.logger.child({ jobId: job.id, jobName: job.name });
     jobLogger.info(`Received job ${job.id}. Adding to current batch.`);
 
@@ -274,7 +275,7 @@ export class TaskWorker<
     this.logger.info(`Processing ${batchInfo} for task "${this.name}".`);
 
     try {
-      const batchJob = new TaskJob<PayloadType, ResultType, NameType>(this, this.name as any, {} as any, {});
+      const batchJob = new this.TaskJob(this, this.name as any, {} as any, {});
       batchJob.setBatch(batchToProcess);
       // --- Execute actual batch processing logic ---
       await this.callProcessJob(batchJob, batchJob.token ?? '');
@@ -363,9 +364,13 @@ export class TaskWorker<
 
   /**
    * Override the Job class to use TaskJob
-   * @returns {typeof TaskJob}
+   * @returns {typeof Job}
    */
   protected get Job(): typeof Job {
+    return TaskJob as any;
+  }
+
+  protected get TaskJob(): typeof TaskJob<PayloadType, ResultType, NameType> {
     return TaskJob;
   }
 }

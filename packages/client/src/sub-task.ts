@@ -2,7 +2,13 @@ import { JobsOptions } from 'bullmq';
 import type { Logger } from 'pino';
 import type { Task } from './task.js';
 // Import types from the types file
-import type { SubTaskHandler, SubTaskHandlerContext, SubTaskHandlerOptions } from './types/index.js';
+import type {
+  SubTaskHandler,
+  SubTaskHandlerContext,
+  SubTaskHandlerOptions,
+  TaskJobData,
+  TaskJobPayload,
+} from './types/index.js';
 import { TaskJob } from './job.js';
 
 // --- SubTask Class ---
@@ -15,13 +21,17 @@ import { TaskJob } from './job.js';
  * @template DataType The expected type of the data payload for this subtask.
  * @template ResultType The expected return type of the job associated with this subtask.
  */
-export class SubTask<DataType = unknown, ResultType = unknown> {
+export class SubTask<
+  PayloadType extends TaskJobPayload = TaskJobPayload,
+  ResultType = unknown,
+  const DataType extends TaskJobData = TaskJobData<PayloadType>,
+> {
   public readonly parentTask: Task<any, any>; // Keep less specific for simplicity
   public readonly name: string;
-  public readonly handler: SubTaskHandler<DataType, ResultType>; // Uses imported type
+  public readonly handler: SubTaskHandler<PayloadType, ResultType>; // Uses imported type
   public readonly logger: Logger;
 
-  constructor(parentTask: Task<any, any>, name: string, handler: SubTaskHandler<DataType, ResultType>) {
+  constructor(parentTask: Task<any, any>, name: string, handler: SubTaskHandler<PayloadType, ResultType>) {
     if (!parentTask) {
       throw new Error('Parent Task instance is required for SubTask.');
     }
@@ -47,24 +57,27 @@ export class SubTask<DataType = unknown, ResultType = unknown> {
    * @param overrideOptions Optional JobOptions to override the parent task's defaults.
    * @returns A promise resolving to the enqueued BullMQ Job object.
    */
-  async run(data: DataType, overrideOptions?: JobsOptions): Promise<TaskJob<DataType, ResultType>> {
+  async run(payload: PayloadType, overrideOptions?: JobsOptions) {
     const finalOptions: JobsOptions = {
       ...this.parentTask.jobsOptions,
       ...overrideOptions,
+    };
+    const data = {
+      payload,
     };
     // Call parent task's public helper method directly
     return this.parentTask.add(this.name, data, finalOptions);
   }
 
-  async processSubJob(job: TaskJob<DataType, ResultType, string>, jobName: string, jobLogger: Logger): Promise<any> {
-    const handlerOptions: SubTaskHandlerOptions<DataType> = { id: job.id, name: jobName, data: job.data };
-    const handlerContext: SubTaskHandlerContext<DataType, ResultType> = {
+  async processSubJob(job: TaskJob<PayloadType, ResultType>, jobName: string, jobLogger: Logger): Promise<any> {
+    const handlerOptions: SubTaskHandlerOptions<PayloadType> = { id: job.id, name: jobName, payload: job.payload };
+    const handlerContext: SubTaskHandlerContext<PayloadType, ResultType> = {
       logger: jobLogger,
       client: this.parentTask.taskClient,
       group: this.parentTask.group,
       parentTask: this.parentTask,
       subTaskName: this.name,
-      job: job,
+      job: job as any,
       queue: this.parentTask,
     };
     try {

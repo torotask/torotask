@@ -1,17 +1,17 @@
 import { Job, MinimalQueue } from 'bullmq';
 import { Logger } from 'pino';
 import { BaseTask } from './base-task.js';
-import type { TaskJobData, TaskJobOptions, TaskJobPayload, TaskJobState } from './types/index.js';
+import type { TaskJobData, TaskJobDataItem, TaskJobOptions, TaskJobPayload, TaskJobState } from './types/index.js';
 import { TaskQueue } from './queue.js';
 import { stat } from 'fs';
 import { Task } from './task.js';
 
 export class TaskJob<
-  DataType extends TaskJobData = TaskJobData,
+  PayloadType extends TaskJobPayload = TaskJobPayload,
   ReturnType = any,
   NameType extends string = string,
-  const PayloadType extends TaskJobPayload = DataType['payload'],
-  const StateType extends TaskJobPayload = DataType['state'],
+  const DataType extends TaskJobData = TaskJobData<PayloadType>,
+  const StateType = TaskJobState,
 > extends Job<DataType, ReturnType, NameType> {
   public logger?: Logger;
   public task?: BaseTask<typeof this.data, ReturnType>;
@@ -21,13 +21,13 @@ export class TaskJob<
    */
   private batch: (typeof this)[];
   public payload: PayloadType;
-  public state: typeof this.data.state;
+  public state: StateType;
 
-  constructor(queue: MinimalQueue, name: NameType, data: DataType, opts: TaskJobOptions<StateType> = {}, id?: string) {
+  constructor(queue: MinimalQueue, name: NameType, data: DataType, opts: TaskJobOptions<DataType> = {}, id?: string) {
     super(queue, name, data, opts, id);
 
     this.payload = this.data.payload as PayloadType;
-    this.state = this.data.state;
+    this.state = this.data.state as StateType;
 
     // Check if the queue is an instance of TaskQueue
     if (queue instanceof TaskQueue) {

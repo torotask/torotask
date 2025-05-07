@@ -11,7 +11,7 @@ import { TaskWorkerQueue } from './worker-queue.js';
 const DEFAULT_EVENT_QUEUE_NAME = 'events.dispatch';
 const SET_ACTIVE_DEBOUNCE_MS = 500; // Debounce time in milliseconds
 
-type DataType = any;
+type PayloadType = any;
 type ReturnType = any;
 
 /**
@@ -19,7 +19,7 @@ type ReturnType = any;
  * It uses its own BullMQ queue to process published events.
  * Maintains a local cache (`activeEvents`) of events presumed to have subscribers.
  */
-export class EventDispatcher extends TaskWorkerQueue<DataType, ReturnType> {
+export class EventDispatcher extends TaskWorkerQueue<PayloadType, ReturnType> {
   public manager: EventManager;
   public activeEvents: Set<string> = new Set(); // Use Set for efficient lookups
   private setActiveEventsDebounced: () => void;
@@ -145,7 +145,7 @@ export class EventDispatcher extends TaskWorkerQueue<DataType, ReturnType> {
     eventName: string,
     data: E,
     options?: TaskJobOptions
-  ): Promise<TaskJob<E, any> | undefined> {
+  ): Promise<TaskJob<PayloadType, any> | undefined> {
     if (!eventName || typeof eventName !== 'string' || eventName.trim() === '') {
       this.logger.error({ eventName }, 'Invalid event name provided for publishing.');
       throw new Error('Event name cannot be empty.');

@@ -1,22 +1,14 @@
-import { Queue, QueueOptions, JobsOptions } from 'bullmq'; // Import JobsOptions
+import { Queue, QueueOptions, JobsOptions, Job } from 'bullmq'; // Import JobsOptions
 import { Logger } from 'pino';
 import { ToroTaskClient } from './client.js';
-// Assuming TaskJobOptions is defined in types/index.js or similar
-import type {
-  BulkJob,
-  ExtractDataType,
-  ExtractNameType,
-  ExtractResultType,
-  TaskJobOptions,
-  TaskQueueOptions,
-} from './types/index.js';
+import type { BulkJob, TaskJobData, TaskJobOptions, TaskJobPayload, TaskQueueOptions } from './types/index.js';
 import { TaskJob } from './job.js';
 
 export class TaskQueue<
-  // --- Input Generics (like BullMQ's Queue) ---
-  DataType = any,
+  PayloadType extends TaskJobPayload = TaskJobPayload,
   ResultType = any,
   NameType extends string = string,
+  const DataType extends TaskJobData = TaskJobData<PayloadType>,
 > extends Queue<any, ResultType, NameType> {
   public readonly logger: Logger;
 
@@ -41,9 +33,13 @@ export class TaskQueue<
 
   /**
    * Override the Job class to use TaskJob
-   * @returns {typeof TaskJob}
+   * @returns {typeof Job}
    */
-  protected get Job(): typeof TaskJob {
+  protected get Job(): typeof Job {
+    return TaskJob as any;
+  }
+
+  protected get TaskJob(): typeof TaskJob<PayloadType, ResultType, NameType> {
     return TaskJob;
   }
 
@@ -61,14 +57,17 @@ export class TaskQueue<
    */
   public override async add(
     name: NameType, // Use TaskQueue's derived NameType
-    data: DataType, // Use TaskQueue's derived DataType
+    payload: PayloadType, // Use TaskQueue's derived DataType
     options?: TaskJobOptions // Use specific TaskJobOptions
-  ): Promise<TaskJob<DataType, ResultType, NameType>> {
+  ): Promise<TaskJob<PayloadType, ResultType, NameType>> {
     // Return specific TaskJob
+    const data = {
+      payload,
+    };
     const job = await super.add(name, data, options as JobsOptions);
 
     // Cast the result from the base Job to the specific TaskJob
-    return job as TaskJob<DataType, ResultType, NameType>;
+    return job as TaskJob<PayloadType, ResultType, NameType>;
   }
 
   /**
@@ -76,7 +75,7 @@ export class TaskQueue<
    * Public method intended for use by subclasses or related classes (e.g., SubTask).
    */
   // Assuming BulkJob's options are compatible with BullMQ's BulkJobOptions
-  public override async addBulk(jobs: BulkJob<DataType>[]): Promise<TaskJob<DataType, ResultType>[]> {
+  public override async addBulk(jobs: BulkJob<DataType>[]): Promise<TaskJob<PayloadType, ResultType>[]> {
     this.logger.info({ jobs }, `Bulk adding jobs ${jobs.length} to queue [${this.name}]`);
 
     const bulkJobs = jobs.map((job) => {
@@ -89,7 +88,7 @@ export class TaskQueue<
 
     const result = await super.addBulk(bulkJobs as any);
     this.logger.info({ result }, `${result.length} Jobs bulk added added to queue [${this.name}]`);
-    return result as TaskJob<DataType, ResultType, NameType>[];
+    return result as TaskJob<PayloadType, ResultType, NameType>[];
   }
 
   /**

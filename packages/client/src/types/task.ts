@@ -5,7 +5,7 @@ import type { Prettify } from './utils.js';
 import type { Task } from '../task.js';
 import type { TaskJob } from '../job.js';
 import type { TaskQueue } from '../queue.js';
-import type { TaskJobOptions, TaskJobPayload } from './job.js';
+import type { TaskJobData, TaskJobOptions, TaskJobPayload } from './job.js';
 import type { TaskWorkerOptions } from './worker.js';
 
 /**
@@ -24,21 +24,21 @@ export type TaskOptions = Prettify<
   }
 >;
 /** Handler details passed to the task handler */
-export interface TaskHandlerOptions<DataType = any> {
+export interface TaskHandlerOptions<PayloadType extends TaskJobPayload = TaskJobPayload> {
   id?: string; // Job ID
   name: string; // Task name
-  data: DataType;
+  payload: PayloadType;
 }
 
-export interface BaseHandlerContext {
+export interface BaseHandlerContext<PayloadType extends TaskJobPayload = TaskJobPayload, ResultType = any> {
   logger: Logger; // Job-specific logger
   client: ToroTaskClient;
   group: TaskGroup;
-  queue: TaskQueue;
+  queue: TaskQueue<PayloadType, ResultType>;
 }
 /** Context passed to the task handler */
 export interface TaskHandlerContext<PayloadType extends TaskJobPayload = TaskJobPayload, ResultType = any>
-  extends BaseHandlerContext {
+  extends BaseHandlerContext<PayloadType, ResultType> {
   task: Task<PayloadType, ResultType>; // Reference to the Task instance
   job: TaskJob<PayloadType, ResultType>;
   token?: string | undefined; // Optional token for authentication or authorization

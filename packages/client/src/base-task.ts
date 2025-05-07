@@ -14,12 +14,17 @@ import type {
   TaskTrigger,
   TaskTriggerEvent,
   TaskWorkerOptions,
+  TaskJobPayload,
+  TaskJobData,
 } from './types/index.js';
 import { TaskWorkerQueue } from './worker-queue.js';
+import type { TaskJob } from './job.js';
 
 // Add internalId to TaskTrigger type for tracking purposes within the Task class
-type InternalTaskTrigger<DataType> = TaskTrigger<DataType> & { internalId: number };
-type InternalTaskTriggerEvent<DataType> = TaskTriggerEvent<DataType> & { internalId: number };
+type InternalTaskTrigger<PayloadType extends TaskJobPayload> = TaskTrigger<PayloadType> & { internalId: number };
+type InternalTaskTriggerEvent<PayloadType extends TaskJobPayload> = TaskTriggerEvent<PayloadType> & {
+  internalId: number;
+};
 
 /**
  * Represents a defined task associated with a TaskGroup.
@@ -31,19 +36,19 @@ type InternalTaskTriggerEvent<DataType> = TaskTriggerEvent<DataType> & { interna
  * @template R The expected return type of the job associated with this task's main handler.
  */
 export abstract class BaseTask<
-  DataType = any,
+  PayloadType extends TaskJobPayload = TaskJobPayload,
   ResultType = any,
   TOptions extends TaskOptions = TaskOptions,
-> extends TaskWorkerQueue<DataType, ResultType> {
+> extends TaskWorkerQueue<PayloadType, ResultType> {
   public readonly taskName: string;
   public readonly group: TaskGroup;
 
   public jobsOptions: JobsOptions;
   public workerOptions: Partial<TaskWorkerOptions> | undefined;
   // Store the normalized triggers with an internal ID
-  public triggers: InternalTaskTrigger<DataType>[] = [];
+  public triggers: InternalTaskTrigger<PayloadType>[] = [];
   // Map for easy lookup of *current* event triggers by their internalId
-  protected currentEventTriggers: Map<number, InternalTaskTriggerEvent<DataType>> = new Map();
+  protected currentEventTriggers: Map<number, InternalTaskTriggerEvent<PayloadType>> = new Map();
   // Remove internal tracking of registered state, EventManager handles comparison
   // protected _registeredEventTriggers: Map<number, EventSubscriptionInfo> = new Map();
 
@@ -51,7 +56,7 @@ export abstract class BaseTask<
     taskGroup: TaskGroup,
     taskName: string, // Renamed parameter
     public taskOptions: TOptions,
-    trigger: SingleOrArray<TaskTrigger<DataType>> | undefined,
+    trigger: SingleOrArray<TaskTrigger<PayloadType>> | undefined,
     parentLogger?: Logger
   ) {
     if (!taskGroup) {
@@ -95,16 +100,19 @@ export abstract class BaseTask<
     };
   }
 
-  async run(data: DataType, overrideOptions?: JobsOptions): Promise<Job<DataType, ResultType>> {
+  async run(payload: PayloadType, overrideOptions?: JobsOptions) {
     const finalOptions: TaskJobOptions = {
       ...this.jobsOptions,
       ...overrideOptions,
     };
+    const data = {
+      payload,
+    };
     // Use taskName for the default job name if needed, queue handles its own naming
-    return this.add(this.taskName, data, finalOptions);
+    return this.add(this.taskName, data as any, finalOptions);
   }
 
-  async runBulk(jobs: BulkJob[]): Promise<Job<DataType, ResultType>[]> {
+  async runBulk(jobs: BulkJob[]) {
     const bulkJobs = jobs.map((job) => {
       return {
         ...job,
@@ -118,13 +126,16 @@ export abstract class BaseTask<
     return this.addBulk(bulkJobs);
   }
 
-  async runAndWait(data: DataType, overrideOptions?: JobsOptions): Promise<ResultType> {
+  async runAndWait(payload: PayloadType, overrideOptions?: JobsOptions) {
     const finalOptions: JobsOptions = {
       ...this.jobsOptions,
       ...overrideOptions,
     };
+    const data = {
+      payload,
+    };
     // Use taskName for the default job name if needed
-    return this._runJobAndWait(this.taskName, data, finalOptions);
+    return this._runJobAndWait(this.taskName, data as any, finalOptions);
   }
 
   protected getJobName(job: Job): string {
@@ -238,7 +249,7 @@ export abstract class BaseTask<
         upsertPromises.push(
           this.upsertJobScheduler(schedulerKey, repeatOpts, {
             name: this.taskName, // Use taskName for the job name within the scheduler
-            data: trigger.data,
+            data: { payload: trigger.payload },
             opts: jobOptions,
           })
         );
@@ -282,12 +293,18 @@ export abstract class BaseTask<
     this.currentEventTriggers.forEach((trigger) => {
       // Ensure event field exists before pushing
       if (trigger.event) {
+        const data = trigger.payload
+          ? {
+              payload: trigger.payload,
+            }
+          : undefined;
+
         desiredSubscriptions.push({
           taskGroup: this.group.name,
           taskName: this.taskName, // Use taskName here
           triggerId: trigger.internalId,
-          eventId: trigger.event, // Include event name
-          ...(trigger.data && { data: trigger.data }),
+          eventId: trigger.event,
+          data,
         });
       } else {
         this.logger.warn(
@@ -318,7 +335,7 @@ export abstract class BaseTask<
   /**
    * Updates the task's default job options and triggers, then requests synchronization.
    */
-  async update(options?: TOptions, triggers?: SingleOrArray<TaskTrigger<DataType>>): Promise<void> {
+  async update(options?: TOptions, triggers?: SingleOrArray<TaskTrigger<PayloadType>>): Promise<void> {
     const logPrefix = `[Task Update: ${this.taskName}]`; // Use taskName in log
     this.logger.debug({ hasNewOptions: !!options, hasNewTriggers: !!triggers }, `${logPrefix} Starting update...`);
     let needsSyncRequest = false; // Renamed for clarity
@@ -383,20 +400,20 @@ export abstract class BaseTask<
   }
 
   /** Helper method to normalize trigger input and update internal state */
-  protected _initializeTriggers(triggersInput?: SingleOrArray<TaskTrigger<DataType>>): void {
+  protected _initializeTriggers(triggersInput?: SingleOrArray<TaskTrigger<PayloadType>>): void {
     const logPrefix = `[Init Triggers: ${this.taskName}]`; // Use taskName in log
     this.logger.debug(`${logPrefix} Normalizing triggers and updating internal trigger maps...`);
-    const normalizedTriggers: InternalTaskTrigger<DataType>[] = [];
+    const normalizedTriggers: InternalTaskTrigger<PayloadType>[] = [];
 
     const inputArray = !triggersInput ? [] : Array.isArray(triggersInput) ? [...triggersInput] : [triggersInput];
-    inputArray.forEach((trigger: TaskTrigger<DataType>, index) => {
+    inputArray.forEach((trigger: TaskTrigger<PayloadType>, index) => {
       normalizedTriggers.push({ ...trigger, internalId: index });
     });
     this.triggers = normalizedTriggers;
 
     // Rebuild the internal map of current event triggers keyed by internalId
-    const newEventTriggers = new Map<number, InternalTaskTriggerEvent<DataType>>();
-    this.triggers.forEach((trigger: InternalTaskTrigger<DataType>) => {
+    const newEventTriggers = new Map<number, InternalTaskTriggerEvent<PayloadType>>();
+    this.triggers.forEach((trigger: InternalTaskTrigger<PayloadType>) => {
       if (trigger.type === 'event') {
         // Type guard to ensure it's an event trigger before accessing 'event'
         if (trigger.event && typeof trigger.event === 'string' && trigger.event.trim() !== '') {

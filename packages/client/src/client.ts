@@ -1,14 +1,15 @@
 import type { ConnectionOptions as BullMQConnectionOptions, FlowChildJob, FlowJob, Job } from 'bullmq';
 import { ConnectionOptions, WorkerOptions } from 'bullmq';
 import { Redis, RedisOptions } from 'ioredis';
-import { type Logger, pino } from 'pino';
+import { type Logger, P, pino } from 'pino';
 import { LRU } from 'tiny-lru';
 import { EventDispatcher } from './event-dispatcher.js';
 import { TaskQueue } from './queue.js';
 import { TaskGroup } from './task-group.js';
-import type { AnyTask, BulkTaskRun, BulkTaskRunChild, BulkTaskRunNode, TaskJobOptions } from './types/index.js';
+import type { BulkTaskRun, BulkTaskRunChild, BulkTaskRunNode, TaskJobOptions, TaskJobPayload } from './types/index.js';
 import { getConfigFromEnv } from './utils/get-config-from-env.js';
 import { TaskWorkflow } from './workflow.js';
+import type { Task } from './task.js';
 
 const LOGGER_NAME = 'ToroTask';
 const BASE_PREFIX = 'torotask';
@@ -142,7 +143,10 @@ export class ToroTaskClient {
   /**
    * Retrieves an existing Task instance by group and name.
    */
-  public getTask<T = any, R = any>(groupName: string, name: string): AnyTask<T, R> | undefined {
+  public getTask<PayloadType extends TaskJobPayload = TaskJobPayload, ResultType = unknown>(
+    groupName: string,
+    name: string
+  ): Task<PayloadType, ResultType> | undefined {
     const group = this.getTaskGroup(groupName);
     if (!group) return undefined;
 
@@ -156,9 +160,11 @@ export class ToroTaskClient {
    * @param data The data to pass to the task.
    * @returns A promise that resolves to the Job instance.
    */
-  public getTaskByKey<T = any, R = any>(taskKey: `${string}.${string}`): AnyTask<T, R> | undefined {
+  public getTaskByKey<PayloadType extends TaskJobPayload = TaskJobPayload, ResultType = unknown>(
+    taskKey: `${string}.${string}`
+  ): Task<PayloadType, ResultType> | undefined {
     const [groupName, taskName] = taskKey.split('.');
-    return this.getTask<T, R>(groupName, taskName);
+    return this.getTask<PayloadType, ResultType>(groupName, taskName);
   }
 
   /**
@@ -178,7 +184,10 @@ export class ToroTaskClient {
    * @param task The task name.
    * @returns A promise that resolves to the Queue instance or null if it doesn't exist.
    */
-  private async getConsumerQueue(group: string, task: string): Promise<TaskQueue | null> {
+  private async getConsumerQueue<PayloadType extends TaskJobPayload = any, ResultType = any>(
+    group: string,
+    task: string
+  ) {
     const key = `${group}.${task}`;
     const cached = this._consumerQueues.get(key);
     if (cached) return cached;
@@ -186,8 +195,8 @@ export class ToroTaskClient {
     const exists = await this.queueExists(key);
     if (!exists) return null;
 
-    const queue = new TaskQueue(this, key);
-    this._consumerQueues.set(key, queue);
+    const queue = new TaskQueue<PayloadType, ResultType>(this, key);
+    this._consumerQueues.set(key, queue as any);
     return queue;
   }
 
@@ -199,23 +208,23 @@ export class ToroTaskClient {
    * @param data The data to pass to the task.
    * @returns A promise that resolves to the Job instance.
    */
-  async runTask<T = any, R = any>(
+  async runTask<PayloadType extends TaskJobPayload = TaskJobPayload, ResultType = any>(
     groupName: string,
     taskName: string,
-    data: T,
+    payload: PayloadType,
     options?: TaskJobOptions
-  ): Promise<Job<T, R>> {
-    const task = this.getTask<T, R>(groupName, taskName);
+  ) {
+    const task = this.getTask<PayloadType, ResultType>(groupName, taskName);
     if (task) {
-      return await task.run(data);
+      return await task.run(payload);
     }
 
-    const queue = await this.getConsumerQueue(groupName, taskName);
+    const queue = await this.getConsumerQueue<PayloadType, ResultType>(groupName, taskName);
     if (!queue) {
       throw new Error(`Queue ${groupName}.${taskName} is not registered`);
     }
 
-    return await queue.add(taskName, data, options);
+    return await queue.add(taskName, payload, options);
   }
 
   /**
@@ -225,9 +234,12 @@ export class ToroTaskClient {
    * @param data The data to pass to the task.
    * @returns A promise that resolves to the Job instance.
    */
-  async runTaskByKey<T = any, R = any>(taskKey: `${string}.${string}`, data: T): Promise<Job<T, R>> {
+  async runTaskByKey<PayloadType extends TaskJobPayload = TaskJobPayload, ResultType = any>(
+    taskKey: `${string}.${string}`,
+    payload: PayloadType
+  ) {
     const [groupName, taskName] = taskKey.split('.');
-    return this.runTask<T, R>(groupName, taskName, data);
+    return this.runTask<PayloadType, ResultType>(groupName, taskName, payload);
   }
 
   _convertToFlow(run: BulkTaskRun): FlowJob {

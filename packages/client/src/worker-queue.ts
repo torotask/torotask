@@ -3,15 +3,22 @@ import { ToroTaskClient } from './client.js';
 import { TaskJob } from './job.js';
 import { TaskQueueEvents } from './queue-events.js';
 import { TaskQueue } from './queue.js';
-import type { TaskQueueOptions, TaskWorkerOptions, WorkerEventHandlers } from './types/index.js';
+import type {
+  TaskJobData,
+  TaskJobPayload,
+  TaskQueueOptions,
+  TaskWorkerOptions,
+  WorkerEventHandlers,
+} from './types/index.js';
 import type { TaskWorkerQueueListener } from './types/index.js'; // Adjust path if needed
 import { TaskWorker } from './worker.js';
 
 export abstract class TaskWorkerQueue<
-  DataType = any,
+  PayloadType extends TaskJobPayload = TaskJobPayload,
   ResultType = any,
   NameType extends string = string,
-> extends TaskQueue<DataType, ResultType, NameType> {
+  const JobType extends TaskJob<PayloadType, ResultType, NameType> = TaskJob<PayloadType, ResultType, NameType>,
+> extends TaskQueue<PayloadType, ResultType, NameType> {
   /**
    * @deprecated Use `queueName` instead. This property holds the queue name for internal BullMQ compatibility.
    */
@@ -19,9 +26,9 @@ export abstract class TaskWorkerQueue<
   public readonly queueName: string;
 
   public readonly queueEvents: TaskQueueEvents;
-  protected worker?: TaskWorker<DataType, ResultType>;
+  protected worker?: TaskWorker<PayloadType, ResultType>;
   // Store listeners to remove them later
-  private workerEventHandlers: Partial<WorkerEventHandlers<DataType, ResultType, NameType>> = {};
+  private workerEventHandlers: Partial<WorkerEventHandlers<PayloadType, ResultType, NameType>> = {};
 
   constructor(taskClient: ToroTaskClient, queueName: string, options?: Partial<TaskQueueOptions>) {
     super(taskClient, queueName, options);
@@ -37,7 +44,7 @@ export abstract class TaskWorkerQueue<
    * @param job The BullMQ job object.
    * @returns A promise that resolves with the result of the job.
    */
-  abstract process(job: TaskJob<DataType, ResultType, string>, token?: string): Promise<ResultType>;
+  abstract process(job: JobType, token?: string): Promise<ResultType>;
 
   getWorkerOptions(): Partial<TaskWorkerOptions> {
     return {};
@@ -47,7 +54,7 @@ export abstract class TaskWorkerQueue<
    * Starts a dedicated BullMQ Worker for this queue, if one is not already running.
    * Forwards worker events to this BaseQueue instance, prefixing them with 'worker:'.
    */
-  async startWorker(options?: TaskWorkerOptions): Promise<TaskWorker<DataType, ResultType>> {
+  async startWorker(options?: TaskWorkerOptions): Promise<TaskWorker<PayloadType, ResultType>> {
     if (this.worker) {
       this.logger.warn('Worker already started for this queue. Returning existing instance.');
       return this.worker;
@@ -62,22 +69,22 @@ export abstract class TaskWorkerQueue<
 
     this.logger.info({ workerOptions: mergedOptions }, 'Starting worker');
 
-    const newWorker = new TaskWorker<DataType, ResultType>(
+    const newWorker = new TaskWorker<PayloadType, ResultType>(
       this.taskClient,
       this.queueName,
-      async (job, token) => this.process(job, token),
+      async (job, token) => this.process(job as any, token),
       mergedOptions
     );
 
     // --- Event Forwarding (with prefixing) ---
     // Define handlers that emit events from `this` (the BaseQueue instance)
     this.workerEventHandlers = {
-      active: (job: TaskJob<DataType, ResultType, NameType>, prev: string) => {
+      active: (job: TaskJob<PayloadType, ResultType, NameType>, prev: string) => {
         this.logger.debug({ jobId: job.id, prev }, 'Worker event: active');
         // Emit with 'worker:' prefix
         this.emit('worker:active', job, prev);
       },
-      completed: (job: TaskJob, result: any, prev: string) => {
+      completed: (job: TaskJob<PayloadType, ResultType, NameType>, result: any, prev: string) => {
         this.logger.debug({ jobId: job.id, result }, 'Worker event: completed');
         this.emit('worker:completed', job, result, prev);
       },
@@ -90,7 +97,7 @@ export abstract class TaskWorkerQueue<
         this.logger.error({ err: error }, 'Worker event: error');
         this.emit('worker:error', error);
       },
-      failed: (job: TaskJob | undefined, error: Error, prev: string) => {
+      failed: (job: TaskJob<PayloadType, ResultType, NameType> | undefined, error: Error, prev: string) => {
         // Job might be undefined if failure happens before job is retrieved
         this.logger.warn({ jobId: job?.id, err: error, prev }, 'Worker event: failed');
         this.emit('worker:failed', job, error, prev);
@@ -99,7 +106,7 @@ export abstract class TaskWorkerQueue<
         this.logger.debug('Worker event: paused');
         this.emit('worker:paused');
       },
-      progress: (job: TaskJob, progress: JobProgress) => {
+      progress: (job: TaskJob<PayloadType, ResultType, NameType>, progress: JobProgress) => {
         // Progress can be number | object
         this.logger.debug({ jobId: job.id, progress }, 'Worker event: progress');
         this.emit('worker:progress', job, progress);
