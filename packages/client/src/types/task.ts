@@ -7,6 +7,7 @@ import type { TaskJob } from '../job.js';
 import type { TaskQueue } from '../queue.js';
 import type { TaskJobData, TaskJobOptions } from './job.js';
 import type { TaskWorkerOptions } from './worker.js';
+import { StepExecutor } from '../step-executor.js';
 
 /**
  * Options for defining a Task, extending BullMQ's JobsOptions.
@@ -41,6 +42,7 @@ export interface TaskHandlerContext<PayloadType = any, ResultType = any>
   extends BaseHandlerContext<PayloadType, ResultType> {
   task: Task<PayloadType, ResultType>; // Reference to the Task instance
   job: TaskJob<PayloadType, ResultType>;
+  step: StepExecutor<TaskJob<PayloadType, ResultType>>;
   token?: string | undefined; // Optional token for authentication or authorization
 }
 

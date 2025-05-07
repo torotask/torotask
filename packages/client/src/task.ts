@@ -12,6 +12,8 @@ import type {
   TaskTrigger,
 } from './types/index.js';
 import { TaskJob } from './job.js';
+import { StepExecutor } from './step-executor.js';
+import { DelayedError, WaitingChildrenError } from 'bullmq';
 
 /**
  * Represents a defined task associated with a TaskGroup.
@@ -95,7 +97,16 @@ export class Task<PayloadType = any, ResultType = unknown> extends BaseTask<Payl
           `Job name "${effectiveJobName}" on queue "${this.queueName}" not recognized by task "${this.taskName}".`
         );
       }
-    } catch (error) {
+    } catch (error: any) {
+      if (
+        error instanceof DelayedError ||
+        error.name == 'DelayedError' ||
+        error instanceof WaitingChildrenError ||
+        error.name == 'WaitingChildrenError'
+      ) {
+        return;
+      }
+
       jobLogger.error(
         { err: error instanceof Error ? error : new Error(String(error)) },
         `Job processing failed for job name "${effectiveJobName}"`
@@ -111,12 +122,14 @@ export class Task<PayloadType = any, ResultType = unknown> extends BaseTask<Payl
       name: this.taskName,
       payload: job.payload as any,
     };
+    const stepExecutor = new StepExecutor<TaskJob<PayloadType, ResultType>>(job);
     const handlerContext: TaskHandlerContext<PayloadType, ResultType> = {
       logger: jobLogger,
       client: this.taskClient,
       group: this.group,
       task: this,
       job: job,
+      step: stepExecutor,
       token,
       queue: this,
     };

@@ -4,6 +4,7 @@ import type { Task } from './task.js';
 // Import types from the types file
 import type { SubTaskHandler, SubTaskHandlerContext, SubTaskHandlerOptions, TaskJobData } from './types/index.js';
 import { TaskJob } from './job.js';
+import { StepExecutor } from './step-executor.js';
 
 // --- SubTask Class ---
 
@@ -64,6 +65,7 @@ export class SubTask<
   }
 
   async processSubJob(job: TaskJob<PayloadType, ResultType>, jobName: string, jobLogger: Logger): Promise<any> {
+    const stepExecutor = new StepExecutor<TaskJob<PayloadType, ResultType>>(job);
     const handlerOptions: SubTaskHandlerOptions<PayloadType> = { id: job.id, name: jobName, payload: job.payload };
     const handlerContext: SubTaskHandlerContext<PayloadType, ResultType> = {
       logger: jobLogger,
@@ -72,6 +74,7 @@ export class SubTask<
       parentTask: this.parentTask,
       subTaskName: this.name,
       job: job as any,
+      step: stepExecutor,
       queue: this.parentTask,
     };
     try {
