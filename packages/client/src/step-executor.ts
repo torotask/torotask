@@ -179,11 +179,11 @@ export class StepExecutor<JobType extends TaskJob = TaskJob> {
           status: 'sleeping',
           sleepUntil: newSleepUntil,
         };
-        // Persist state *before* throwing SleepError, currentStepIndex is NOT incremented
-        await this.persistState();
+        await this.job.moveToDelayed(newSleepUntil, this.job.token); // Then move to delayed
+        await this.persistState(); // Persist state first
         this.logger.info(
           { internalStepId, durationMs, sleepUntil: newSleepUntil },
-          `Initiating sleep for step '${userStepId}', throwing SleepError.`
+          `Initiating sleep for step '${userStepId}', moving to delayed.`
         );
         throw new SleepError(durationMs, internalStepId);
       },
@@ -203,11 +203,11 @@ export class StepExecutor<JobType extends TaskJob = TaskJob> {
           } else {
             const remainingTime = sleepUntil - Date.now();
             this.logger.info(
-              { internalStepId, remainingTime },
-              `Step '${userStepId}' still sleeping, throwing SleepError for remaining time.`
+              { internalStepId, remainingTime, sleepUntil },
+              `Step '${userStepId}' still sleeping, re-asserting delay and throwing SleepError.`
             );
-            // State is already 'sleeping'. No need to persist again unless sleepUntil changed (it didn't).
-            // currentStepIndex is not incremented.
+            // Re-assert the job's position in the delayed queue
+            await this.job.moveToDelayed(sleepUntil, this.job.token);
             return {
               processed: true,
               errorToThrow: new SleepError(remainingTime > 0 ? remainingTime : 0, internalStepId),
@@ -226,20 +226,28 @@ export class StepExecutor<JobType extends TaskJob = TaskJob> {
       userStepId,
       'sleepUntil',
       async (internalStepId: string) => {
-        this.logger.info(
-          { internalStepId, userStepId, timestampMs },
-          `sleepUntil called for step '${userStepId}' - NOT IMPLEMENTED.`
-        );
+        this.logger.info({ internalStepId, userStepId, timestampMs }, `sleepUntil called for step '${userStepId}'.`);
         const durationMs = timestampMs - Date.now();
         if (durationMs <= 0) {
           // Already past or current time
-          this.job.state.stepState![internalStepId] = { status: 'completed' }; // Mark as completed immediately
+          this.logger.info(
+            { internalStepId, userStepId, timestampMs },
+            `Timestamp for sleepUntil step '${userStepId}' is in the past. Completing immediately.`
+          );
+          this.job.state.stepState![internalStepId] = { status: 'completed' };
           // currentStepIndex will be incremented by _executeStep after this returns
-          await this.persistState(); // Persist completion
+          // No moveToDelayed needed as it's completing.
+          // PersistState will be called by _executeStep.
           return; // Effectively completes the step
         }
         this.job.state.stepState![internalStepId] = { status: 'sleeping', sleepUntil: timestampMs };
-        await this.persistState();
+        await this.persistState(); // Persist state first
+        this.logger.info(
+          { internalStepId, userStepId, timestampMs, durationMs },
+          `Initiating sleepUntil for step '${userStepId}', moving to delayed.`
+        );
+        // This status would have been set by a previous call to sleep or sleepUntil
+        await this.job.moveToDelayed(timestampMs, this.job.token); // Then move to delayed
         throw new SleepError(durationMs, internalStepId);
       },
       async (memoizedResult, internalStepId) => {
@@ -252,10 +260,12 @@ export class StepExecutor<JobType extends TaskJob = TaskJob> {
             await this.persistState();
             return { processed: true, result: undefined };
           } else {
+            // Re-assert the job's position in the delayed queue
+            await this.job.moveToDelayed(sleepUntilTime, this.job.token);
             const remainingTime = sleepUntilTime - Date.now();
             this.logger.info(
-              { internalStepId, userStepId, remainingTime },
-              `Step '${userStepId}' still sleeping until specific time, throwing SleepError.`
+              { internalStepId, userStepId, remainingTime, sleepUntilTime },
+              `Step '${userStepId}' still sleeping until specific time, re-asserting delay and throwing SleepError.`
             );
             return {
               processed: true,
