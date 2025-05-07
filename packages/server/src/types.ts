@@ -1,8 +1,7 @@
 import type {
-  BatchTaskHandler,
-  BatchTaskOptions,
   SingleOrArray,
   TaskHandler,
+  TaskJobPayload,
   TaskOptions,
   TaskTrigger,
   ToroTaskClient,
@@ -46,11 +45,14 @@ type TaskModuleOptions = TaskOptions & {
   name?: string;
 };
 
-export type BaseConfig<DataType = unknown> = {
-  triggers?: SingleOrArray<TaskTrigger<DataType>>;
+export type BaseConfig<PayloadType extends TaskJobPayload = TaskJobPayload> = {
+  triggers?: SingleOrArray<TaskTrigger<PayloadType>>;
 };
 
-export type TaskConfig<PayloadType = unknown, ResultType = unknown> = BaseConfig<DataType> & {
+export type TaskConfig<
+  PayloadType extends TaskJobPayload = TaskJobPayload,
+  ResultType = unknown,
+> = BaseConfig<PayloadType> & {
   options?: TaskModuleOptions;
-  handler: TaskHandler<DataType, ResultType>;
+  handler: TaskHandler<PayloadType, ResultType>;
 };

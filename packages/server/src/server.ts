@@ -1,12 +1,12 @@
 import fs from 'fs';
 import path from 'path';
 import { pathToFileURL } from 'url';
-import { TaskGroup, TaskTrigger, ToroTaskClient, WorkerFilter } from '@torotask/client';
+import { TaskGroup, TaskJobPayload, TaskTrigger, ToroTaskClient, WorkerFilter } from '@torotask/client';
 import { EventDispatcher } from '@torotask/client';
 import { WorkerOptions } from 'bullmq';
 import { glob } from 'glob';
 import { type DestinationStream, type Logger, type LoggerOptions, pino } from 'pino';
-import type { AnyTaskModule, TaskServerOptions } from './types.js';
+import type { TaskConfig, TaskServerOptions } from './types.js';
 const LOGGER_NAME = 'TaskServer';
 
 /**
@@ -173,11 +173,11 @@ export class TaskServer {
 
         const fileUrl = pathToFileURL(filePath).href;
         const taskModule = (await import(fileUrl)) as {
-          default?: AnyTaskModule & { trigger?: TaskTrigger; triggers?: TaskTrigger[] };
+          default?: TaskConfig & { trigger?: TaskTrigger; triggers?: TaskTrigger[] };
         };
 
         let finalTaskName: string = derivedTaskName;
-        let moduleToUse: AnyTaskModule & { trigger?: TaskTrigger; triggers?: TaskTrigger[] };
+        let moduleToUse: TaskConfig & { trigger?: TaskTrigger; triggers?: TaskTrigger[] };
 
         if (taskModule.default?.handler && typeof taskModule.default.handler === 'function') {
           moduleToUse = taskModule.default;
@@ -202,15 +202,13 @@ export class TaskServer {
           this.logger.debug({ derivedTaskName, explicitName: finalTaskName }, 'Using explicit task name from options.');
         }
 
-        if (moduleToUse.type === 'task') {
-          const { name: _n, ...optionsToUse } = moduleToUse.options || {};
-          group.defineTask({
-            name: finalTaskName,
-            options: optionsToUse,
-            triggers: moduleToUse.triggers ?? moduleToUse.trigger,
-            handler: moduleToUse.handler,
-          });
-        }
+        const { name: _n, ...optionsToUse } = moduleToUse.options || {};
+        group.defineTask({
+          name: finalTaskName,
+          options: optionsToUse,
+          triggers: moduleToUse.triggers ?? moduleToUse.trigger,
+          handler: moduleToUse.handler,
+        });
 
         this.logger.debug({ groupName, taskName: finalTaskName }, 'Successfully loaded and defined task.');
         loadedCount++;
@@ -232,8 +230,8 @@ export class TaskServer {
   /**
    * Retrieves an existing Task instance by group and name.
    */
-  getTask<T = any, R = any>(groupName: string, name: string) {
-    return this.client.getTask<T, R>(groupName, name);
+  getTask<PayloadType extends TaskJobPayload = TaskJobPayload, ResultType = any>(groupName: string, name: string) {
+    return this.client.getTask<PayloadType, ResultType>(groupName, name);
   }
 
   /**
@@ -243,8 +241,8 @@ export class TaskServer {
    * @param data The data to pass to the task.
    * @returns A promise that resolves to the Job instance.
    */
-  getTaskByKey<T = any, R = any>(taskKey: `${string}.${string}`) {
-    return this.client.getTaskByKey<T, R>(taskKey);
+  getTaskByKey<PayloadType extends TaskJobPayload = TaskJobPayload, ResultType = any>(taskKey: `${string}.${string}`) {
+    return this.client.getTaskByKey<PayloadType, ResultType>(taskKey);
   }
 
   /**
@@ -256,8 +254,12 @@ export class TaskServer {
    * @returns A promise that resolves to the Job instance.
    */
 
-  async runTask<T = any, R = any>(groupName: string, taskName: string, data: T) {
-    return this.client.runTask<T, R>(groupName, taskName, data);
+  async runTask<PayloadType extends TaskJobPayload = TaskJobPayload, ResultType = any>(
+    groupName: string,
+    taskName: string,
+    payload: PayloadType
+  ) {
+    return this.client.runTask<PayloadType, ResultType>(groupName, taskName, payload);
   }
 
   /**
@@ -267,8 +269,11 @@ export class TaskServer {
    * @param data The data to pass to the task.
    * @returns A promise that resolves to the Job instance.
    */
-  async runTaskByKey<T = any, R = any>(key: `${string}.${string}`, data: T) {
-    return this.client.runTaskByKey<T, R>(key, data);
+  async runTaskByKey<PayloadType extends TaskJobPayload = TaskJobPayload, ResultType = any>(
+    key: `${string}.${string}`,
+    payload: PayloadType
+  ) {
+    return this.client.runTaskByKey<PayloadType, ResultType>(key, payload);
   }
 
   /**

@@ -1,4 +1,5 @@
-import type { AnyTaskModule, TaskConfig } from './types.js'; // Added .js extension
+import { Task, TaskJobPayload } from 'packages/client/dist/index.js';
+import type { TaskConfig } from './types.js'; // Added .js extension
 
 /**
  * Factory function to create a valid TaskModule definition.
@@ -10,12 +11,12 @@ import type { AnyTaskModule, TaskConfig } from './types.js'; // Added .js extens
  * @param handler The task handler function.
  * @returns A TaskModule object.
  */
-export function defineTask<DataType = any, ResultType = any>(
-  config: TaskConfig<DataType, ResultType>
-): AnyTaskModule<DataType, ResultType> {
+export function defineTask<PayloadType extends TaskJobPayload = TaskJobPayload, ResultType = any>(
+  config: TaskConfig<PayloadType, ResultType>
+): TaskConfig<PayloadType, ResultType> {
   const { options, triggers, handler } = config;
   if (!handler || typeof handler !== 'function') {
     throw new Error('defineTask requires a valid handler function.');
   }
-  return { type: 'task', options, triggers, handler };
+  return { options, triggers, handler };
 }
