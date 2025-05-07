@@ -337,7 +337,6 @@ export class StepExecutor<JobType extends TaskJob = TaskJob> {
             `Handling intermediate 'waiting_for_children' state for step '${userStepId}'. Re-checking with moveToWaitingChildren.`
           );
 
-          // TODO: Implement actual check for child task completion results if needed before this.
           const shouldStillWait = await this.job.moveToWaitingChildren(this.job.token || '');
 
           if (shouldStillWait) {
