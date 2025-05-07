@@ -1,11 +1,18 @@
 import type { JobsOptions } from 'bullmq';
+import type { StepResult } from './step.js';
 import type { IfAny, UnpackList } from './utils.js';
 
-export type TaskJobState = {
-  lastStep?: string;
-  nextStep?: string;
-  stepValues?: Record<string, any>;
-  processOrder?: string[];
+/**
+ * Defines the structure of the state object used by StepExecutor,
+ * intended to be part of the TaskJob's overall state.
+ */
+export type TaskJobStepState = {
+  stepState?: Record<string, StepResult>;
+  stepOrder?: string[];
+  _currentStepIndex?: number;
+};
+
+export type TaskJobState = TaskJobStepState & {
   customData?: Record<string, any>;
 };
 
