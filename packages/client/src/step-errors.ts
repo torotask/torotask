@@ -1,3 +1,5 @@
+import { DelayedError, WaitingChildrenError } from 'bullmq'; // Assuming 'bullmq' is the correct import path
+
 /**
  * Base error to indicate that a step is in a pending state and not yet completed or errored.
  * The BullMQ worker should catch this type of error and handle the job accordingly
@@ -18,17 +20,18 @@ export class WorkflowPendingError extends Error {
 
 /**
  * Custom error to indicate that a step needs to sleep.
- * Extends WorkflowPendingError.
+ * Extends BullMQ's DelayedError.
+ * This error is thrown by StepExecutor AFTER the job has been successfully moved to the delayed set in BullMQ.
+ * The BullMQ worker should catch DelayedError and allow the job to remain delayed.
  */
-export class SleepError extends WorkflowPendingError {
+export class SleepError extends DelayedError {
+  public readonly isWorkflowPendingError = true; // Keep for StepExecutor's internal logic
   public readonly isSleepError = true;
-  constructor(
-    public readonly durationMs: number,
-    stepInternalId: string
-  ) {
-    super(`Step "${stepInternalId}" is sleeping for ${durationMs}ms.`, stepInternalId);
-    this.name = 'SleepError';
-    Object.setPrototypeOf(this, SleepError.prototype);
+  constructor(public readonly stepInternalId: string) {
+    super(`Step "${stepInternalId}" is sleeping.`); // Pass message to DelayedError
+    this.name = 'SleepError'; // Override BullMQ's error name if desired, or keep as DelayedError
+    // Object.setPrototypeOf(this, new.target.prototype); // Handled by DelayedError
+    Object.setPrototypeOf(this, SleepError.prototype); // Re-assert for this specific class
   }
 }
 
@@ -49,16 +52,21 @@ export class WaitForChildError extends WorkflowPendingError {
 
 /**
  * Error to indicate that a step is waiting for multiple child tasks to complete.
+ * Extends BullMQ's WaitingChildrenError.
+ * This error is thrown by StepExecutor AFTER the job has been successfully moved to waiting-children in BullMQ.
+ * The BullMQ worker should catch WaitingChildrenError and allow the job to remain in that state.
  */
-export class WaitForChildrenError extends WorkflowPendingError {
+export class WaitForChildrenError extends WaitingChildrenError {
+  public readonly isWorkflowPendingError = true; // Keep for StepExecutor's internal logic
   public readonly isWaitForChildrenError = true;
   constructor(
     public readonly childTaskCount: number,
-    stepInternalId: string
+    public readonly stepInternalId: string
   ) {
-    super(`Step "${stepInternalId}" is waiting for ${childTaskCount} child tasks.`, stepInternalId);
-    this.name = 'WaitForChildrenError';
-    Object.setPrototypeOf(this, WaitForChildrenError.prototype);
+    super(`Step "${stepInternalId}" is waiting for ${childTaskCount} child tasks.`); // Pass message to WaitingChildrenError
+    this.name = 'WaitForChildrenError'; // Override BullMQ's error name if desired, or keep as WaitingChildrenError
+    // Object.setPrototypeOf(this, new.target.prototype); // Handled by WaitingChildrenError
+    Object.setPrototypeOf(this, WaitForChildrenError.prototype); // Re-assert for this specific class
   }
 }
 
