@@ -37,7 +37,7 @@ export class Task<PayloadType = any, ResultType = unknown> extends BaseTask<Payl
     super(taskGroup, name, options ?? {}, trigger, groupLogger);
 
     this.subTasks = new Map();
-    this.allowCatchAll = this.taskOptions.allowCatchAll ?? false;
+    this.allowCatchAll = this.taskOptions.allowCatchAll ?? true;
 
     this.logger.debug({ allowCatchAll: this.allowCatchAll, triggerCount: this.triggers.length }, 'Task initialized');
   }
@@ -49,9 +49,9 @@ export class Task<PayloadType = any, ResultType = unknown> extends BaseTask<Payl
     if (this.subTasks.has(subTaskName)) {
       this.logger.warn({ subTaskName }, 'SubTask already defined. Overwriting.');
     }
-    if (subTaskName === this.name) {
+    if (subTaskName === this.taskName) {
       this.logger.error({ subTaskName }, 'SubTask name cannot be the same as the parent Task name.');
-      throw new Error(`SubTask name "${subTaskName}" cannot be the same as the parent Task name "${this.name}".`);
+      throw new Error(`SubTask name "${subTaskName}" cannot be the same as the parent Task name "${this.taskName}".`);
     }
 
     const newSubTask = new SubTask<SubTaskPayloadType, SubTaskResultType>(this, subTaskName, subTaskHandler);
@@ -72,7 +72,7 @@ export class Task<PayloadType = any, ResultType = unknown> extends BaseTask<Payl
    */
   async process(job: TaskJob<PayloadType, ResultType>, token?: string): Promise<any> {
     const { id, name: jobName } = job;
-    const effectiveJobName = jobName === '' || jobName === '__default__' ? this.name : jobName;
+    const effectiveJobName = jobName === '' || jobName === '__default__' ? this.taskName : jobName;
     const jobLogger = this.logger.child({ jobId: id, jobName: effectiveJobName });
 
     const subTask = this.subTasks.get(effectiveJobName);
@@ -92,7 +92,7 @@ export class Task<PayloadType = any, ResultType = unknown> extends BaseTask<Payl
           `Job name "${effectiveJobName}" does not match main task or subtasks, and catchAll is disabled.`
         );
         throw new Error(
-          `Job name "${effectiveJobName}" on queue "${this.queueName}" not recognized by task "${this.name}".`
+          `Job name "${effectiveJobName}" on queue "${this.queueName}" not recognized by task "${this.taskName}".`
         );
       }
     } catch (error) {
@@ -108,7 +108,7 @@ export class Task<PayloadType = any, ResultType = unknown> extends BaseTask<Payl
     jobLogger = jobLogger ?? this.getJobLogger(job);
     const handlerOptions: TaskHandlerOptions<PayloadType> = {
       id: job.id,
-      name: this.name,
+      name: this.taskName,
       payload: job.payload as any,
     };
     const handlerContext: TaskHandlerContext<PayloadType, ResultType> = {
