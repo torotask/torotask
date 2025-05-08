@@ -6,8 +6,8 @@ const main = async () => {
 
   await server.start();
 
-  await server.events.publish('item.delete', {});
-  await server.events.publish('item.create', {});
+  await server.events.send('item.delete', {});
+  await server.events.send('item.create', {});
   await server.runTaskByKey('exampleGroup.new-task', {});
   // Start the worker AFTER defining functions
   /*  logger.info({ queueName: queue.name }, 'Worker starting');

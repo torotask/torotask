@@ -289,6 +289,18 @@ export class ToroTaskClient {
   }
 
   /**
+   *  Sends an event to the EventDispatcher.
+   *  This method is a wrapper around the EventDispatcher's send method.
+   *  It allows sending events with a specific name and data payload.
+   * @param eventName
+   * @param data
+   * @param options
+   * @returns
+   */
+  async sendEvent<E = unknown>(eventName: string, data: E, options?: TaskJobOptions) {
+    return this.events.send(eventName, data, options);
+  }
+  /**
    * Fetches all BullMQ queue names from the Redis instance.
    * This method creates a temporary connection to scan for queue keys.
    *

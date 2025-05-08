@@ -135,13 +135,13 @@ export class EventDispatcher extends TaskWorkerQueue<PayloadType, ReturnType> {
   }
 
   /**
-   * Publishes an event by adding a job to the event queue.
+   * Sends an event by adding a job to the event queue.
    * The job name will be the event name.
-   * @param eventName The name of the event to publish.
+   * @param eventName The name of the event to send.
    * @param data The data payload for the event.
    * @param options Optional BullMQ job options.
    */
-  async publish<E = unknown>(
+  async send<E = unknown>(
     eventName: string,
     data: E,
     options?: TaskJobOptions

@@ -2,13 +2,7 @@ import ms, { type StringValue } from 'ms';
 import { Logger } from 'pino';
 import { TaskJob } from './job.js';
 import type { StepResult, TaskJobState } from './types/index.js';
-import {
-  SleepError,
-  WaitForChildError,
-  WaitForChildrenError,
-  WaitForEventError,
-  WorkflowPendingError,
-} from './step-errors.js';
+import { SleepError, WaitForChildError, WaitForChildrenError } from './step-errors.js';
 import { getDateTime } from './utils/get-datetime.js';
 import { serializeError, deserializeError } from './utils/serialize-error.js';
 
@@ -345,7 +339,7 @@ export class StepExecutor<JobType extends TaskJob = TaskJob> {
     );
   }
 
-  async waitForEvent<T = any>(userStepId: string, eventName: string, timeoutMs?: number): Promise<T> {
+  /*async waitForEvent<T = any>(userStepId: string, eventName: string, timeoutMs?: number): Promise<T> {
     return this._executeStep<T>(
       userStepId,
       'waitForEvent',
@@ -381,14 +375,11 @@ export class StepExecutor<JobType extends TaskJob = TaskJob> {
         return { processed: false };
       }
     );
-  }
+  }*/
 
   async sendEvent(userStepId: string, eventName: string, eventData: any): Promise<void> {
-    return this._executeStep<void>(userStepId, 'sendEvent', async (internalStepId: string) => {
-      this.logger.info(
-        { internalStepId, userStepId, eventName, eventData },
-        `sendEvent called for step '${userStepId}' (id: ${internalStepId}) - NOT IMPLEMENTED (simulating success).`
-      );
+    return this._executeStep<void>(userStepId, 'sendEvent', async () => {
+      await this.job.taskClient?.sendEvent(eventName, eventData);
       return;
     });
   }
