@@ -1,6 +1,7 @@
 import slugify from '@sindresorhus/slugify';
 import { Job, JobsOptions, WorkerOptions, JobScheduler, JobSchedulerJson } from 'bullmq';
 import cronstrue from 'cronstrue';
+import ms from 'ms';
 import type { Logger } from 'pino';
 import prettyMilliseconds from 'pretty-ms';
 import type { TaskGroup } from './task-group.js';
@@ -225,12 +226,18 @@ export abstract class BaseTask<
             }
             break;
           case 'every':
-            if (!trigger.every || trigger.every <= 0) {
+            if (!trigger.every) {
+              this.logger.warn(`${logPrefix} ${logSuffix} Skipping every trigger due to missing interval.`);
+              return;
+            }
+            repeatOpts.every = typeof trigger.every === 'number' ? trigger.every : ms(trigger.every);
+
+            if (!repeatOpts.every) {
               this.logger.warn(`${logPrefix} ${logSuffix} Skipping every trigger due to invalid 'every' value.`);
               return;
             }
-            repeatOpts.every = trigger.every;
-            description = prettyMilliseconds(trigger.every);
+
+            description = prettyMilliseconds(repeatOpts.every);
             break;
           default:
             this.logger.warn(`${logPrefix} ${logSuffix} Skipping trigger with unknown type: ${(trigger as any).type}`);

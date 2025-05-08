@@ -1,3 +1,4 @@
+import ms, { type StringValue } from 'ms';
 import { Logger } from 'pino';
 import { TaskJob } from './job.js';
 import type { StepResult, TaskJobState } from './types/index.js';
@@ -8,6 +9,7 @@ import {
   WaitForEventError,
   WorkflowPendingError,
 } from './step-errors.js';
+import { getDateTime } from './utils/get-datetime.js';
 import { serializeError, deserializeError } from './utils/serialize-error.js';
 
 export class StepExecutor<JobType extends TaskJob = TaskJob> {
@@ -154,11 +156,12 @@ export class StepExecutor<JobType extends TaskJob = TaskJob> {
     });
   }
 
-  async sleep(userStepId: string, durationMs: number): Promise<void> {
+  async sleep(userStepId: string, duration: number | StringValue): Promise<void> {
     return this._executeStep<void>(
       userStepId,
       'sleep',
       async (internalStepId: string) => {
+        const durationMs = typeof duration === 'number' ? duration : ms(duration);
         const newSleepUntil = Date.now() + durationMs;
         this.job.state.stepState![internalStepId] = {
           status: 'sleeping',
@@ -200,15 +203,17 @@ export class StepExecutor<JobType extends TaskJob = TaskJob> {
     );
   }
 
-  async sleepUntil(userStepId: string, timestampMs: number): Promise<void> {
+  async sleepUntil(userStepId: string, datetime: Date | string | number): Promise<void> {
     return this._executeStep<void>(
       userStepId,
       'sleepUntil',
       async (internalStepId: string) => {
         this.logger.info(
-          { internalStepId, userStepId, timestampMs },
+          { internalStepId, userStepId, datetime },
           `sleepUntil called for step '${userStepId}' (id: ${internalStepId}).`
         );
+
+        const timestampMs = getDateTime(datetime);
         if (timestampMs <= Date.now()) {
           this.logger.info(
             { internalStepId, userStepId, timestampMs },

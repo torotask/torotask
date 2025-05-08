@@ -8,6 +8,7 @@ import type { TaskQueue } from '../queue.js';
 import type { TaskJobData, TaskJobOptions } from './job.js';
 import type { TaskWorkerOptions } from './worker.js';
 import { StepExecutor } from '../step-executor.js';
+import { StringValue } from 'ms';
 
 /**
  * Options for defining a Task, extending BullMQ's JobsOptions.
@@ -81,7 +82,7 @@ export interface TaskTriggerEvery<PayloadType> extends TaskTriggerBase<PayloadTy
   /** Optional name for the this trigger */
   name?: string;
   /** Repeat interval in milliseconds for recurring jobs based on this trigger. */
-  every?: number;
+  every?: number | StringValue;
 }
 
 /** Defines a potential trigger condition for a Task */
