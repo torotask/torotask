@@ -294,13 +294,13 @@ export class StepExecutor<JobType extends TaskJob = TaskJob> {
         const token = this.job.token || '';
         const shouldWait = await this.job.moveToWaitingChildren(token);
         if (shouldWait) {
-          this.logger.info(
+          this.logger.debug(
             { internalStepId, userStepId, childTaskIds },
             `Step '${userStepId}' (id: ${internalStepId}) successfully moved to waiting for children, throwing WaitForChildrenError.`
           );
           throw new WaitForChildrenError(childTaskIds.length, internalStepId);
         } else {
-          this.logger.info(
+          this.logger.debug(
             { internalStepId, userStepId, childTaskIds },
             `Step '${userStepId}' (id: ${internalStepId}) does not need to wait for children. Completing step.`
           );
@@ -309,14 +309,14 @@ export class StepExecutor<JobType extends TaskJob = TaskJob> {
       },
       async (memoizedResult, internalStepId) => {
         if (memoizedResult.status === 'waiting_for_children') {
-          this.logger.info(
+          this.logger.debug(
             { internalStepId, userStepId, tasks: memoizedResult.childTaskIds },
             `Handling intermediate 'waiting_for_children' state for step '${userStepId}' (id: ${internalStepId}). Re-checking.`
           );
           const token = this.job.token || '';
           const shouldStillWait = await this.job.moveToWaitingChildren(token);
           if (shouldStillWait) {
-            this.logger.info(
+            this.logger.debug(
               { internalStepId, userStepId },
               `Still waiting for children for step '${userStepId}' (id: ${internalStepId}). Re-throwing WaitForChildrenError.`
             );
@@ -325,7 +325,7 @@ export class StepExecutor<JobType extends TaskJob = TaskJob> {
               errorToThrow: new WaitForChildrenError(memoizedResult.childTaskIds?.length || 0, internalStepId),
             };
           } else {
-            this.logger.info(
+            this.logger.debug(
               { internalStepId, userStepId },
               `Children for step '${userStepId}' (id: ${internalStepId}) are now complete. Marking step as completed.`
             );
