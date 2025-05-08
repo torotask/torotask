@@ -1,12 +1,7 @@
 import type { TaskJobState } from './job.js';
 
-export type StepStatus =
-  | 'completed'
-  | 'errored'
-  | 'sleeping'
-  | 'waiting_for_child'
-  | 'waiting_for_children'
-  | 'waiting_for_event';
+export type StepStatus = 'completed' | 'errored' | 'sleeping' | 'waiting_for_child' | 'waiting_for_children';
+//| 'waiting_for_event';
 
 /**
  * Represents the result of a single step execution.
