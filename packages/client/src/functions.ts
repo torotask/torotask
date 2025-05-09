@@ -1,5 +1,5 @@
-import { Task } from 'packages/client/dist/index.js';
-import type { TaskConfig } from './types.js'; // Added .js extension
+import { Task } from './task.js';
+import type { TaskConfig } from './types/index.js'; // Added .js extension
 
 /**
  * Factory function to create a valid TaskModule definition.

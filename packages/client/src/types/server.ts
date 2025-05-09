@@ -1,4 +1,7 @@
-import type { SingleOrArray, TaskHandler, TaskOptions, TaskTrigger, ToroTaskClient } from '@torotask/client';
+import type { SingleOrArray } from './utils.js';
+import type { TaskHandler, TaskOptions, TaskTrigger } from './task.js';
+import type { ToroTaskClient } from '../client.js';
+
 import type { DestinationStream, Logger, LoggerOptions } from 'pino';
 
 /** Options for configuring the TaskServer */

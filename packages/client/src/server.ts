@@ -1,12 +1,14 @@
 import fs from 'fs';
 import path from 'path';
 import { pathToFileURL } from 'url';
-import { TaskGroup, TaskTrigger, ToroTaskClient, WorkerFilter } from '@torotask/client';
-import { EventDispatcher } from '@torotask/client';
 import { WorkerOptions } from 'bullmq';
 import { glob } from 'glob';
 import { type DestinationStream, type Logger, type LoggerOptions, pino } from 'pino';
-import type { TaskConfig, TaskServerOptions } from './types.js';
+import type { TaskConfig, TaskServerOptions, TaskTrigger } from './types/index.js';
+import { ToroTaskClient, WorkerFilter } from './client.js';
+import { TaskGroup } from './task-group.js';
+import { EventDispatcher } from './event-dispatcher.js';
+
 const LOGGER_NAME = 'TaskServer';
 
 /**
