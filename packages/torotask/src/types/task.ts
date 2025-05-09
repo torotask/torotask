@@ -5,10 +5,11 @@ import type { Prettify } from './utils.js';
 import type { Task } from '../task.js';
 import type { TaskJob } from '../job.js';
 import type { TaskQueue } from '../queue.js';
-import type { TaskJobData, TaskJobOptions } from './job.js';
+import type { TaskJobOptions } from './job.js';
 import type { TaskWorkerOptions } from './worker.js';
 import { StepExecutor } from '../step-executor.js';
 import { StringValue } from 'ms';
+import { TaskQueueOptions } from './queue.js';
 
 /**
  * Options for defining a Task, extending BullMQ's JobsOptions.
@@ -23,6 +24,7 @@ export type TaskOptions = Prettify<
     allowCatchAll?: boolean;
     batch?: TaskWorkerOptions['batch'];
     workerOptions?: Partial<Omit<TaskWorkerOptions, 'batch'>>;
+    queueOptions?: Partial<TaskQueueOptions>;
   }
 >;
 /** Handler details passed to the task handler */

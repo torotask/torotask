@@ -459,7 +459,7 @@ export class ToroTask {
 
     // Close all task resources (worker, queue, events) via task.close()
     const taskClosePromises = Object.values(this.taskGroups).flatMap((group) =>
-      Array.from(group.getTasks().values()).map((task) => task.close())
+      Array.from(group.getTasks().values()).map((task) => task.queue.close())
     );
     closePromises.push(...taskClosePromises);
 

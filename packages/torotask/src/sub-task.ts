@@ -61,7 +61,7 @@ export class SubTask<
       payload,
     };
     // Call parent task's public helper method directly
-    return this.parentTask.add(this.name, data, finalOptions);
+    return this.parentTask.queue.add(this.name, data, finalOptions);
   }
 
   async processSubJob(job: TaskJob<PayloadType, ResultType>, jobName: string, jobLogger: Logger): Promise<any> {
@@ -75,7 +75,7 @@ export class SubTask<
       subTaskName: this.name,
       job: job as any,
       step: stepExecutor,
-      queue: this.parentTask,
+      queue: this.parentTask.queue,
     };
     try {
       return await this.handler(handlerOptions, handlerContext);
@@ -102,6 +102,6 @@ export class SubTask<
       ...overrideOptions,
     };
     // Call parent task's public helper method directly
-    return this.parentTask._runJobAndWait(this.name, data, finalOptions);
+    return this.parentTask.queue._runJobAndWait(this.name, data, finalOptions);
   }
 }

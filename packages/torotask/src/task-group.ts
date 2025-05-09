@@ -126,7 +126,7 @@ export class TaskGroup {
 
     tasksToStart.forEach(async (task) => {
       try {
-        await task.startWorker(workerOptions);
+        await task.queue.startWorker(workerOptions);
       } catch (error) {
         this.logger.error({ taskName: task.name, err: error }, 'Error starting worker for task');
         // Continue starting other workers
@@ -159,7 +159,7 @@ export class TaskGroup {
     }
 
     const stopPromises = tasksToStop.map((task) =>
-      task.stopWorker().catch((error) => {
+      task.queue.stopWorker().catch((error) => {
         this.logger.error({ taskName: task.name, err: error }, 'Error stopping worker for task');
         // Continue stopping other workers, do not reject Promise.all
       })
