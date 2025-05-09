@@ -3,17 +3,19 @@ import { ToroTask } from './client.js';
 import { TaskJob } from './job.js';
 import { TaskQueueEvents } from './queue-events.js';
 import { TaskQueue } from './queue.js';
-import type { TaskJobData, TaskWorkerQueueOptions, TaskWorkerOptions, WorkerEventHandlers } from './types/index.js';
-import type { TaskWorkerQueueListener } from './types/index.js'; // Adjust path if needed
+import type {
+  TaskWorkerQueueListener,
+  TaskWorkerQueueOptions,
+  TaskWorkerOptions,
+  WorkerEventHandlers,
+} from './types/index.js';
 import { TaskWorker } from './worker.js';
 
-export class TaskWorkerQueue<
-  PayloadType = any,
-  ResultType = any,
-  NameType extends string = string,
-  const DataType extends TaskJobData = TaskJobData<PayloadType>,
-  const JobType extends TaskJob<PayloadType, ResultType, NameType> = TaskJob<PayloadType, ResultType, NameType>,
-> extends TaskQueue<PayloadType, ResultType, NameType> {
+export class TaskWorkerQueue<PayloadType = any, ResultType = any, NameType extends string = string> extends TaskQueue<
+  PayloadType,
+  ResultType,
+  NameType
+> {
   /**
    * @deprecated Use `queueName` instead. This property holds the queue name for internal BullMQ compatibility.
    */
@@ -21,14 +23,14 @@ export class TaskWorkerQueue<
   public readonly queueName: string;
 
   public readonly queueEvents: TaskQueueEvents;
-  protected worker?: TaskWorker<PayloadType, ResultType>;
+  protected worker?: TaskWorker<PayloadType, ResultType, NameType> | undefined;
   // Store listeners to remove them later
   private workerEventHandlers: Partial<WorkerEventHandlers<PayloadType, ResultType, NameType>> = {};
 
   constructor(
     taskClient: ToroTask,
     queueName: string,
-    public options?: Partial<TaskWorkerQueueOptions<DataType, ResultType>>
+    public options?: Partial<TaskWorkerQueueOptions<PayloadType, ResultType, NameType>>
   ) {
     const { processor, ...queueOptions } = options ?? {};
     super(taskClient, queueName, queueOptions);
@@ -44,7 +46,7 @@ export class TaskWorkerQueue<
    * @param job The BullMQ job object.
    * @returns A promise that resolves with the result of the job.
    */
-  process(_job: JobType, _token?: string): Promise<ResultType> {
+  process(_job: TaskJob<PayloadType, ResultType, NameType>, _token?: string): Promise<ResultType> {
     // This method should be implemented by subclasses
     throw new Error('process method not implemented');
   }
@@ -57,7 +59,7 @@ export class TaskWorkerQueue<
    * Starts a dedicated BullMQ Worker for this queue, if one is not already running.
    * Forwards worker events to this BaseQueue instance, prefixing them with 'worker:'.
    */
-  async startWorker(options?: TaskWorkerOptions): Promise<TaskWorker<PayloadType, ResultType>> {
+  async startWorker(options?: TaskWorkerOptions): Promise<TaskWorker<PayloadType, ResultType, NameType>> {
     if (this.worker) {
       this.logger.warn('Worker already started for this queue. Returning existing instance.');
       return this.worker;
@@ -72,10 +74,10 @@ export class TaskWorkerQueue<
 
     this.logger.info({ workerOptions: mergedOptions }, 'Starting worker');
 
-    const newWorker = new TaskWorker<PayloadType, ResultType>(
+    const newWorker = new TaskWorker<PayloadType, ResultType, NameType>(
       this.taskClient,
       this.queueName,
-      this.options?.processor ?? (async (job, token) => this.process(job as any, token)),
+      this.options?.processor ?? this.process.bind(this),
       mergedOptions
     );
 

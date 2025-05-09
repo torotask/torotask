@@ -10,7 +10,6 @@ export class TaskWorker<
   PayloadType = any,
   ResultType = unknown,
   NameType extends string = string,
-  const DataType extends TaskJobData = TaskJobData<PayloadType>,
   const JobType extends TaskJob<PayloadType, ResultType, NameType> = TaskJob<PayloadType, ResultType, NameType>,
 > extends Worker<TaskJobData<PayloadType>, ResultType, NameType> {
   public readonly logger: Logger;
@@ -29,7 +28,7 @@ export class TaskWorker<
   constructor(
     public readonly taskClient: ToroTask,
     name: string,
-    processor?: string | URL | null | TaskProcessor<DataType, ResultType, string>,
+    processor?: string | URL | null | TaskProcessor<PayloadType, ResultType, NameType>,
     options?: Partial<TaskWorkerOptions>
   ) {
     if (!taskClient) {

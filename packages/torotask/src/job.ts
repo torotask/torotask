@@ -1,6 +1,5 @@
 import { Job, MinimalQueue } from 'bullmq';
 import { Logger } from 'pino';
-import { BaseTask } from './base-task.js';
 import type { TaskJobData, TaskJobOptions, TaskJobState } from './types/index.js';
 import { TaskQueue } from './queue.js';
 import { ToroTask } from './client.js';
@@ -13,7 +12,6 @@ export class TaskJob<
   const StateType = TaskJobState,
 > extends Job<DataType, ReturnType, NameType> {
   public logger?: Logger;
-  public task?: BaseTask<typeof this.data, ReturnType>;
   public taskClient?: ToroTask;
   public taskQueue?: TaskQueue;
   /**
