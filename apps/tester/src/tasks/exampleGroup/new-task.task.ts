@@ -1,4 +1,4 @@
-import { defineTask } from '@torotask/client';
+import { defineTask } from 'torotask';
 
 // Define the data type the handler expects
 interface SayHelloData {

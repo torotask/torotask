@@ -1,4 +1,4 @@
-import { TaskServer } from '@torotask/client';
+import { TaskServer } from 'torotask';
 import path from 'path';
 import { pino } from 'pino';
 import { fileURLToPath } from 'url'; // Make sure this import is present

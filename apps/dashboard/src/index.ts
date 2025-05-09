@@ -1,5 +1,5 @@
 import express from 'express';
-import { ToroTaskClient } from '@torotask/client';
+import { ToroTaskClient } from 'torotask';
 import { createBullBoard } from '@bull-board/api';
 import { BullMQAdapter } from '@bull-board/api/bullMQAdapter.js';
 import { ExpressAdapter } from '@bull-board/express';
