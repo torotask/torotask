@@ -1,5 +1,5 @@
 import { JobProgress, QueueBase } from 'bullmq';
-import { ToroTaskClient } from './client.js';
+import { ToroTask } from './client.js';
 import { TaskJob } from './job.js';
 import { TaskQueueEvents } from './queue-events.js';
 import { TaskQueue } from './queue.js';
@@ -24,7 +24,7 @@ export abstract class TaskWorkerQueue<
   // Store listeners to remove them later
   private workerEventHandlers: Partial<WorkerEventHandlers<PayloadType, ResultType, NameType>> = {};
 
-  constructor(taskClient: ToroTaskClient, queueName: string, options?: Partial<TaskQueueOptions>) {
+  constructor(taskClient: ToroTask, queueName: string, options?: Partial<TaskQueueOptions>) {
     super(taskClient, queueName, options);
     this.name = queueName;
     this.queueName = queueName;

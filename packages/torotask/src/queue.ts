@@ -1,6 +1,6 @@
 import { Queue, QueueOptions, JobsOptions, Job } from 'bullmq'; // Import JobsOptions
 import { Logger } from 'pino';
-import { ToroTaskClient } from './client.js';
+import { ToroTask } from './client.js';
 import type { BulkJob, TaskJobData, TaskJobOptions, TaskQueueOptions } from './types/index.js';
 import { TaskJob } from './job.js';
 
@@ -13,7 +13,7 @@ export class TaskQueue<
   public readonly logger: Logger;
 
   constructor(
-    public readonly taskClient: ToroTaskClient,
+    public readonly taskClient: ToroTask,
     name: string,
     options?: Partial<TaskQueueOptions>
   ) {

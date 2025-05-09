@@ -1,6 +1,6 @@
 import type { WorkerOptions } from 'bullmq';
 import { Logger } from 'pino';
-import type { ToroTaskClient } from './client.js';
+import type { ToroTask } from './client.js';
 import { Task } from './task.js';
 import type {
   BulkTaskGroupRun,
@@ -16,13 +16,13 @@ import type {
  */
 export class TaskGroup {
   public readonly name: string;
-  public readonly client: ToroTaskClient;
+  public readonly client: ToroTask;
   public readonly logger: Logger;
   private readonly tasks: Map<string, Task<any, any>> = new Map();
 
-  constructor(client: ToroTaskClient, name: string, parentLogger: Logger) {
+  constructor(client: ToroTask, name: string, parentLogger: Logger) {
     if (!client) {
-      throw new Error('ToroTaskClient instance is required.');
+      throw new Error('ToroTask instance is required.');
     }
     if (!name) {
       throw new Error('TaskGroup name is required.');

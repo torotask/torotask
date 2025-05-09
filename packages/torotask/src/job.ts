@@ -3,7 +3,7 @@ import { Logger } from 'pino';
 import { BaseTask } from './base-task.js';
 import type { TaskJobData, TaskJobOptions, TaskJobState } from './types/index.js';
 import { TaskQueue } from './queue.js';
-import { ToroTaskClient } from './client.js';
+import { ToroTask } from './client.js';
 import { Task } from './task.js';
 
 export class TaskJob<
@@ -15,7 +15,7 @@ export class TaskJob<
 > extends Job<DataType, ReturnType, NameType> {
   public logger?: Logger;
   public task?: BaseTask<typeof this.data, ReturnType>;
-  public taskClient?: ToroTaskClient;
+  public taskClient?: ToroTask;
   public taskQueue?: TaskQueue;
   /**
    * The array of real TaskJob instances that constitute a batch.

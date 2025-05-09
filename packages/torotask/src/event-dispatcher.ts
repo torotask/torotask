@@ -1,6 +1,6 @@
 import type { WorkerOptions } from 'bullmq'; // Added missing imports
 import type { Logger } from 'pino';
-import type { ToroTaskClient } from './client.js'; // Assuming client path
+import type { ToroTask } from './client.js'; // Assuming client path
 import { EventManager } from './event-manager.js';
 import type { TaskJob } from './job.js';
 import type { Task } from './task.js'; // Assuming task path
@@ -25,7 +25,7 @@ export class EventDispatcher extends TaskWorkerQueue<PayloadType, ReturnType> {
   private setActiveEventsDebounced: () => void;
   private setActiveEventsTimeout: NodeJS.Timeout | null = null;
 
-  constructor(taskClient: ToroTaskClient, parentLogger: Logger, name: string = DEFAULT_EVENT_QUEUE_NAME) {
+  constructor(taskClient: ToroTask, parentLogger: Logger, name: string = DEFAULT_EVENT_QUEUE_NAME) {
     const logger = parentLogger.child({ service: 'EventDispatcher', queue: name });
     super(taskClient, name, { logger });
     this.manager = new EventManager(taskClient, parentLogger);

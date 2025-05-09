@@ -1,11 +1,11 @@
 import { FlowProducer, Job } from 'bullmq';
-import { ToroTaskClient } from './client.js';
+import { ToroTask } from './client.js';
 import type { TaskQueueOptions } from './types/index.js';
 import { TaskJob } from './job.js';
 
 export class TaskWorkflow extends FlowProducer {
   constructor(
-    public readonly taskClient: ToroTaskClient,
+    public readonly taskClient: ToroTask,
     options?: Partial<TaskQueueOptions>
   ) {
     options = options || {};

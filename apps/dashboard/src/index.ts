@@ -1,5 +1,5 @@
 import express from 'express';
-import { ToroTaskClient } from 'torotask';
+import { ToroTask } from 'torotask';
 import { createBullBoard } from '@bull-board/api';
 import { BullMQAdapter } from '@bull-board/api/bullMQAdapter.js';
 import { ExpressAdapter } from '@bull-board/express';
@@ -19,7 +19,7 @@ export const logger = pino({
 });
 
 async function main() {
-  const client = new ToroTaskClient({ logger });
+  const client = new ToroTask({ logger });
 
   const serverAdapter = new ExpressAdapter();
   serverAdapter.setBasePath('/admin/queues');

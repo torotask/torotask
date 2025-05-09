@@ -1,5 +1,5 @@
 import type { Logger } from 'pino';
-import type { ToroTaskClient } from '../client.js'; // Assuming client export is in client.ts
+import type { ToroTask } from '../client.js'; // Assuming client export is in client.ts
 import type { TaskGroup } from '../task-group.js';
 import type { Prettify } from './utils.js';
 import type { Task } from '../task.js';
@@ -34,7 +34,7 @@ export interface TaskHandlerOptions<PayloadType = any> {
 
 export interface BaseHandlerContext<PayloadType = any, ResultType = any> {
   logger: Logger; // Job-specific logger
-  client: ToroTaskClient;
+  client: ToroTask;
   group: TaskGroup;
   queue: TaskQueue<PayloadType, ResultType>;
 }

@@ -16,7 +16,7 @@ const BASE_PREFIX = 'torotask';
 const QUEUE_PREFIX = 'tasks';
 
 /** BullMQ Client Options using intersection */
-export type ToroTaskClientOptions = Partial<BullMQConnectionOptions> & {
+export type ToroTaskOptions = Partial<BullMQConnectionOptions> & {
   /**
    * A Pino logger instance or configuration options for creating one.
    * If not provided, a default logger will be created.
@@ -40,7 +40,7 @@ export interface WorkerFilter {
 /**
  * A client class to manage BullMQ connection settings, TaskGroups, and an EventDispatcher.
  */
-export class ToroTaskClient {
+export class ToroTask {
   public readonly connectionOptions: ConnectionOptions;
   public readonly logger: Logger;
   public readonly prefix: string;
@@ -54,7 +54,7 @@ export class ToroTaskClient {
     5 * 60_000 // TTL in ms (default: 5 minutes)
   );
 
-  constructor(options?: ToroTaskClientOptions) {
+  constructor(options?: ToroTaskOptions) {
     const { env, logger, loggerName, prefix, queuePrefix, queueTTL, ...connectionOpts } = options || {};
 
     const toroTaskEnvConfig = getConfigFromEnv('TOROTASK_REDIS_', env);
@@ -71,7 +71,7 @@ export class ToroTaskClient {
     this.logger = (logger ?? pino()).child({ name: loggerName ?? LOGGER_NAME });
     this.prefix = prefix || BASE_PREFIX;
     this.queuePrefix = [this.prefix, queuePrefix || QUEUE_PREFIX].join(':');
-    this.logger.debug('ToroTaskClient initialized');
+    this.logger.debug('ToroTask initialized');
   }
 
   /**
@@ -454,7 +454,7 @@ export class ToroTaskClient {
    * Closes all managed TaskGroups, their Tasks, the EventDispatcher, Queues and redis gracefully.
    */
   async close(): Promise<void> {
-    this.logger.info('Closing ToroTaskClient resources (Tasks, TaskGroups, EventDispatcher)...');
+    this.logger.info('Closing ToroTask resources (Tasks, TaskGroups, EventDispatcher)...');
     const closePromises: Promise<void>[] = [];
 
     // Close all task resources (worker, queue, events) via task.close()
@@ -482,7 +482,7 @@ export class ToroTaskClient {
       await this.redis.quit();
       this.logger.info('All managed resources (tasks, event dispatcher, queues, redis) closed.');
     } catch (error) {
-      this.logger.error({ err: error }, 'Error during ToroTaskClient resource closure.');
+      this.logger.error({ err: error }, 'Error during ToroTask resource closure.');
       // Potentially re-throw or handle aggregate error
     }
   }

@@ -5,7 +5,7 @@ import { WorkerOptions } from 'bullmq';
 import { glob } from 'glob';
 import { type DestinationStream, type Logger, type LoggerOptions, pino } from 'pino';
 import type { TaskConfig, TaskServerOptions, TaskTrigger } from './types/index.js';
-import { ToroTaskClient, WorkerFilter } from './client.js';
+import { ToroTask, WorkerFilter } from './client.js';
 import { TaskGroup } from './task-group.js';
 import { EventDispatcher } from './event-dispatcher.js';
 
@@ -17,7 +17,7 @@ const LOGGER_NAME = 'TaskServer';
  * Provides features like centralized worker start/stop and optional global error handling.
  */
 export class TaskServer {
-  public readonly client: ToroTaskClient;
+  public readonly client: ToroTask;
   public readonly logger: Logger;
   private readonly rootDir?: string;
   private readonly options: Required<Pick<TaskServerOptions, 'handleGlobalErrors'>>;
@@ -67,14 +67,14 @@ export class TaskServer {
     if (options.client) {
       this.client = options.client;
       this.ownClient = false;
-      this.logger.debug('Using provided ToroTaskClient instance.');
+      this.logger.debug('Using provided ToroTask instance.');
     } else if (options.clientOptions) {
-      this.client = new ToroTaskClient({
+      this.client = new ToroTask({
         ...options.clientOptions,
-        logger: options.clientOptions.logger ?? this.logger.child({ component: 'ToroTaskClient' }),
+        logger: options.clientOptions.logger ?? this.logger.child({ component: 'ToroTask' }),
       });
       this.ownClient = true;
-      this.logger.debug('Created new ToroTaskClient instance.');
+      this.logger.debug('Created new ToroTask instance.');
     } else {
       throw new Error('TaskServer requires either a `client` instance or `clientOptions`.');
     }
@@ -102,7 +102,7 @@ export class TaskServer {
       if (group.client !== this.client) {
         this.logger.warn(
           { groupName: group.name },
-          'TaskGroup added was created with a different ToroTaskClient instance. This may cause issues.'
+          'TaskGroup added was created with a different ToroTask instance. This may cause issues.'
         );
       }
       this.logger.debug({ groupName: group.name }, 'Adding TaskGroup');
@@ -342,8 +342,8 @@ export class TaskServer {
 
     // Optionally close the client if we created it
     if (this.ownClient) {
-      this.logger.debug('Closing internally created ToroTaskClient.');
-      this.logger.debug('Closing internally created ToroTaskClient.');
+      this.logger.debug('Closing internally created ToroTask.');
+      this.logger.debug('Closing internally created ToroTask.');
       await this.client.close();
     }
     this.logger.info('TaskServer stopped.');

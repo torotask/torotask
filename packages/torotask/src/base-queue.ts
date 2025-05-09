@@ -1,7 +1,7 @@
 import { Queue, QueueEvents, Worker, WorkerOptions, Job, ConnectionOptions, BulkJobOptions } from 'bullmq';
 import { EventEmitter } from 'events';
 import { Logger } from 'pino';
-import type { ToroTaskClient } from './client.js';
+import type { ToroTask } from './client.js';
 import { BulkJob, TaskJobOptions } from './types/index.js';
 
 /**
@@ -15,7 +15,7 @@ export abstract class BaseQueue extends EventEmitter {
   // Static registry of all BaseQueue instances, keyed by queueName
   public static readonly instances: Map<string, BaseQueue> = new Map();
 
-  public readonly client: ToroTaskClient;
+  public readonly client: ToroTask;
   public readonly queueName: string;
   public readonly prefix: string;
   public readonly queue: Queue;
@@ -25,7 +25,7 @@ export abstract class BaseQueue extends EventEmitter {
   // Store listeners to remove them later
   private workerEventHandlers: Record<string, (...args: any[]) => void> = {};
 
-  constructor(client: ToroTaskClient, queueName: string, parentLogger: Logger, prefix?: string) {
+  constructor(client: ToroTask, queueName: string, parentLogger: Logger, prefix?: string) {
     super();
     if (!client) {
       throw new Error('ToroTask instance is required.');

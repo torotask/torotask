@@ -1,6 +1,6 @@
 import { WorkerOptions } from 'bullmq';
 import type { Logger } from 'pino';
-import type { ToroTaskClient } from './client.js';
+import type { ToroTask } from './client.js';
 import { EventSubscriptions } from './event-subscriptions.js';
 import { TaskJob } from './job.js';
 import type { EventSubscriptionInfo, SyncJobPayload, SyncJobReturn, TaskJobOptions } from './types/index.js';
@@ -20,9 +20,9 @@ export class EventManager extends TaskWorkerQueue<PayloadType, ReturnType> {
   public readonly subscriptions: EventSubscriptions;
   public readonly prefix: string;
 
-  // Update constructor signature to accept ToroTaskClient
+  // Update constructor signature to accept ToroTask
   constructor(
-    taskClient: ToroTaskClient, // Accept ToroTaskClient
+    taskClient: ToroTask, // Accept ToroTask
     parentLogger: Logger,
     name: string = SYNC_QUEUE_NAME,
     prefix?: string,
@@ -33,7 +33,7 @@ export class EventManager extends TaskWorkerQueue<PayloadType, ReturnType> {
     super(taskClient, name, { logger, prefix });
 
     this.prefix = prefix;
-    // Instantiate repository if not provided, passing Redis client and prefix from ToroTaskClient
+    // Instantiate repository if not provided, passing Redis client and prefix from ToroTask
     this.subscriptions = subscriptions || new EventSubscriptions(taskClient.redis, prefix, logger);
   }
 

@@ -1,7 +1,7 @@
 import type { Job, WorkerOptions } from 'bullmq';
 import { Worker } from 'bullmq'; // Keep Worker import for extends
 import type { Logger } from 'pino';
-import type { ToroTaskClient } from './client.js';
+import type { ToroTask } from './client.js';
 import type { TaskWorkerOptions, TaskProcessor, TaskJobData } from './types/index.js';
 import { TaskJob } from './job.js';
 
@@ -27,7 +27,7 @@ export class TaskWorker<
   private batchTimeoutTimer: NodeJS.Timeout | null = null;
 
   constructor(
-    public readonly taskClient: ToroTaskClient,
+    public readonly taskClient: ToroTask,
     name: string,
     processor?: string | URL | null | TaskProcessor<DataType, ResultType, string>,
     options?: Partial<TaskWorkerOptions>
