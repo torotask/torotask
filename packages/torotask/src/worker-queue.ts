@@ -3,14 +3,15 @@ import { ToroTask } from './client.js';
 import { TaskJob } from './job.js';
 import { TaskQueueEvents } from './queue-events.js';
 import { TaskQueue } from './queue.js';
-import type { TaskQueueOptions, TaskWorkerOptions, WorkerEventHandlers } from './types/index.js';
+import type { TaskJobData, TaskWorkerQueueOptions, TaskWorkerOptions, WorkerEventHandlers } from './types/index.js';
 import type { TaskWorkerQueueListener } from './types/index.js'; // Adjust path if needed
 import { TaskWorker } from './worker.js';
 
-export abstract class TaskWorkerQueue<
+export class TaskWorkerQueue<
   PayloadType = any,
   ResultType = any,
   NameType extends string = string,
+  const DataType extends TaskJobData = TaskJobData<PayloadType>,
   const JobType extends TaskJob<PayloadType, ResultType, NameType> = TaskJob<PayloadType, ResultType, NameType>,
 > extends TaskQueue<PayloadType, ResultType, NameType> {
   /**
@@ -24,21 +25,29 @@ export abstract class TaskWorkerQueue<
   // Store listeners to remove them later
   private workerEventHandlers: Partial<WorkerEventHandlers<PayloadType, ResultType, NameType>> = {};
 
-  constructor(taskClient: ToroTask, queueName: string, options?: Partial<TaskQueueOptions>) {
-    super(taskClient, queueName, options);
+  constructor(
+    taskClient: ToroTask,
+    queueName: string,
+    public options?: Partial<TaskWorkerQueueOptions<DataType, ResultType>>
+  ) {
+    const { processor, ...queueOptions } = options ?? {};
+    super(taskClient, queueName, queueOptions);
     this.name = queueName;
     this.queueName = queueName;
     this.queueEvents = new TaskQueueEvents(taskClient, this.queueName);
   }
 
   /**
-   * Abstract method to process a job.
+   * Method to process a job.
    * Subclasses must implement this method to define the job handling logic.
    *
    * @param job The BullMQ job object.
    * @returns A promise that resolves with the result of the job.
    */
-  abstract process(job: JobType, token?: string): Promise<ResultType>;
+  process(_job: JobType, _token?: string): Promise<ResultType> {
+    // This method should be implemented by subclasses
+    throw new Error('process method not implemented');
+  }
 
   getWorkerOptions(): Partial<TaskWorkerOptions> {
     return {};
@@ -66,7 +75,7 @@ export abstract class TaskWorkerQueue<
     const newWorker = new TaskWorker<PayloadType, ResultType>(
       this.taskClient,
       this.queueName,
-      async (job, token) => this.process(job as any, token),
+      this.options?.processor ?? (async (job, token) => this.process(job as any, token)),
       mergedOptions
     );
 

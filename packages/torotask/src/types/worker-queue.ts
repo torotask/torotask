@@ -1,7 +1,12 @@
 import type { JobProgress, QueueListener, WorkerListener } from 'bullmq'; // Assuming these are accessible
 import type { TaskJob } from '../job.js'; // Your specific Job type
 import type { TaskJobData } from './job.js';
+import type { TaskQueueOptions } from './queue.js';
+import type { TaskProcessor } from './worker.js';
 
+export type TaskWorkerQueueOptions<PayloadType = any, ResultType = any> = TaskQueueOptions & {
+  processor?: string | URL | null | TaskProcessor<PayloadType, ResultType, string>;
+};
 // Combine Queue and Worker listeners with prefixing for worker events
 export interface TaskWorkerQueueListener<
   PayloadType = any,

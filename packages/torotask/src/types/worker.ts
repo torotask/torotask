@@ -17,7 +17,7 @@ export type TaskWorkerOptions = WorkerOptions & {
   batch?: TaskWorkerBatchOptions;
 };
 
-export type TaskProcessor<PayloadType = any, ResultType = any, NameType extends string = string> = (
-  job: TaskJob<PayloadType, ResultType, NameType>,
+export type TaskProcessor<DataType = any, ResultType = any, NameType extends string = string> = (
+  job: TaskJob<DataType, ResultType, NameType>,
   token?: string
 ) => Promise<ResultType>;
