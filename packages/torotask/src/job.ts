@@ -4,7 +4,6 @@ import { BaseTask } from './base-task.js';
 import type { TaskJobData, TaskJobOptions, TaskJobState } from './types/index.js';
 import { TaskQueue } from './queue.js';
 import { ToroTask } from './client.js';
-import { Task } from './task.js';
 
 export class TaskJob<
   PayloadType = any,
@@ -35,9 +34,6 @@ export class TaskJob<
       this.taskQueue = queue;
       this.logger = queue.logger.child({ taskRun: this.name, taskId: this.id });
       this.taskClient = queue.taskClient;
-    }
-    if (queue instanceof Task) {
-      this.task = queue;
     }
     this.batch = [];
   }

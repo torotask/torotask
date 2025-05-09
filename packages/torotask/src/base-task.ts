@@ -17,6 +17,7 @@ import type {
   TaskWorkerOptions,
   TaskJobData,
   TaskWorkerQueueOptions,
+  TaskWorkerQueueListener,
 } from './types/index.js';
 import { TaskWorkerQueue } from './worker-queue.js';
 import EventEmitter from 'node:events';
@@ -40,6 +41,8 @@ type InternalTaskTriggerEvent<PayloadType> = TaskTriggerEvent<PayloadType> & {
 export abstract class BaseTask<
   PayloadType = any,
   ResultType = any,
+  NameType extends string = string,
+  DataType extends TaskJobData<PayloadType> = TaskJobData<PayloadType>,
   TOptions extends TaskOptions = TaskOptions,
 > extends EventEmitter {
   public taskClient: ToroTask;
@@ -92,6 +95,27 @@ export abstract class BaseTask<
     // Initialize triggers and internal maps
     this._initializeTriggers(trigger);
 
+    // Relay events from the worker queue
+    const eventNames = this.queue.eventNames(); // eventNames is (string | symbol)[]
+    for (const eventNameSymbol of eventNames) {
+      if (typeof eventNameSymbol === 'string') {
+        const eventName = eventNameSymbol; // eventName is now a string
+        // Cast eventName to the specific keyof TaskWorkerQueueListener with full generic arguments
+        this.queue.on(
+          eventName as keyof TaskWorkerQueueListener<PayloadType, ResultType, NameType, DataType>,
+          (...args: any[]) => {
+            // This will now call the strongly-typed emit below
+            this.emit(
+              eventName as keyof TaskWorkerQueueListener<PayloadType, ResultType, NameType, DataType>,
+              ...(args as any) // Cast args for the strongly-typed emit
+            );
+          }
+        );
+      }
+      // Symbol-based events are not relayed by this loop for now.
+      // If needed, TaskWorkerQueueListener and this logic would need to account for them.
+    }
+
     this.queue.on('worker:ready', () => {
       this.logger.debug('Task is ready. Requesting trigger synchronization...');
       // Request sync instead of running it directly
@@ -99,6 +123,10 @@ export abstract class BaseTask<
         this.logger.error({ err }, 'Error requesting initial trigger synchronization')
       );
     });
+  }
+
+  public get queueName(): string {
+    return this.queue.queueName;
   }
 
   getWorkerOptions(): Partial<TaskWorkerOptions> {
@@ -445,5 +473,39 @@ export abstract class BaseTask<
     );
 
     // No longer need to clean _registeredEventTriggers here, manager handles state comparison
+  }
+
+  // --- Event Emitter Signatures ---
+  // Typed to match TaskWorkerQueueListener as BaseTask relays these events.
+
+  emit<U extends keyof TaskWorkerQueueListener<PayloadType, ResultType, NameType, DataType>>(
+    event: U,
+    ...args: Parameters<TaskWorkerQueueListener<PayloadType, ResultType, NameType, DataType>[U]>
+  ): boolean {
+    return super.emit(event, ...args);
+  }
+
+  on<U extends keyof TaskWorkerQueueListener<PayloadType, ResultType, NameType, DataType>>(
+    event: U,
+    listener: TaskWorkerQueueListener<PayloadType, ResultType, NameType, DataType>[U]
+  ): this {
+    super.on(event, listener);
+    return this;
+  }
+
+  off<U extends keyof TaskWorkerQueueListener<PayloadType, ResultType, NameType, DataType>>(
+    event: U,
+    listener: TaskWorkerQueueListener<PayloadType, ResultType, NameType, DataType>[U]
+  ): this {
+    super.off(event, listener);
+    return this;
+  }
+
+  once<U extends keyof TaskWorkerQueueListener<PayloadType, ResultType, NameType, DataType>>(
+    event: U,
+    listener: TaskWorkerQueueListener<PayloadType, ResultType, NameType, DataType>[U]
+  ): this {
+    super.once(event, listener);
+    return this;
   }
 }

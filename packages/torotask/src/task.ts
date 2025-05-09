@@ -10,6 +10,7 @@ import type {
   TaskHandlerOptions,
   TaskOptions,
   TaskTrigger,
+  TaskJobData,
 } from './types/index.js';
 import { TaskJob } from './job.js';
 import { StepExecutor } from './step-executor.js';
@@ -24,7 +25,13 @@ import { DelayedError, WaitingChildrenError } from 'bullmq';
  * @template T The expected type of the data payload for this task's main handler.
  * @template R The expected return type of the job associated with this task's main handler.
  */
-export class Task<PayloadType = any, ResultType = unknown> extends BaseTask<PayloadType, ResultType, TaskOptions> {
+export class Task<PayloadType = any, ResultType = unknown> extends BaseTask<
+  PayloadType,
+  ResultType,
+  string, // NameType
+  TaskJobData<PayloadType>, // DataType
+  TaskOptions // TOptions
+> {
   protected readonly subTasks: Map<string, SubTask<any, any>>;
   protected readonly allowCatchAll: boolean;
 
@@ -42,10 +49,6 @@ export class Task<PayloadType = any, ResultType = unknown> extends BaseTask<Payl
     this.allowCatchAll = this.options.allowCatchAll ?? true;
 
     this.logger.debug({ allowCatchAll: this.allowCatchAll, triggerCount: this.triggers.length }, 'Task initialized');
-  }
-
-  public get queueName(): string {
-    return this.queue.queueName;
   }
 
   defineSubTask<SubTaskPayloadType = PayloadType, SubTaskResultType = ResultType>(
