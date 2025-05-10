@@ -1,15 +1,16 @@
+import type { StringValue } from 'ms';
 import type { Logger } from 'pino';
+import type { ZodSchema } from 'zod';
 import type { ToroTask } from '../client.js'; // Assuming client export is in client.ts
-import type { TaskGroup } from '../task-group.js';
-import type { Prettify } from './utils.js';
-import type { Task } from '../task.js';
 import type { TaskJob } from '../job.js';
 import type { TaskQueue } from '../queue.js';
+import type { StepExecutor } from '../step-executor.js';
+import type { TaskGroup } from '../task-group.js';
+import type { Task } from '../task.js';
 import type { TaskJobOptions } from './job.js';
+import type { TaskQueueOptions } from './queue.js';
+import type { Prettify, SingleOrArray } from './utils.js';
 import type { TaskWorkerOptions } from './worker.js';
-import { StepExecutor } from '../step-executor.js';
-import { StringValue } from 'ms';
-import { TaskQueueOptions } from './queue.js';
 
 /**
  * Options for defining a Task, extending BullMQ's JobsOptions.
@@ -92,3 +93,11 @@ export type TaskTrigger<PayloadType = any> =
   | TaskTriggerEvent<PayloadType>
   | TaskTriggerCron<PayloadType>
   | TaskTriggerEvery<PayloadType>;
+
+export interface TaskDefinition<PayloadType = any, ResultType = unknown> {
+  name: string;
+  handler: TaskHandler<PayloadType, ResultType>;
+  options?: TaskOptions;
+  schema?: ZodSchema<PayloadType>;
+  triggers?: SingleOrArray<TaskTrigger<PayloadType>>;
+}

@@ -6,6 +6,7 @@ import type {
   BulkTaskGroupRun,
   BulkTaskRun,
   BulkTaskRunNode,
+  TaskDefinition,
   TaskHandler,
   TaskOptions,
   TaskTrigger,
@@ -47,20 +48,17 @@ export class TaskGroup {
    * @param config.handler The function to execute when the task runs.
    * @returns The created Task instance.
    */
-  createTask<PayloadType = any, ResultType = unknown>(config: {
-    name: string;
-    options?: TaskOptions | undefined;
-    triggers?: TaskTrigger<PayloadType> | TaskTrigger<PayloadType>[] | undefined;
-    handler: TaskHandler<PayloadType, ResultType>;
-  }): Task<PayloadType, ResultType> {
-    const { name, options, triggers, handler } = config;
+  createTask<PayloadType = any, ResultType = unknown>(
+    config: TaskDefinition<PayloadType, ResultType>
+  ): Task<PayloadType, ResultType> {
+    const { name } = config;
 
     if (this.tasks.has(name)) {
       this.logger.warn({ taskName: name }, 'Task already defined in this group. Overwriting.');
     }
 
     // Pass all parameters to Task constructor
-    const newTask = new Task<PayloadType, ResultType>(this, name, options, triggers, handler, this.logger);
+    const newTask = new Task<PayloadType, ResultType>(this, config, this.logger);
     this.tasks.set(name, newTask);
     this.logger.debug({ taskName: name }, 'Task defined');
     return newTask;

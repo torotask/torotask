@@ -1,20 +1,20 @@
+import { DelayedError, WaitingChildrenError } from 'bullmq';
 import type { Logger, P } from 'pino';
+import { z, type ZodSchema } from 'zod';
 import { BaseTask } from './base-task.js';
 import { SubTask } from './sub-task.js';
 import type { TaskGroup } from './task-group.js';
 import type {
-  SingleOrArray,
   SubTaskHandler,
+  TaskDefinition,
   TaskHandler,
   TaskHandlerContext,
   TaskHandlerOptions,
   TaskOptions,
-  TaskTrigger,
   TaskJobData,
 } from './types/index.js';
 import { TaskJob } from './job.js';
 import { StepExecutor } from './step-executor.js';
-import { DelayedError, WaitingChildrenError } from 'bullmq';
 
 /**
  * Represents a defined task associated with a TaskGroup.
@@ -34,17 +34,14 @@ export class Task<PayloadType = any, ResultType = unknown> extends BaseTask<
 > {
   protected readonly subTasks: Map<string, SubTask<any, any>>;
   protected readonly allowCatchAll: boolean;
+  protected handler: TaskHandler<PayloadType, ResultType>;
+  public readonly schema: ZodSchema<PayloadType> | undefined;
 
-  constructor(
-    taskGroup: TaskGroup,
-    name: string,
-    options: TaskOptions | undefined,
-    trigger: SingleOrArray<TaskTrigger<PayloadType>> | undefined,
-    protected handler: TaskHandler<PayloadType, ResultType>,
-    groupLogger: Logger
-  ) {
-    super(taskGroup, name, options ?? {}, trigger, groupLogger);
+  constructor(taskGroup: TaskGroup, config: TaskDefinition<PayloadType, ResultType>, groupLogger: Logger) {
+    super(taskGroup, config.name, config.options ?? {}, config.triggers, groupLogger);
 
+    this.handler = config.handler;
+    this.schema = config.schema;
     this.subTasks = new Map();
     this.allowCatchAll = this.options.allowCatchAll ?? true;
 
@@ -123,15 +120,39 @@ export class Task<PayloadType = any, ResultType = unknown> extends BaseTask<
   }
 
   async processJob(job: TaskJob<PayloadType, ResultType>, token?: string, jobLogger?: Logger): Promise<any> {
-    jobLogger = jobLogger ?? this.getJobLogger(job);
+    const effectiveJobLogger = jobLogger ?? this.getJobLogger(job);
+
+    let validatedPayload: PayloadType = job.payload;
+
+    if (this.schema) {
+      try {
+        validatedPayload = this.schema.parse(job.payload);
+        effectiveJobLogger.debug('Payload validated successfully.');
+      } catch (error) {
+        effectiveJobLogger.error(
+          {
+            err: error instanceof z.ZodError ? error.format() : error,
+            originalPayload: job.payload,
+          },
+          `Payload validation failed for job "${job.name}" (id: ${job.id})`
+        );
+        if (error instanceof z.ZodError) {
+          // Construct a more user-friendly error message
+          const messages = error.errors.map((e) => `${e.path.join('.') || 'payload'}: ${e.message}`);
+          throw new Error(`Payload validation failed: ${messages.join('; ')}`);
+        }
+        throw error; // Re-throw other errors
+      }
+    }
+
     const handlerOptions: TaskHandlerOptions<PayloadType> = {
       id: job.id,
       name: this.name,
-      payload: job.payload as any,
+      payload: validatedPayload,
     };
     const stepExecutor = new StepExecutor<TaskJob<PayloadType, ResultType>>(job);
     const handlerContext: TaskHandlerContext<PayloadType, ResultType> = {
-      logger: jobLogger,
+      logger: effectiveJobLogger,
       client: this.taskClient,
       group: this.group,
       task: this,
@@ -143,7 +164,7 @@ export class Task<PayloadType = any, ResultType = unknown> extends BaseTask<
     try {
       return await this.handler(handlerOptions, handlerContext);
     } catch (error) {
-      jobLogger.error(
+      effectiveJobLogger.error(
         { err: error instanceof Error ? error : new Error(String(error)) },
         `Job processing failed for job name "${job.name}"`
       );
