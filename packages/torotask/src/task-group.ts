@@ -10,6 +10,7 @@ import type {
   TaskHandler,
   TaskOptions,
   TaskTrigger,
+  ActualSchemaInputType,
 } from './types/index.js';
 
 /**
@@ -19,7 +20,8 @@ export class TaskGroup {
   public readonly name: string;
   public readonly client: ToroTask;
   public readonly logger: Logger;
-  private readonly tasks: Map<string, Task<any, any>> = new Map();
+  // Changed the type of the tasks map to allow any ActualSchemaInputType for the third generic
+  private readonly tasks: Map<string, Task<any, any, ActualSchemaInputType>> = new Map();
 
   constructor(client: ToroTask, name: string, parentLogger: Logger) {
     if (!client) {
@@ -41,6 +43,7 @@ export class TaskGroup {
    *
    * @template T Data type for the task. Default is `unknown`.
    * @template R Return type for the task. Default is `unknown`.
+   * @template SchemaVal extends ActualSchemaInputType
    * @param config The configuration object for the task.
    * @param config.name The name of the task (must be unique within the group).
    * @param config.options Optional default job options for this task.
@@ -48,20 +51,29 @@ export class TaskGroup {
    * @param config.handler The function to execute when the task runs.
    * @returns The created Task instance.
    */
-  createTask<PayloadType = any, ResultType = unknown>(
-    config: TaskDefinition<PayloadType, ResultType>
-  ): Task<PayloadType, ResultType> {
-    const { name } = config;
+  createTask<
+    PayloadExplicit = unknown, // Defaulting to unknown to align with TaskDefinition
+    ResultType = unknown,
+    SchemaVal extends ActualSchemaInputType = undefined, // Crucial generic for schema
+  >(config: TaskDefinition<PayloadExplicit, ResultType, SchemaVal>): Task<PayloadExplicit, ResultType, SchemaVal> {
+    // The config object itself (config) is already of the correct generic type
+    // TaskDefinition<PayloadExplicit, ResultType, SchemaVal>.
+    // Its 'schema' property is of type 'SchemaVal | undefined'.
 
-    if (this.tasks.has(name)) {
-      this.logger.warn({ taskName: name }, 'Task already defined in this group. Overwriting.');
+    const task = new Task<PayloadExplicit, ResultType, SchemaVal>(
+      this, // Pass the TaskGroup instance
+      config, // Pass the original config, Task constructor will handle it
+      this.logger.child({ task: config.name })
+    );
+
+    if (this.tasks.has(config.name)) {
+      this.logger.warn({ taskName: config.name }, 'Task already defined in this group. Overwriting.');
     }
 
-    // Pass all parameters to Task constructor
-    const newTask = new Task<PayloadType, ResultType>(this, config, this.logger);
-    this.tasks.set(name, newTask);
-    this.logger.debug({ taskName: name }, 'Task defined');
-    return newTask;
+    // This assignment is now type-safe because the map accepts Tasks with any ActualSchemaInputType
+    this.tasks.set(config.name, task);
+    this.logger.debug({ taskName: config.name }, 'Task defined');
+    return task;
   }
 
   /**
@@ -70,7 +82,8 @@ export class TaskGroup {
    * @param name The name of the task.
    * @returns The Task instance if found, otherwise undefined.
    */
-  getTask<PayloadType = any, ResultType = unknown>(name: string): Task<PayloadType, ResultType> | undefined {
+  // Updated return type to reflect that tasks in the map can have any schema.
+  getTask(name: string): Task<any, any, ActualSchemaInputType> | undefined {
     return this.tasks.get(name);
   }
 
@@ -79,7 +92,8 @@ export class TaskGroup {
    *
    * @returns A map of task names to Task instances.
    */
-  getTasks(): Map<string, Task<any, any>> {
+  // Updated return type for consistency.
+  getTasks(): Map<string, Task<any, any, ActualSchemaInputType>> {
     return this.tasks;
   }
 

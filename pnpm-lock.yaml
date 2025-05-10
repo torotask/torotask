@@ -90,6 +90,9 @@ importers:
       torotask:
         specifier: workspace:*
         version: link:../../packages/torotask
+      zod:
+        specifier: ^3.24.4
+        version: 3.24.4
     devDependencies:
       '@types/pino':
         specifier: ^7.0.5

@@ -1,5 +1,5 @@
 import type { Job } from 'bullmq';
-import { ZodSchema } from 'zod';
+import { type z, type ZodSchema } from 'zod';
 
 export type ExtractDataType<DataTypeOrJob, Default> = DataTypeOrJob extends Job<infer D, any, any> ? D : Default;
 export type ExtractResultType<DataTypeOrJob, Default> = DataTypeOrJob extends Job<any, infer R, any> ? R : Default;
@@ -17,18 +17,29 @@ export type IsStrictlyUnknown<T> = [T] extends [unknown]
     : false
   : false;
 
-// Helper to determine the effective payload type based on new precedence:
-// 1. ExplicitPayload (if not strictly unknown)
-// 2. Inferred from Schema (if ExplicitPayload is strictly unknown and Schema is provided)
-// 3. any (if ExplicitPayload is strictly unknown and no Schema is provided)
+// New utility types for schema input and resolution
+export type ActualSchemaInputType = ZodSchema | ((zInstance: typeof z) => ZodSchema) | undefined;
+
+export type ResolvedSchemaType<ASIT extends ActualSchemaInputType> = ASIT extends (zInstance: typeof z) => infer R // If it's a function returning R
+  ? R extends ZodSchema
+    ? R
+    : undefined // R must be a ZodSchema
+  : ASIT extends ZodSchema // If it's already a ZodSchema
+    ? ASIT
+    : undefined; // Otherwise (e.g., ASIT is undefined) it's undefined
+
+// EffectivePayloadType now uses a ResolvedSchema (which is ZodSchema | undefined)
 export type EffectivePayloadType<
   ExplicitPayload,
-  Schema extends ZodSchema | undefined,
+  ResolvedSch extends ZodSchema | undefined,
 > = IsStrictlyUnknown<ExplicitPayload> extends true
-  ? Schema extends ZodSchema<infer S>
+  ? ResolvedSch extends ZodSchema<infer S>
     ? S
-    : any // ExplicitPayload is unknown, try schema, then any
+    : any // Infer payload from resolved schema, or any
   : ExplicitPayload; // ExplicitPayload is not unknown (could be specific type or any), so use it
+
+// Type for the schema property in TaskDefinition, allowing a function that returns a schema
+export type SchemaInput<S extends ZodSchema | undefined = undefined> = S | ((zInstance: typeof z) => S);
 
 /**
  * Returns generic as either itself or an array of itself.
