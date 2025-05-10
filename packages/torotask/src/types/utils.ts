@@ -1,5 +1,4 @@
 import type { Job } from 'bullmq';
-import { type z, type ZodSchema } from 'zod';
 
 export type ExtractDataType<DataTypeOrJob, Default> = DataTypeOrJob extends Job<infer D, any, any> ? D : Default;
 export type ExtractResultType<DataTypeOrJob, Default> = DataTypeOrJob extends Job<any, infer R, any> ? R : Default;
@@ -16,30 +15,6 @@ export type IsStrictlyUnknown<T> = [T] extends [unknown]
       : false // `keyof unknown` is `never`, `keyof any` is `string | number | symbol`
     : false
   : false;
-
-// New utility types for schema input and resolution
-export type ActualSchemaInputType = ZodSchema | ((zInstance: typeof z) => ZodSchema) | undefined;
-
-export type ResolvedSchemaType<ASIT extends ActualSchemaInputType> = ASIT extends (zInstance: typeof z) => infer R // If it's a function returning R
-  ? R extends ZodSchema
-    ? R
-    : undefined // R must be a ZodSchema
-  : ASIT extends ZodSchema // If it's already a ZodSchema
-    ? ASIT
-    : undefined; // Otherwise (e.g., ASIT is undefined) it's undefined
-
-// EffectivePayloadType now uses a ResolvedSchema (which is ZodSchema | undefined)
-export type EffectivePayloadType<
-  ExplicitPayload,
-  ResolvedSch extends ZodSchema | undefined,
-> = IsStrictlyUnknown<ExplicitPayload> extends true
-  ? ResolvedSch extends ZodSchema<infer S>
-    ? S
-    : any // Infer payload from resolved schema, or any
-  : ExplicitPayload; // ExplicitPayload is not unknown (could be specific type or any), so use it
-
-// Type for the schema property in TaskDefinition, allowing a function that returns a schema
-export type SchemaInput<S extends ZodSchema | undefined = undefined> = S | ((zInstance: typeof z) => S);
 
 /**
  * Returns generic as either itself or an array of itself.

@@ -1,10 +1,12 @@
 import { DelayedError, WaitingChildrenError } from 'bullmq';
 import type { Logger } from 'pino';
-import { z, type ZodSchema } from 'zod'; // z is needed for resolving schema function
+import * as z from 'zod';
 import { BaseTask } from './base-task.js';
 import { SubTask } from './sub-task.js';
 import type { TaskGroup } from './task-group.js';
 import type {
+  EffectivePayloadType,
+  ResolvedSchemaType,
   SubTaskHandler,
   TaskDefinition,
   TaskHandler,
@@ -12,9 +14,9 @@ import type {
   TaskHandlerOptions,
   TaskOptions,
   TaskJobData,
+  SchemaHandler,
 } from './types/index.js';
 // Import new/updated utility types
-import type { ActualSchemaInputType, ResolvedSchemaType, EffectivePayloadType } from './types/utils.js';
 import { TaskJob } from './job.js';
 import { StepExecutor } from './step-executor.js';
 
@@ -33,7 +35,7 @@ import { StepExecutor } from './step-executor.js';
 export class Task<
   PayloadExplicit = unknown, // Default changed to unknown
   ResultType = unknown,
-  SchemaInputVal extends ActualSchemaInputType = undefined, // Task is generic over INPUT schema type
+  SchemaInputVal extends SchemaHandler = undefined, // Task is generic over INPUT schema type
 > extends BaseTask<
   EffectivePayloadType<PayloadExplicit, ResolvedSchemaType<SchemaInputVal>>, // BaseTask uses RESOLVED
   ResultType,
@@ -64,21 +66,12 @@ export class Task<
     // currently TaskDefinition handles the trigger's payload type.
     super(taskGroup, config.name, config.options ?? {}, config.triggers, groupLogger);
 
-    this.handler = config.handler; // config.handler is already correctly typed by TaskDefinition
+    this.handler = config.handler;
 
-    // Resolve and store the schema
-    let resolvedSchemaValue: ResolvedSchemaType<SchemaInputVal>;
-    if (typeof config.schema === 'function') {
-      // Ensure config.schema is not undefined if it's a function type that could itself be undefined.
-      // The ActualSchemaInputType allows config.schema to be undefined.
-      resolvedSchemaValue = config.schema
-        ? (config.schema(z) as ResolvedSchemaType<SchemaInputVal>)
-        : (undefined as ResolvedSchemaType<SchemaInputVal>);
-    } else {
-      // If config.schema is not a function, it's ZodSchema | undefined.
-      resolvedSchemaValue = config.schema as ResolvedSchemaType<SchemaInputVal>;
-    }
-    this.schema = resolvedSchemaValue;
+    // config.schema is now directly SchemaInputVal (which is ZodSchema | undefined)
+    // ResolvedSchemaType<SchemaInputVal> will correctly resolve this.
+    // So, this.schema (which is ResolvedSchemaType<SchemaInputVal>) can be directly assigned.
+    this.schema = config.schema as ResolvedSchemaType<SchemaInputVal>;
 
     this.subTasks = new Map();
     this.allowCatchAll = this.options.allowCatchAll ?? true;
@@ -98,8 +91,7 @@ export class Task<
     SubTaskResultType = ResultType,
   >(
     subTaskName: string,
-    // SubTaskHandler's 3rd generic (for schema) is 'undefined' as subtasks don't carry forward the parent's schema generic directly
-    subTaskHandler: any
+    subTaskHandler: SubTaskHandler<SubTaskPayloadType, SubTaskResultType>
   ): SubTask<SubTaskPayloadType, SubTaskResultType> {
     if (this.subTasks.has(subTaskName)) {
       this.logger.warn({ subTaskName }, 'SubTask already defined. Overwriting.');
@@ -187,7 +179,7 @@ export class Task<
       try {
         // Type assertion needed because this.schema is Schema (ZodSchema | undefined)
         // and parse expects `this` to be ZodSchema<CurrentPayloadType>
-        validatedPayload = (this.schema as ZodSchema<CurrentPayloadType>).parse(job.payload);
+        validatedPayload = (this.schema as z.ZodSchema<CurrentPayloadType>).parse(job.payload);
         effectiveJobLogger.debug('Payload validated successfully.');
       } catch (error) {
         effectiveJobLogger.error(

@@ -6,11 +6,11 @@ import type {
   BulkTaskGroupRun,
   BulkTaskRun,
   BulkTaskRunNode,
+  SchemaHandler,
   TaskDefinition,
   TaskHandler,
   TaskOptions,
   TaskTrigger,
-  ActualSchemaInputType,
 } from './types/index.js';
 
 /**
@@ -21,7 +21,7 @@ export class TaskGroup {
   public readonly client: ToroTask;
   public readonly logger: Logger;
   // Changed the type of the tasks map to allow any ActualSchemaInputType for the third generic
-  private readonly tasks: Map<string, Task<any, any, ActualSchemaInputType>> = new Map();
+  private readonly tasks: Map<string, Task<any, any, SchemaHandler>> = new Map();
 
   constructor(client: ToroTask, name: string, parentLogger: Logger) {
     if (!client) {
@@ -54,7 +54,7 @@ export class TaskGroup {
   createTask<
     PayloadExplicit = unknown, // Defaulting to unknown to align with TaskDefinition
     ResultType = unknown,
-    SchemaVal extends ActualSchemaInputType = undefined, // Crucial generic for schema
+    SchemaVal extends SchemaHandler = undefined, // Crucial generic for schema
   >(config: TaskDefinition<PayloadExplicit, ResultType, SchemaVal>): Task<PayloadExplicit, ResultType, SchemaVal> {
     // The config object itself (config) is already of the correct generic type
     // TaskDefinition<PayloadExplicit, ResultType, SchemaVal>.
@@ -83,7 +83,7 @@ export class TaskGroup {
    * @returns The Task instance if found, otherwise undefined.
    */
   // Updated return type to reflect that tasks in the map can have any schema.
-  getTask(name: string): Task<any, any, ActualSchemaInputType> | undefined {
+  getTask(name: string): Task<any, any, SchemaHandler> | undefined {
     return this.tasks.get(name);
   }
 
@@ -93,7 +93,7 @@ export class TaskGroup {
    * @returns A map of task names to Task instances.
    */
   // Updated return type for consistency.
-  getTasks(): Map<string, Task<any, any, ActualSchemaInputType>> {
+  getTasks(): Map<string, Task<any, any, SchemaHandler>> {
     return this.tasks;
   }
 

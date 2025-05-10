@@ -9,13 +9,8 @@ import type { TaskGroup } from '../task-group.js';
 import type { Task } from '../task.js';
 import type { TaskJobOptions } from './job.js';
 import type { TaskQueueOptions } from './queue.js';
-import type {
-  EffectivePayloadType,
-  Prettify,
-  SingleOrArray,
-  ActualSchemaInputType,
-  ResolvedSchemaType,
-} from './utils.js';
+import type { EffectivePayloadType, ResolvedSchemaType, SchemaHandler } from './schema.js';
+import type { Prettify, SingleOrArray } from './utils.js';
 import type { TaskWorkerOptions } from './worker.js';
 
 /**
@@ -103,16 +98,15 @@ export type TaskTrigger<PayloadType = unknown> =
 export interface TaskDefinition<
   PayloadExplicit = unknown,
   ResultType = unknown,
-  SchemaInputValue extends ActualSchemaInputType = undefined, // Generic is the INPUT type
+  SchemaInputValue extends SchemaHandler = undefined,
 > {
   name: string;
-  // TaskHandler's 3rd generic is the RESOLVED schema type
   handler: TaskHandler<
-    EffectivePayloadType<PayloadExplicit, ResolvedSchemaType<SchemaInputValue>>, // Payload uses resolved
+    EffectivePayloadType<PayloadExplicit, ResolvedSchemaType<SchemaInputValue>>,
     ResultType,
-    ResolvedSchemaType<SchemaInputValue> // Handler's schema generic is resolved
+    ResolvedSchemaType<SchemaInputValue>
   >;
   options?: TaskOptions;
-  schema?: SchemaInputValue; // Property is the direct input type
+  schema?: SchemaInputValue;
   triggers?: SingleOrArray<TaskTrigger<EffectivePayloadType<PayloadExplicit, ResolvedSchemaType<SchemaInputValue>>>>;
 }

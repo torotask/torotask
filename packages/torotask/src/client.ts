@@ -6,13 +6,7 @@ import { LRU } from 'tiny-lru';
 import { EventDispatcher } from './event-dispatcher.js';
 import { TaskQueue } from './queue.js';
 import { TaskGroup } from './task-group.js';
-import type {
-  ActualSchemaInputType,
-  BulkTaskRun,
-  BulkTaskRunChild,
-  BulkTaskRunNode,
-  TaskJobOptions,
-} from './types/index.js';
+import type { BulkTaskRun, BulkTaskRunChild, BulkTaskRunNode, SchemaHandler, TaskJobOptions } from './types/index.js';
 import { getConfigFromEnv } from './utils/get-config-from-env.js';
 import { TaskWorkflow } from './workflow.js';
 import type { Task } from './task.js';
@@ -154,13 +148,13 @@ export class ToroTask {
     name: string
     // The Task class is generic as Task<PayloadExplicit, ResultType, SchemaInputVal extends ActualSchemaInputType = undefined>
     // We need to ensure the SchemaInputVal part of the return type matches what group.getTask returns.
-  ): Task<PayloadType, ResultType, ActualSchemaInputType> | undefined {
+  ): Task<PayloadType, ResultType, SchemaHandler> | undefined {
     const group = this.getTaskGroup(groupName);
     if (!group) return undefined;
 
     // group.getTask(name) returns Task<any, any, ActualSchemaInputType> | undefined
     // We cast to the user-specified PayloadType and ResultType, while maintaining ActualSchemaInputType for the schema part.
-    return group.getTask(name) as Task<PayloadType, ResultType, ActualSchemaInputType> | undefined;
+    return group.getTask(name) as Task<PayloadType, ResultType, SchemaHandler> | undefined;
   }
 
   /**
@@ -172,7 +166,7 @@ export class ToroTask {
    */
   public getTaskByKey<PayloadType = any, ResultType = unknown>(
     taskKey: `${string}.${string}`
-  ): Task<PayloadType, ResultType, ActualSchemaInputType> | undefined {
+  ): Task<PayloadType, ResultType, SchemaHandler> | undefined {
     const [groupName, taskName] = taskKey.split('.');
     // The call to this.getTask will now correctly return Task<PayloadType, ResultType, ActualSchemaInputType> | undefined
     return this.getTask<PayloadType, ResultType>(groupName, taskName);
