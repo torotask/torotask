@@ -36,7 +36,7 @@ export class TaskGroup {
   }
 
   /**
-   * Defines a new Task within this group using a configuration object.
+   * Creates a new Task within this group using a configuration object.
    *
    * @template T Data type for the task. Default is `unknown`.
    * @template R Return type for the task. Default is `unknown`.
@@ -47,7 +47,7 @@ export class TaskGroup {
    * @param config.handler The function to execute when the task runs.
    * @returns The created Task instance.
    */
-  defineTask<PayloadType = any, ResultType = unknown>(config: {
+  createTask<PayloadType = any, ResultType = unknown>(config: {
     name: string;
     options?: TaskOptions | undefined;
     triggers?: TaskTrigger<PayloadType> | TaskTrigger<PayloadType>[] | undefined;

@@ -205,7 +205,7 @@ export class TaskServer {
         }
 
         const { name: _n, ...optionsToUse } = moduleToUse.options || {};
-        group.defineTask({
+        group.createTask({
           name: finalTaskName,
           options: optionsToUse,
           triggers: moduleToUse.triggers ?? moduleToUse.trigger,
