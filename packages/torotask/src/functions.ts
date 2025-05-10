@@ -1,25 +1,27 @@
-import type { TaskConfig } from './types/index.js';
+import type { SchemaHandler, TaskDefinition } from './types/index.js';
 import z, { ZodSchema } from 'zod';
 import * as zod from 'zod';
 export type ZodNamespace = typeof zod;
 /**
- * Factory function to create a valid TaskModule definition.
- * Simplifies the creation of task definition files.
+ * Factory function to create a valid TaskDefinition object.
+ * Simplifies the creation of task definition files by ensuring the handler is present
+ * and allowing for generic type inference.
  *
- * @template T Data type for the task handler.
- * @template R Return type for the task handler.
- * @param options Default job options for the task.
- * @param handler The task handler function.
- * @returns A TaskModule object.
+ * @template PayloadType The explicit type of the payload if no schema is provided or if overriding schema inference. Defaults to `unknown`.
+ * @template ResultType The return type of the task handler. Defaults to `unknown`.
+ * @template SchemaVal The type of the Zod schema provided in the configuration. Inferred from `config.schema`.
+ * @param config The task definition configuration object.
+ * @returns The validated TaskDefinition object.
+ * @throws Error if the handler function is not provided in the config.
  */
-export function defineTask<PayloadType = any, ResultType = any>(
-  config: TaskConfig<PayloadType, ResultType>
-): TaskConfig<PayloadType, ResultType> {
-  const { options, triggers, handler } = config;
+export function defineTask<PayloadType = unknown, ResultType = unknown, SchemaVal extends SchemaHandler = undefined>(
+  config: TaskDefinition<PayloadType, ResultType, SchemaVal>
+): TaskDefinition<PayloadType, ResultType, SchemaVal> {
+  const { handler } = config;
   if (!handler || typeof handler !== 'function') {
     throw new Error('defineTask requires a valid handler function.');
   }
-  return { options, triggers, handler };
+  return config;
 }
 
 /**

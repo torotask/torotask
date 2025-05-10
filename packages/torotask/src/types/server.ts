@@ -37,15 +37,7 @@ export interface TaskServerOptions {
   rootDir?: string;
 }
 
-type TaskModuleOptions = TaskOptions & {
-  name?: string;
-};
-
+1;
 export type BaseConfig<PayloadType = any> = {
   triggers?: SingleOrArray<TaskTrigger<PayloadType>>;
-};
-
-export type TaskConfig<PayloadType = any, ResultType = unknown> = BaseConfig<PayloadType> & {
-  options?: TaskModuleOptions;
-  handler: TaskHandler<PayloadType, ResultType>;
 };
