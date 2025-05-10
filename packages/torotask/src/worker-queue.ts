@@ -16,12 +16,6 @@ export class TaskWorkerQueue<PayloadType = any, ResultType = any, NameType exten
   ResultType,
   NameType
 > {
-  /**
-   * @deprecated Use `queueName` instead. This property holds the queue name for internal BullMQ compatibility.
-   */
-  public readonly name: string;
-  public readonly queueName: string;
-
   public readonly queueEvents: TaskQueueEvents;
   protected worker?: TaskWorker<PayloadType, ResultType, NameType> | undefined;
   // Store listeners to remove them later
@@ -29,14 +23,13 @@ export class TaskWorkerQueue<PayloadType = any, ResultType = any, NameType exten
 
   constructor(
     taskClient: ToroTask,
-    queueName: string,
+    name: string,
     public options?: Partial<TaskWorkerQueueOptions<PayloadType, ResultType, NameType>>
   ) {
     const { processor, ...queueOptions } = options ?? {};
-    super(taskClient, queueName, queueOptions);
-    this.name = queueName;
-    this.queueName = queueName;
-    this.queueEvents = new TaskQueueEvents(taskClient, this.queueName);
+    super(taskClient, name, queueOptions);
+
+    this.queueEvents = new TaskQueueEvents(taskClient, this.name);
   }
 
   /**
@@ -76,7 +69,7 @@ export class TaskWorkerQueue<PayloadType = any, ResultType = any, NameType exten
 
     const newWorker = new TaskWorker<PayloadType, ResultType, NameType>(
       this.taskClient,
-      this.queueName,
+      this.name,
       this.options?.processor ?? this.process.bind(this),
       mergedOptions
     );

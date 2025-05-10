@@ -16,7 +16,6 @@ import type {
   TaskTriggerEvent,
   TaskWorkerOptions,
   TaskJobData,
-  TaskWorkerQueueOptions,
   TaskWorkerQueueListener,
 } from './types/index.js';
 import { TaskWorkerQueue } from './worker-queue.js';
@@ -126,7 +125,7 @@ export abstract class BaseTask<
   }
 
   public get queueName(): string {
-    return this.queue.queueName;
+    return this.queue.name;
   }
 
   getWorkerOptions(): Partial<TaskWorkerOptions> {
