@@ -1,5 +1,5 @@
 import { DelayedError, WaitingChildrenError } from 'bullmq';
-import type { Logger, P } from 'pino';
+import type { Logger } from 'pino';
 import { z, type ZodSchema } from 'zod';
 import { BaseTask } from './base-task.js';
 import { SubTask } from './sub-task.js';
@@ -12,45 +12,75 @@ import type {
   TaskHandlerOptions,
   TaskOptions,
   TaskJobData,
+  EffectivePayloadType,
 } from './types/index.js';
 import { TaskJob } from './job.js';
 import { StepExecutor } from './step-executor.js';
 
 /**
  * Represents a defined task associated with a TaskGroup.
- * Extends BaseQueue to manage its own underlying BullMQ queue and worker.
+ * Extends BaseTask to manage its own underlying BullMQ queue and worker.
  * Implements the `process` method by calling the specific task `handler` or a registered subtask handler.
  * Can define and manage SubTasks.
  *
- * @template T The expected type of the data payload for this task's main handler.
- * @template R The expected return type of the job associated with this task's main handler.
+ * @template PayloadExplicit The explicitly provided payload type. Defaults to `unknown`.
+ *                           If not `unknown`, this type takes precedence.
+ *                           If `unknown`, type is inferred from `Schema` or defaults to `any`.
+ * @template ResultType The expected return type of the job. Defaults to `unknown`.
+ * @template Schema The Zod schema for payload validation and type inference. Defaults to `undefined`.
  */
-export class Task<PayloadType = any, ResultType = unknown> extends BaseTask<
-  PayloadType,
+export class Task<
+  PayloadExplicit = unknown, // Default changed to unknown
+  ResultType = unknown,
+  Schema extends ZodSchema | undefined = undefined,
+> extends BaseTask<
+  EffectivePayloadType<PayloadExplicit, Schema>, // Uses the local EffectivePayloadType
   ResultType,
-  string, // NameType
-  TaskJobData<PayloadType>, // DataType
-  TaskOptions // TOptions
+  string,
+  TaskJobData<EffectivePayloadType<PayloadExplicit, Schema>>,
+  TaskOptions
 > {
-  protected readonly subTasks: Map<string, SubTask<any, any>>;
+  protected readonly subTasks: Map<string, SubTask<any, any>>; // SubTask payload/result types might need further consideration for inference
   protected readonly allowCatchAll: boolean;
-  protected handler: TaskHandler<PayloadType, ResultType>;
-  public readonly schema: ZodSchema<PayloadType> | undefined;
+  // The handler's payload type is determined by EffectivePayloadType.
+  // TaskHandler (imported) uses EffectivePayloadType from types/task.ts.
+  // The local EffectivePayloadType must match for consistency.
+  protected handler: TaskHandler<EffectivePayloadType<PayloadExplicit, Schema>, ResultType, Schema>;
+  public readonly schema: Schema | undefined; // Changed here: Schema -> Schema | undefined
 
-  constructor(taskGroup: TaskGroup, config: TaskDefinition<PayloadType, ResultType>, groupLogger: Logger) {
+  constructor(
+    taskGroup: TaskGroup,
+    // config's PayloadExplicit defaults to unknown, ResultType to unknown, Schema to undefined
+    // TaskDefinition itself uses EffectivePayloadType internally for its handler and triggers.
+    config: TaskDefinition<PayloadExplicit, ResultType, Schema>,
+    groupLogger: Logger
+  ) {
+    // Pass the effective payload type to BaseTask's triggers if necessary,
+    // currently TaskDefinition handles the trigger's payload type.
+    // The `config.triggers` is already correctly typed by TaskDefinition.
     super(taskGroup, config.name, config.options ?? {}, config.triggers, groupLogger);
 
-    this.handler = config.handler;
+    this.handler = config.handler; // config.handler is already correctly typed by TaskDefinition
     this.schema = config.schema;
     this.subTasks = new Map();
     this.allowCatchAll = this.options.allowCatchAll ?? true;
 
-    this.logger.debug({ allowCatchAll: this.allowCatchAll, triggerCount: this.triggers.length }, 'Task initialized');
+    this.logger.debug(
+      {
+        allowCatchAll: this.allowCatchAll,
+        triggerCount: this.triggers?.length ?? 0, // Access triggers from config or this.triggers if super sets it
+        hasPayloadSchema: !!this.schema,
+      },
+      'Task initialized'
+    );
   }
 
-  defineSubTask<SubTaskPayloadType = PayloadType, SubTaskResultType = ResultType>(
+  defineSubTask<
+    SubTaskPayloadType = EffectivePayloadType<PayloadExplicit, Schema>, // Default SubTask payload to parent's effective type
+    SubTaskResultType = ResultType,
+  >(
     subTaskName: string,
-    subTaskHandler: SubTaskHandler<SubTaskPayloadType, SubTaskResultType>
+    subTaskHandler: SubTaskHandler<SubTaskPayloadType, SubTaskResultType> // SubTaskHandler does not take Schema generic
   ): SubTask<SubTaskPayloadType, SubTaskResultType> {
     if (this.subTasks.has(subTaskName)) {
       this.logger.warn({ subTaskName }, 'SubTask already defined. Overwriting.');
@@ -60,7 +90,8 @@ export class Task<PayloadType = any, ResultType = unknown> extends BaseTask<
       throw new Error(`SubTask name "${subTaskName}" cannot be the same as the parent Task name "${this.name}".`);
     }
 
-    const newSubTask = new SubTask<SubTaskPayloadType, SubTaskResultType>(this, subTaskName, subTaskHandler);
+    // SubTask's payload type defaults to the parent's effective payload type
+    const newSubTask = new SubTask<SubTaskPayloadType, SubTaskResultType>(this as any, subTaskName, subTaskHandler);
     this.subTasks.set(subTaskName, newSubTask);
     this.logger.debug({ subTaskName }, 'SubTask defined');
     return newSubTask;
@@ -70,13 +101,7 @@ export class Task<PayloadType = any, ResultType = unknown> extends BaseTask<
     return this.subTasks.get(subTaskName);
   }
 
-  /**
-   * Routes the job to the appropriate handler (main task or subtask) based on job name.
-   * - `__default__` or empty string routes to the main handler.
-   * - Matching subtask name routes to the subtask handler.
-   * - Other names route to main handler if `allowCatchAll` is true, otherwise error.
-   */
-  async process(job: TaskJob<PayloadType, ResultType>, token?: string): Promise<any> {
+  async process(job: TaskJob<EffectivePayloadType<PayloadExplicit, Schema>, ResultType>, token?: string): Promise<any> {
     const { id, name: jobName } = job;
     const effectiveJobName = jobName === '' || jobName === '__default__' ? this.name : jobName;
     const jobLogger = this.logger.child({ jobId: id, jobName: effectiveJobName });
@@ -86,11 +111,14 @@ export class Task<PayloadType = any, ResultType = unknown> extends BaseTask<
     try {
       if (subTask) {
         jobLogger.info(`Routing job to SubTask handler: ${effectiveJobName}`);
-        const result = await subTask.processSubJob(job, effectiveJobName, jobLogger);
+        // SubTask processing might also need payload validation if schemas are defined there
+        // For now, assumes subtask handles its own payload typing/validation if necessary
+        const result = await subTask.processSubJob(job as any, effectiveJobName, jobLogger); // Cast job if subtask has different payload type
         jobLogger.info(`SubTask job completed successfully`);
         return result;
       } else if (effectiveJobName === this.name || this.allowCatchAll) {
-        const result = await this.processJob(job, token);
+        // Pass jobLogger to processJob
+        const result = await this.processJob(job, token, jobLogger);
         jobLogger.debug(`Main task job completed successfully`);
         return result;
       } else {
@@ -108,7 +136,10 @@ export class Task<PayloadType = any, ResultType = unknown> extends BaseTask<
         error instanceof WaitingChildrenError ||
         error.name == 'WaitingChildrenError'
       ) {
-        return;
+        // These are BullMQ flow control errors, re-throw or handle as per BullMQ docs
+        // Depending on BullMQ version, returning undefined might be the correct way to let BullMQ handle it.
+        jobLogger.debug({ err: error }, `Job processing resulted in a flow control state: ${error.name}`);
+        return; // Or re-throw error;
       }
 
       jobLogger.error(
@@ -119,14 +150,22 @@ export class Task<PayloadType = any, ResultType = unknown> extends BaseTask<
     }
   }
 
-  async processJob(job: TaskJob<PayloadType, ResultType>, token?: string, jobLogger?: Logger): Promise<any> {
+  async processJob(
+    job: TaskJob<EffectivePayloadType<PayloadExplicit, Schema>, ResultType>,
+    token?: string,
+    jobLogger?: Logger
+  ): Promise<any> {
     const effectiveJobLogger = jobLogger ?? this.getJobLogger(job);
+    // Use CurrentPayloadType which is derived from the local EffectivePayloadType
+    type CurrentPayloadType = EffectivePayloadType<PayloadExplicit, Schema>;
 
-    let validatedPayload: PayloadType = job.payload;
+    let validatedPayload: CurrentPayloadType = job.payload;
 
     if (this.schema) {
       try {
-        validatedPayload = this.schema.parse(job.payload);
+        // Type assertion needed because this.schema is Schema (ZodSchema | undefined)
+        // and parse expects `this` to be ZodSchema<CurrentPayloadType>
+        validatedPayload = (this.schema as ZodSchema<CurrentPayloadType>).parse(job.payload);
         effectiveJobLogger.debug('Payload validated successfully.');
       } catch (error) {
         effectiveJobLogger.error(
@@ -137,36 +176,40 @@ export class Task<PayloadType = any, ResultType = unknown> extends BaseTask<
           `Payload validation failed for job "${job.name}" (id: ${job.id})`
         );
         if (error instanceof z.ZodError) {
-          // Construct a more user-friendly error message
           const messages = error.errors.map((e) => `${e.path.join('.') || 'payload'}: ${e.message}`);
           throw new Error(`Payload validation failed: ${messages.join('; ')}`);
         }
-        throw error; // Re-throw other errors
+        throw error;
       }
     }
 
-    const handlerOptions: TaskHandlerOptions<PayloadType> = {
+    const handlerOptions: TaskHandlerOptions<CurrentPayloadType> = {
       id: job.id,
       name: this.name,
       payload: validatedPayload,
     };
-    const stepExecutor = new StepExecutor<TaskJob<PayloadType, ResultType>>(job);
-    const handlerContext: TaskHandlerContext<PayloadType, ResultType> = {
+
+    const stepExecutor = new StepExecutor<TaskJob<CurrentPayloadType, ResultType>>(job);
+    // TaskHandlerContext's PayloadType will be CurrentPayloadType
+    const handlerContext: TaskHandlerContext<CurrentPayloadType, ResultType, Schema> = {
       logger: effectiveJobLogger,
       client: this.taskClient,
       group: this.group,
-      task: this,
+      task: this as any, // `this` is Task<PayloadExplicit, ResultType, Schema>
+      // Context expects Task<CurrentPayloadType, ResultType, Schema>
+      // This cast is generally safe due to how CurrentPayloadType is derived.
       job: job,
       step: stepExecutor,
       token,
       queue: this.queue,
     };
     try {
+      // this.handler's PayloadType is also CurrentPayloadType due to consistent EffectivePayloadType usage
       return await this.handler(handlerOptions, handlerContext);
     } catch (error) {
       effectiveJobLogger.error(
         { err: error instanceof Error ? error : new Error(String(error)) },
-        `Job processing failed for job name "${job.name}"`
+        `Job handler execution failed for job "${job.name}" (id: ${job.id})`
       );
       throw error;
     }

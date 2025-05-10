@@ -1,7 +1,7 @@
 import type { StringValue } from 'ms';
 import type { Logger } from 'pino';
-import type { ZodSchema } from 'zod';
-import type { ToroTask } from '../client.js'; // Assuming client export is in client.ts
+import { type z, type ZodSchema } from 'zod'; // Ensure z is imported if z.infer is used directly in this file, otherwise ZodSchema is enough
+import type { ToroTask } from '../client.js';
 import type { TaskJob } from '../job.js';
 import type { TaskQueue } from '../queue.js';
 import type { StepExecutor } from '../step-executor.js';
@@ -9,7 +9,7 @@ import type { TaskGroup } from '../task-group.js';
 import type { Task } from '../task.js';
 import type { TaskJobOptions } from './job.js';
 import type { TaskQueueOptions } from './queue.js';
-import type { Prettify, SingleOrArray } from './utils.js';
+import type { EffectivePayloadType, Prettify, SingleOrArray } from './utils.js';
 import type { TaskWorkerOptions } from './worker.js';
 
 /**
@@ -29,40 +29,52 @@ export type TaskOptions = Prettify<
   }
 >;
 /** Handler details passed to the task handler */
-export interface TaskHandlerOptions<PayloadType = any> {
+export interface TaskHandlerOptions<PayloadType = unknown> {
+  // Default to unknown
   id?: string; // Job ID
   name: string; // Task name
   payload: PayloadType;
 }
 
-export interface BaseHandlerContext<PayloadType = any, ResultType = any> {
+export interface BaseHandlerContext<PayloadType = unknown, ResultType = unknown> {
+  // Default to unknown
   logger: Logger; // Job-specific logger
   client: ToroTask;
   group: TaskGroup;
   queue: TaskQueue<PayloadType, ResultType>;
 }
 /** Context passed to the task handler */
-export interface TaskHandlerContext<PayloadType = any, ResultType = any>
+export interface TaskHandlerContext<
+    PayloadType = unknown,
+    ResultType = unknown,
+    Schema extends ZodSchema | undefined = undefined,
+  > // Default to unknown
   extends BaseHandlerContext<PayloadType, ResultType> {
-  task: Task<PayloadType, ResultType>; // Reference to the Task instance
+  task: Task<PayloadType, ResultType, Schema>; // Reference to the Task instance
   job: TaskJob<PayloadType, ResultType>;
   step: StepExecutor<TaskJob<PayloadType, ResultType>>;
   token?: string | undefined; // Optional token for authentication or authorization
 }
 
 /** Task handler function type */
-export type TaskHandler<PayloadType = any, ResultType = any> = (
+export type TaskHandler<
+  PayloadType = unknown,
+  ResultType = unknown,
+  Schema extends ZodSchema | undefined = undefined,
+> = (
+  // Default to unknown
   options: TaskHandlerOptions<PayloadType>,
-  context: TaskHandlerContext<PayloadType, ResultType>
+  context: TaskHandlerContext<PayloadType, ResultType, Schema>
 ) => Promise<ResultType>;
 
-export interface TaskTriggerBase<PayloadType = any> {
+export interface TaskTriggerBase<PayloadType = unknown> {
+  // Default to unknown
   /** Payload to associate with jobs created by this trigger. */
   payload?: PayloadType;
 }
 
 /** Defines a potential event trigger condition for a Task */
-export interface TaskTriggerEvent<PayloadType> extends TaskTriggerBase<PayloadType> {
+export interface TaskTriggerEvent<PayloadType = unknown> extends TaskTriggerBase<PayloadType> {
   type: 'event';
   /** Event name that could trigger the task */
   event?: string;
@@ -71,7 +83,7 @@ export interface TaskTriggerEvent<PayloadType> extends TaskTriggerBase<PayloadTy
 }
 
 /** Defines a potential cron trigger condition for a Task */
-export interface TaskTriggerCron<PayloadType> extends TaskTriggerBase<PayloadType> {
+export interface TaskTriggerCron<PayloadType = unknown> extends TaskTriggerBase<PayloadType> {
   type: 'cron';
   /** Optional name for the this trigger */
   name?: string;
@@ -80,7 +92,7 @@ export interface TaskTriggerCron<PayloadType> extends TaskTriggerBase<PayloadTyp
 }
 
 /** Defines a potential repeat trigger condition for a Task */
-export interface TaskTriggerEvery<PayloadType> extends TaskTriggerBase<PayloadType> {
+export interface TaskTriggerEvery<PayloadType = unknown> extends TaskTriggerBase<PayloadType> {
   type: 'every';
   /** Optional name for the this trigger */
   name?: string;
@@ -89,15 +101,20 @@ export interface TaskTriggerEvery<PayloadType> extends TaskTriggerBase<PayloadTy
 }
 
 /** Defines a potential trigger condition for a Task */
-export type TaskTrigger<PayloadType = any> =
-  | TaskTriggerEvent<PayloadType>
-  | TaskTriggerCron<PayloadType>
-  | TaskTriggerEvery<PayloadType>;
+export type TaskTrigger<PayloadType = unknown> =
+  // Default to unknown
+  TaskTriggerEvent<PayloadType> | TaskTriggerCron<PayloadType> | TaskTriggerEvery<PayloadType>;
 
-export interface TaskDefinition<PayloadType = any, ResultType = unknown> {
+export interface TaskDefinition<
+  PayloadExplicit = unknown, // Renamed and default to unknown
+  ResultType = unknown,
+  Schema extends ZodSchema | undefined = undefined,
+> {
   name: string;
-  handler: TaskHandler<PayloadType, ResultType>;
+  // The handler's first generic (PayloadType) will be the EffectivePayloadType
+  handler: TaskHandler<EffectivePayloadType<PayloadExplicit, Schema>, ResultType, Schema>;
   options?: TaskOptions;
-  schema?: ZodSchema<PayloadType>;
-  triggers?: SingleOrArray<TaskTrigger<PayloadType>>;
+  schema?: Schema;
+  // Triggers' payload type will also be the EffectivePayloadType
+  triggers?: SingleOrArray<TaskTrigger<EffectivePayloadType<PayloadExplicit, Schema>>>;
 }
