@@ -17,15 +17,12 @@ export type ResolvedSchemaType<SH extends SchemaHandler> = SH extends ZodSchema 
 
 /**
  * Determines the effective payload type for a task.
- * If an `ExplicitPayload` type is provided (and is not strictly `unknown`), that type is used.
- * Otherwise, if a `ResolvedSch` (a ZodSchema) is available, the payload type is inferred from it.
- * If neither an explicit payload nor a resolvable schema is present, the payload type defaults to `any`.
+ * If a schema is present, the payload type is inferred from it.
+ * Otherwise, it falls back to `PayloadExplicit` or `unknown`.
  */
-export type EffectivePayloadType<
-  ExplicitPayload,
-  ResolvedSch extends ZodSchema | undefined,
-> = IsStrictlyUnknown<ExplicitPayload> extends true
-  ? ResolvedSch extends ZodSchema<infer S>
-    ? S
-    : any
-  : ExplicitPayload;
+export type EffectivePayloadType<PayloadExplicit, SchemaTypeResolved extends ZodSchema | undefined> =
+  SchemaTypeResolved extends ZodSchema // If SchemaTypeResolved is a ZodSchema
+    ? z.infer<SchemaTypeResolved> // Then use inferred schema type
+    : IsStrictlyUnknown<PayloadExplicit> extends true // Else (no schema), if PayloadExplicit is unknown
+      ? unknown // Then use unknown
+      : PayloadExplicit; // Else (no schema, PayloadExplicit is NOT unknown), use PayloadExplicit

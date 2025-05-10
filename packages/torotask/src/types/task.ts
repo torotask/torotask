@@ -1,6 +1,6 @@
 import type { StringValue } from 'ms';
 import type { Logger } from 'pino';
-import { type ZodSchema } from 'zod';
+import { type ZodSchema, z } from 'zod';
 import type { ToroTask } from '../client.js';
 import type { TaskJob } from '../job.js';
 import type { TaskQueue } from '../queue.js';

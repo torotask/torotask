@@ -4,7 +4,7 @@ import { pathToFileURL } from 'url';
 import { WorkerOptions } from 'bullmq';
 import { glob } from 'glob';
 import { type DestinationStream, type Logger, type LoggerOptions, pino } from 'pino';
-import type { TaskConfig, TaskServerOptions, TaskTrigger } from './types/index.js';
+import type { TaskDefinition, TaskServerOptions, TaskTrigger } from './types/index.js';
 import { ToroTask, WorkerFilter } from './client.js';
 import { TaskGroup } from './task-group.js';
 import { EventDispatcher } from './event-dispatcher.js';
@@ -175,11 +175,11 @@ export class TaskServer {
 
         const fileUrl = pathToFileURL(filePath).href;
         const taskModule = (await import(fileUrl)) as {
-          default?: TaskConfig & { trigger?: TaskTrigger; triggers?: TaskTrigger[] };
+          default?: TaskDefinition & { trigger?: TaskTrigger; triggers?: TaskTrigger[] };
         };
 
         let finalTaskName: string = derivedTaskName;
-        let moduleToUse: TaskConfig & { trigger?: TaskTrigger; triggers?: TaskTrigger[] };
+        let moduleToUse: TaskDefinition & { trigger?: TaskTrigger; triggers?: TaskTrigger[] };
 
         if (taskModule.default?.handler && typeof taskModule.default.handler === 'function') {
           moduleToUse = taskModule.default;
@@ -198,16 +198,16 @@ export class TaskServer {
         const group = this.client.createTaskGroup(groupName);
         this.managedGroups.add(group);
 
-        const explicitName = moduleToUse.options?.name;
+        const explicitName = moduleToUse.name;
         if (explicitName) {
           finalTaskName = explicitName;
           this.logger.debug({ derivedTaskName, explicitName: finalTaskName }, 'Using explicit task name from options.');
         }
 
-        const { name: _n, ...optionsToUse } = moduleToUse.options || {};
+        const options = moduleToUse.options || {};
         group.createTask({
           name: finalTaskName,
-          options: optionsToUse,
+          options: options,
           triggers: moduleToUse.triggers ?? moduleToUse.trigger,
           handler: moduleToUse.handler,
         });
