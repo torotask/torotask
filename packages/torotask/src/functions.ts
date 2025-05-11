@@ -18,7 +18,7 @@ type DefineTaskConfigInput<PayloadType, ResultType, SchemaVal extends SchemaHand
   triggers?: SchemaVal extends undefined // If SchemaVal is not provided (no schema for the task)
     ? SingleOrArray<TaskTrigger<PayloadType>> // Then triggers can infer/use PayloadType
     : ResolvedSchemaType<SchemaVal> extends infer ActualSchema extends z.ZodTypeAny // Else (SchemaVal IS provided)
-      ? SingleOrArray<TaskTrigger<Partial<z.infer<ActualSchema>>>>
+      ? SingleOrArray<TaskTrigger<z.infer<ActualSchema>>>
       : SingleOrArray<TaskTrigger<unknown>>; // Fallback for triggers if schema exists but isn't a ZodTypeAny
 };
 
