@@ -4,7 +4,7 @@ import { pathToFileURL } from 'url';
 import { WorkerOptions } from 'bullmq';
 import { glob } from 'glob';
 import { type DestinationStream, type Logger, type LoggerOptions, pino } from 'pino';
-import type { TaskDefinition, TaskServerOptions, TaskTrigger } from './types/index.js';
+import type { TaskDefinition, TaskGroupRegistry, TaskServerOptions, TaskTrigger } from './types/index.js';
 import { ToroTask, WorkerFilter } from './client.js';
 import { TaskGroup } from './task-group.js';
 import { EventDispatcher } from './event-dispatcher.js';
@@ -24,6 +24,7 @@ export class TaskServer {
   private readonly managedGroups: Set<TaskGroup> = new Set();
   private readonly ownClient: boolean = false; // Did we create the client?
   public readonly events: EventDispatcher;
+  public taskGroups: TaskGroupRegistry = {};
 
   // Store bound handlers to remove them later
   private unhandledRejectionListener?: (...args: any[]) => void;
@@ -228,6 +229,9 @@ export class TaskServer {
     if (errorCount > 0) {
       // Optionally throw an aggregate error or indicate failure
     }
+    this.logger.warn(
+      "The 'loadTasksFromDirectory' method is deprecated. Consider switching to 'registerTasksFromDefinitionObject'."
+    );
   }
 
   /**

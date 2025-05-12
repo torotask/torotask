@@ -7,6 +7,7 @@ export * from './schema.js';
 export * from './server.js';
 export * from './step.js';
 export * from './task.js';
+export * from './task-group.js';
 export * from './utils.js';
 export * from './worker.js';
 export * from './worker-queue.js';
