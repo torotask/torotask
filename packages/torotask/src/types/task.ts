@@ -110,3 +110,15 @@ export interface TaskDefinition<
   schema?: SchemaInputValue;
   triggers?: SingleOrArray<TaskTrigger<EffectivePayloadType<PayloadExplicit, ResolvedSchemaType<SchemaInputValue>>>>;
 }
+
+//export type TaskRegistry = Record<string, Task<any, any, SchemaHandler>>;
+export interface TaskDefinitionRegistry {
+  [taskName: string]: TaskDefinition<any, any, SchemaHandler>;
+}
+
+export type TaskRegistry<TDefs extends TaskDefinitionRegistry> = {
+  // For each key K in the input TDefs...
+  [K in keyof TDefs]: TDefs[K] extends TaskDefinition<infer P, infer R, infer S> // Infer the Payload (P) and Result (R) types from the definition
+    ? Task<P, R, S> // ...the output type is Task<P, R>
+    : never; // Should not happen if TDefs is correctly constrained
+};

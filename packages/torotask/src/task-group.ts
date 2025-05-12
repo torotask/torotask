@@ -8,22 +8,25 @@ import type {
   BulkTaskRunNode,
   SchemaHandler,
   TaskDefinition,
-  TaskHandler,
-  TaskOptions,
-  TaskTrigger,
+  TaskDefinitionRegistry,
+  TaskRegistry,
 } from './types/index.js';
 
 /**
  * Represents a logical group of related Tasks.
  */
-export class TaskGroup {
+export class TaskGroup<
+  TDefs extends TaskDefinitionRegistry = TaskDefinitionRegistry,
+  // TTasks is *derived* from TDefs using our mapped type
+  TTasks extends TaskRegistry<TDefs> = TaskRegistry<TDefs>,
+> {
   public readonly name: string;
   public readonly client: ToroTask;
   public readonly logger: Logger;
   // Changed the type of the tasks map to allow any ActualSchemaInputType for the third generic
-  private readonly tasks: Map<string, Task<any, any, SchemaHandler>> = new Map();
+  public tasks: TTasks;
 
-  constructor(client: ToroTask, name: string, parentLogger: Logger) {
+  constructor(client: ToroTask, name: string, parentLogger: Logger, definitions?: TDefs) {
     if (!client) {
       throw new Error('ToroTask instance is required.');
     }
@@ -36,6 +39,15 @@ export class TaskGroup {
     this.logger = parentLogger.child({ taskGroupName: this.name });
 
     this.logger.debug('TaskGroup initialized');
+
+    this.tasks = {} as TTasks;
+    for (const key in definitions) {
+      // Ensure we are iterating over own properties
+      if (Object.prototype.hasOwnProperty.call(definitions, key)) {
+        const definition = definitions[key];
+        this.createTask(definition) as TTasks[keyof TTasks];
+      }
+    }
   }
 
   /**
@@ -66,12 +78,14 @@ export class TaskGroup {
       this.logger.child({ task: config.name })
     );
 
-    if (this.tasks.has(config.name)) {
+    if (config.name in this.tasks) {
       this.logger.warn({ taskName: config.name }, 'Task already defined in this group. Overwriting.');
     }
 
-    // This assignment is now type-safe because the map accepts Tasks with any ActualSchemaInputType
-    this.tasks.set(config.name, task);
+    // We need specific casts here because TS cannot automatically
+    // verify that looping through 'definitions' and calling 'createTask'
+    // perfectly populates 'this.tasks' according to the 'TTasks' mapped type structure.
+    this.tasks[config.name as keyof TTasks] = task as any;
     this.logger.debug({ taskName: config.name }, 'Task defined');
     return task;
   }
@@ -84,7 +98,7 @@ export class TaskGroup {
    */
   // Updated return type to reflect that tasks in the map can have any schema.
   getTask(name: string): Task<any, any, SchemaHandler> | undefined {
-    return this.tasks.get(name);
+    return this.tasks[name];
   }
 
   /**
@@ -93,7 +107,7 @@ export class TaskGroup {
    * @returns A map of task names to Task instances.
    */
   // Updated return type for consistency.
-  getTasks(): Map<string, Task<any, any, SchemaHandler>> {
+  getTasks(): TTasks {
     return this.tasks;
   }
 
@@ -122,8 +136,8 @@ export class TaskGroup {
   async startWorkers(filter?: { tasks?: string[] }, workerOptions?: WorkerOptions): Promise<void> {
     this.logger.debug({ filter }, 'Starting workers for task group');
     const tasksToStart = filter?.tasks
-      ? filter.tasks.map((name) => this.tasks.get(name)).filter((task): task is Task<any, any> => !!task)
-      : Array.from(this.tasks.values());
+      ? filter.tasks.map((name) => this.tasks[name as keyof TTasks]).filter((task) => !!task)
+      : Object.values(this.tasks);
 
     if (filter?.tasks) {
       const requested = filter.tasks.length;
@@ -156,8 +170,8 @@ export class TaskGroup {
   async stopWorkers(filter?: { tasks?: string[] }): Promise<void> {
     this.logger.info({ filter }, 'Stopping workers for task group');
     const tasksToStop = filter?.tasks
-      ? filter.tasks.map((name) => this.tasks.get(name)).filter((task): task is Task<any, any> => !!task)
-      : Array.from(this.tasks.values());
+      ? filter.tasks.map((name) => this.tasks[name as keyof TTasks]).filter((task) => !!task)
+      : Object.values(this.tasks);
 
     if (filter?.tasks) {
       const requested = filter.tasks.length;
