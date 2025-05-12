@@ -210,6 +210,7 @@ export class TaskServer {
           options: options,
           triggers: moduleToUse.triggers ?? moduleToUse.trigger,
           handler: moduleToUse.handler,
+          schema: moduleToUse.schema,
         });
 
         this.logger.debug({ groupName, taskName: finalTaskName }, 'Successfully loaded and defined task.');
