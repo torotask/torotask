@@ -13,6 +13,7 @@ import type {
   SchemaHandler,
   TaskDefinitionRegistry,
   TaskJobOptions,
+  TaskRegistry,
 } from './types/index.js';
 import { getConfigFromEnv } from './utils/get-config-from-env.js';
 import { TaskWorkflow } from './workflow.js';
@@ -52,7 +53,7 @@ export class ToroTask {
   public readonly logger: Logger;
   public readonly prefix: string;
   public readonly queuePrefix: string;
-  private readonly taskGroups: Record<string, TaskGroup> = {};
+  private readonly taskGroups: Record<string, TaskGroup<any, any>> = {};
   private _eventDispatcher: EventDispatcher | null = null; // Backing field for lazy loading
   private _workflow: TaskWorkflow | null = null; // Backing field for lazy loading
   private _redis: Redis | null = null;
@@ -129,13 +130,16 @@ export class ToroTask {
   /**
    * Creates or retrieves a TaskGroup instance.
    */
-  public createTaskGroup(name: string, definitions?: TaskDefinitionRegistry): TaskGroup {
+  public createTaskGroup<TDefs extends TaskDefinitionRegistry>(
+    name: string,
+    definitions?: TDefs
+  ): TaskGroup<TDefs, TaskRegistry<TDefs>> {
     if (this.taskGroups[name]) {
-      return this.taskGroups[name];
+      return this.taskGroups[name] as TaskGroup<TDefs, TaskRegistry<TDefs>>;
     }
 
     this.logger.debug({ taskGroupName: name }, 'Creating new TaskGroup');
-    const newTaskGroup = new TaskGroup(this, name, this.logger, definitions);
+    const newTaskGroup = new TaskGroup<TDefs, TaskRegistry<TDefs>>(this, name, this.logger, definitions);
     this.taskGroups[name] = newTaskGroup;
     return newTaskGroup;
   }

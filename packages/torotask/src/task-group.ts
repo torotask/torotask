@@ -7,7 +7,6 @@ import type {
   BulkTaskRun,
   BulkTaskRunNode,
   SchemaHandler,
-  TaskDefinition,
   TaskDefinitionRegistry,
   TaskRegistry,
 } from './types/index.js';
@@ -40,54 +39,46 @@ export class TaskGroup<
 
     this.logger.debug('TaskGroup initialized');
 
-    this.tasks = {} as TTasks;
-    for (const key in definitions) {
-      // Ensure we are iterating over own properties
-      if (Object.prototype.hasOwnProperty.call(definitions, key)) {
-        const definition = definitions[key];
-        this.createTask(definition) as TTasks[keyof TTasks];
+    this.tasks = {} as TTasks; // Initialize tasks
+    if (definitions) {
+      for (const key of Object.keys(definitions) as Array<Extract<keyof TDefs, string>>) {
+        const definition = definitions[key]; // definition is TDefs[key]
+        this.createTask(definition as TDefs[Extract<keyof TDefs, string>] & { name: Extract<keyof TDefs, string> });
       }
     }
   }
 
   /**
    * Creates a new Task within this group using a configuration object.
-   *
-   * @template T Data type for the task. Default is `unknown`.
-   * @template R Return type for the task. Default is `unknown`.
-   * @template SchemaVal extends ActualSchemaInputType
-   * @param config The configuration object for the task.
-   * @param config.name The name of the task (must be unique within the group).
-   * @param config.options Optional default job options for this task.
-   * @param config.triggers Optional TaskTrigger or array of TaskTriggers to associate with this task.
-   * @param config.handler The function to execute when the task runs.
-   * @returns The created Task instance.
+   * TaskName ensures that config matches a specific definition in TDefs and its 'name' property.
+   * The created Task type matches TTasks[TaskName].
    */
-  createTask<
-    PayloadExplicit = unknown, // Defaulting to unknown to align with TaskDefinition
-    ResultType = unknown,
-    SchemaVal extends SchemaHandler = undefined, // Crucial generic for schema
-  >(config: TaskDefinition<PayloadExplicit, ResultType, SchemaVal>): Task<PayloadExplicit, ResultType, SchemaVal> {
-    // The config object itself (config) is already of the correct generic type
-    // TaskDefinition<PayloadExplicit, ResultType, SchemaVal>.
-    // Its 'schema' property is of type 'SchemaVal | undefined'.
-
-    const task = new Task<PayloadExplicit, ResultType, SchemaVal>(
+  createTask<TaskName extends Extract<keyof TDefs, string>>(
+    // Config is the specific definition from TDefs, and its 'name' property must match TaskName.
+    config: TDefs[TaskName] & { name: TaskName }
+  ): TTasks[TaskName] {
+    // Return type is the specific task type from TTasks
+    // Generics for Task <P,R,S> are inferred from config (TDefs[TaskName])
+    // because Task constructor takes config: TaskDefinition<P,R,S>
+    const task = new Task(
       this as any, // Pass the TaskGroup instance
-      config, // Pass the original config, Task constructor will handle it
-      this.logger.child({ task: config.name })
+      config, // Pass the original config (typed as TDefs[TaskName])
+      this.logger.child({ task: config.name }) // config.name is TaskName
     );
 
-    if (config.name in this.tasks) {
+    if (this.tasks[config.name]) {
+      // config.name is TaskName (the key for TTasks)
       this.logger.warn({ taskName: config.name }, 'Task already defined in this group. Overwriting.');
     }
 
-    // We need specific casts here because TS cannot automatically
-    // verify that looping through 'definitions' and calling 'createTask'
-    // perfectly populates 'this.tasks' according to the 'TTasks' mapped type structure.
-    this.tasks[config.name as keyof TTasks] = task as any;
+    // config.name is TaskName (type keyof TDefs).
+    // this.tasks is TTasks.
+    // task is an instance of Task<P,R,S> (types inferred from TDefs[TaskName]).
+    // TTasks[TaskName] is also Task<P,R,S>.
+    // This assignment is now type-correct.
+    this.tasks[config.name] = task as TTasks[TaskName];
     this.logger.debug({ taskName: config.name }, 'Task defined');
-    return task;
+    return task as TTasks[TaskName];
   }
 
   /**
