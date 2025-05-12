@@ -16,7 +16,7 @@ export interface SubTaskHandlerContext<
   DataType extends TaskJobData = TaskJobData<PayloadType>,
 > extends Omit<TaskHandlerContext<PayloadType, ResultType>, 'task'> {
   parentTask: Task<DataType, ResultType>; // Reference to the parent Task instance
-  subTaskName: string; // The name of this subtask
+  subTaskId: string;
 }
 
 /** SubTask handler function type */

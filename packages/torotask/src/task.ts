@@ -64,7 +64,7 @@ export class Task<
   ) {
     // Pass the effective payload type to BaseTask's triggers if necessary,
     // currently TaskDefinition handles the trigger's payload type.
-    super(taskGroup, config.name, config.options ?? {}, config.triggers, groupLogger);
+    super(taskGroup, config.id, config.options ?? {}, config.triggers, groupLogger);
 
     this.handler = config.handler;
 
@@ -90,26 +90,26 @@ export class Task<
     SubTaskPayloadType = EffectivePayloadType<PayloadExplicit, ResolvedSchemaType<SchemaInputVal>>, // Default SubTask payload to parent's effective type
     SubTaskResultType = ResultType,
   >(
-    subTaskName: string,
+    subTaskId: string,
     subTaskHandler: SubTaskHandler<SubTaskPayloadType, SubTaskResultType>
   ): SubTask<SubTaskPayloadType, SubTaskResultType> {
-    if (this.subTasks.has(subTaskName)) {
-      this.logger.warn({ subTaskName }, 'SubTask already defined. Overwriting.');
+    if (this.subTasks.has(subTaskId)) {
+      this.logger.warn({ subTaskId }, 'SubTask already defined. Overwriting.');
     }
-    if (subTaskName === this.name) {
-      this.logger.error({ subTaskName }, 'SubTask name cannot be the same as the parent Task name.');
-      throw new Error(`SubTask name "${subTaskName}" cannot be the same as the parent Task name "${this.name}".`);
+    if (subTaskId === this.id) {
+      this.logger.error({ subTaskId }, 'SubTask id cannot be the same as the parent Task id.');
+      throw new Error(`SubTask id "${subTaskId}" cannot be the same as the parent Task id "${this.id}".`);
     }
 
     // SubTask's payload type defaults to the parent's effective payload type
-    const newSubTask = new SubTask<SubTaskPayloadType, SubTaskResultType>(this as any, subTaskName, subTaskHandler);
-    this.subTasks.set(subTaskName, newSubTask);
-    this.logger.debug({ subTaskName }, 'SubTask defined');
+    const newSubTask = new SubTask<SubTaskPayloadType, SubTaskResultType>(this as any, subTaskId, subTaskHandler);
+    this.subTasks.set(subTaskId, newSubTask);
+    this.logger.debug({ subTaskId }, 'SubTask defined');
     return newSubTask;
   }
 
-  getSubTask(subTaskName: string): SubTask<any, any> | undefined {
-    return this.subTasks.get(subTaskName);
+  getSubTask(subTaskId: string): SubTask<any, any> | undefined {
+    return this.subTasks.get(subTaskId);
   }
 
   async process(
@@ -117,7 +117,7 @@ export class Task<
     token?: string
   ): Promise<any> {
     const { id, name: jobName } = job;
-    const effectiveJobName = jobName === '' || jobName === '__default__' ? this.name : jobName;
+    const effectiveJobName = jobName === '' || jobName === '__default__' ? this.id : jobName;
     const jobLogger = this.logger.child({ jobId: id, jobName: effectiveJobName });
 
     const subTask = this.subTasks.get(effectiveJobName);
@@ -130,7 +130,7 @@ export class Task<
         const result = await subTask.processSubJob(job as any, effectiveJobName, jobLogger); // Cast job if subtask has different payload type
         jobLogger.info(`SubTask job completed successfully`);
         return result;
-      } else if (effectiveJobName === this.name || this.allowCatchAll) {
+      } else if (effectiveJobName === this.id || this.allowCatchAll) {
         // Pass jobLogger to processJob
         const result = await this.processJob(job, token, jobLogger);
         jobLogger.debug(`Main task job completed successfully`);
@@ -140,7 +140,7 @@ export class Task<
           `Job name "${effectiveJobName}" does not match main task or subtasks, and catchAll is disabled.`
         );
         throw new Error(
-          `Job name "${effectiveJobName}" on queue "${this.queueName}" not recognized by task "${this.name}".`
+          `Job name "${effectiveJobName}" on queue "${this.queueName}" not recognized by task "${this.id}".`
         );
       }
     } catch (error: any) {
@@ -199,7 +199,7 @@ export class Task<
 
     const handlerOptions: TaskHandlerOptions<CurrentPayloadType> = {
       id: job.id,
-      name: this.name,
+      name: this.id,
       payload: validatedPayload,
     };
 

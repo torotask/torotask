@@ -114,7 +114,7 @@ export class TaskServer {
 
   /**
    * Scans a directory for task definition files and loads them.
-   * Assumes a structure like `baseDir/groupName/taskName.task.{js,ts}`.
+   * Assumes a structure like `baseDir/groupName/taskId.task.{js,ts}`.
    * Expects task files to have a default export: `{ handler: TaskHandler, options?: TaskOptions }`.
    *
    * @param baseDir The base directory containing task groups. Can be absolute or relative to `rootDir` (if provided during server construction).
@@ -164,22 +164,22 @@ export class TaskServer {
         const relativePath = path.relative(absoluteBaseDir, filePath);
         const groupName = path.dirname(relativePath);
         const fileName = path.basename(relativePath);
-        const taskNameMatch = fileName.match(/^(.+?)\.task\.(js|ts)$/);
-        let derivedTaskName: string = '';
-        if (taskNameMatch?.[1]) {
-          derivedTaskName = taskNameMatch[1];
+        const taskIdMatch = fileName.match(/^(.+?)\.task\.(js|ts)$/);
+        let derivedTaskId: string = '';
+        if (taskIdMatch?.[1]) {
+          derivedTaskId = taskIdMatch[1];
         } else {
           continue;
         }
 
-        this.logger.debug({ groupName, derivedTaskName, filePath }, 'Loading task definition...');
+        this.logger.debug({ groupName, derivedTaskId, filePath }, 'Loading task definition...');
 
         const fileUrl = pathToFileURL(filePath).href;
         const taskModule = (await import(fileUrl)) as {
           default?: TaskDefinition & { trigger?: TaskTrigger; triggers?: TaskTrigger[] };
         };
 
-        let finalTaskName: string = derivedTaskName;
+        let finalTaskId: string = derivedTaskId;
         let moduleToUse: TaskDefinition & { trigger?: TaskTrigger; triggers?: TaskTrigger[] };
 
         if (taskModule.default?.handler && typeof taskModule.default.handler === 'function') {
@@ -199,22 +199,22 @@ export class TaskServer {
         const group = this.client.createTaskGroup(groupName);
         this.managedGroups.add(group);
 
-        const explicitName = moduleToUse.name;
-        if (explicitName) {
-          finalTaskName = explicitName;
-          this.logger.debug({ derivedTaskName, explicitName: finalTaskName }, 'Using explicit task name from options.');
+        const explicitId = moduleToUse.id;
+        if (explicitId) {
+          finalTaskId = explicitId;
+          this.logger.debug({ derivedTaskId, explicitName: finalTaskId }, 'Using explicit task name from options.');
         }
 
         const options = moduleToUse.options || {};
         group.createTask({
-          name: finalTaskName,
+          id: finalTaskId,
           options: options,
           triggers: moduleToUse.triggers ?? moduleToUse.trigger,
           handler: moduleToUse.handler,
           schema: moduleToUse.schema,
         });
 
-        this.logger.debug({ groupName, taskName: finalTaskName }, 'Successfully loaded and defined task.');
+        this.logger.debug({ groupName, taskId: finalTaskId }, 'Successfully loaded and defined task.');
         loadedCount++;
       } catch (error) {
         this.logger.error({ filePath, err: error }, 'Failed to load or define task from file.');
@@ -256,13 +256,13 @@ export class TaskServer {
    * Runs a task in the specified group with the provided data.
    *
    * @param groupName The name of the task group.
-   * @param taskName The name of the task to run.
+   * @param taskId The name of the task to run.
    * @param data The data to pass to the task.
    * @returns A promise that resolves to the Job instance.
    */
 
-  async runTask<PayloadType = any, ResultType = any>(groupName: string, taskName: string, payload: PayloadType) {
-    return this.client.runTask<PayloadType, ResultType>(groupName, taskName, payload);
+  async runTask<PayloadType = any, ResultType = any>(groupName: string, taskId: string, payload: PayloadType) {
+    return this.client.runTask<PayloadType, ResultType>(groupName, taskId, payload);
   }
 
   /**

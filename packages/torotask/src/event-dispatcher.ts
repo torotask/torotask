@@ -118,7 +118,7 @@ export class EventDispatcher extends TaskWorkerQueue<PayloadType, ReturnType> {
    * @param task The Task instance whose registrations should be cleared.
    */
   async clearTaskEvents(task: Task<any, any>): Promise<void> {
-    this.logger.warn({ taskName: task.name }, 'clearTaskEvents needs to be updated to handle JSON data in Redis sets.');
+    this.logger.warn({ taskId: task.id }, 'clearTaskEvents needs to be updated to handle JSON data in Redis sets.');
     // TODO: Implement Redis logic for clearing JSON entries
     // await super.clearTaskEvents(task); // Placeholder call - BaseQueue has no such method
   }
@@ -204,10 +204,10 @@ export class EventDispatcher extends TaskWorkerQueue<PayloadType, ReturnType> {
 
       for (const subInfo of subscriptions) {
         // Ensure we have the necessary info to target the task queue
-        if (!subInfo.taskGroup || !subInfo.taskName) {
+        if (!subInfo.taskGroup || !subInfo.taskId) {
           jobLogger.warn(
             { subscriptionInfo: subInfo },
-            'Skipping dispatch: Subscription info missing taskGroup or taskName.'
+            'Skipping dispatch: Subscription info missing taskGroup or taskId.'
           );
           continue;
         }
@@ -217,10 +217,10 @@ export class EventDispatcher extends TaskWorkerQueue<PayloadType, ReturnType> {
         // You might need to adapt this part based on your actual implementation for accessing other task queues.
         let taskInstance;
         try {
-          taskInstance = this.taskClient.getTask(subInfo.taskGroup, subInfo.taskName) as Task<any, any> | undefined;
+          taskInstance = this.taskClient.getTask(subInfo.taskGroup, subInfo.taskId) as Task<any, any> | undefined;
         } catch (taskError) {
           jobLogger.error(
-            { err: taskError, taskGroup: subInfo.taskGroup, taskName: subInfo.taskName },
+            { err: taskError, taskGroup: subInfo.taskGroup, taskId: subInfo.taskId },
             'Failed to get target task instance.'
           );
           continue; // Skip this subscription if queue cannot be obtained
@@ -233,7 +233,7 @@ export class EventDispatcher extends TaskWorkerQueue<PayloadType, ReturnType> {
           dispatchPromises.push(taskInstance.run(mergedData));
         } else {
           jobLogger.error(
-            { taskGroup: subInfo.taskGroup, taskName: subInfo.taskName },
+            { taskGroup: subInfo.taskGroup, taskId: subInfo.taskId },
             'Could not get target task instance for dispatch (was null/undefined).'
           );
         }

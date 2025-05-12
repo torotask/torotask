@@ -1,14 +1,5 @@
 import { z } from 'zod';
-import type {
-  TaskDefinition,
-  // TaskHandler, // Not directly used in this part of the file for defineTask/createSchema
-  // TaskOptions, // Not directly used in this part of the file for defineTask/createSchema
-  SchemaHandler,
-  TaskTrigger,
-  SingleOrArray,
-  ResolvedSchemaType, // Added ResolvedSchemaType
-} from './types/index.js';
-// import { ToroTaskError } from './utils/error.js'; // Not used here
+import type { TaskDefinition, SchemaHandler, TaskTrigger, SingleOrArray, ResolvedSchemaType } from './types/index.js';
 
 // Helper type to redefine config for defineTask input
 type DefineTaskConfigInput<PayloadType, ResultType, SchemaVal extends SchemaHandler> = Omit<

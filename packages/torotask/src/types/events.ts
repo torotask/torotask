@@ -3,7 +3,7 @@ import type { RepeatOptions } from 'bullmq';
 // Interface for the data stored in the event set
 export interface EventSubscriptionInfo {
   taskGroup: string;
-  taskName: string;
+  taskId: string;
   triggerId?: number;
   eventId?: string;
   data?: Record<string, any>;
@@ -20,7 +20,7 @@ export interface SyncJobReturn {
 
 export interface SyncJobPayload {
   taskGroup: string;
-  taskName: string;
+  taskId: string;
   // The complete list of event subscriptions this task *should* have
   desiredSubscriptions: EventSubscriptionInfo[];
 }

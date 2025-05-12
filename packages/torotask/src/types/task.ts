@@ -100,7 +100,7 @@ export interface TaskDefinition<
   ResultType = unknown,
   SchemaInputValue extends SchemaHandler = undefined,
 > {
-  name: string;
+  id: string;
   handler: TaskHandler<
     EffectivePayloadType<PayloadExplicit, ResolvedSchemaType<SchemaInputValue>>,
     ResultType,

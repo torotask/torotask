@@ -178,9 +178,9 @@ export class ToroTask {
   public getTaskByKey<PayloadType = any, ResultType = unknown>(
     taskKey: `${string}.${string}`
   ): Task<PayloadType, ResultType, SchemaHandler> | undefined {
-    const [groupName, taskName] = taskKey.split('.');
+    const [groupName, taskId] = taskKey.split('.');
     // The call to this.getTask will now correctly return Task<PayloadType, ResultType, ActualSchemaInputType> | undefined
-    return this.getTask<PayloadType, ResultType>(groupName, taskName);
+    return this.getTask<PayloadType, ResultType>(groupName, taskId);
   }
 
   /**
@@ -217,27 +217,27 @@ export class ToroTask {
    * Runs a task in the specified group with the provided data.
    *
    * @param groupName The name of the task group.
-   * @param taskName The name of the task to run.
+   * @param taskId The name of the task to run.
    * @param data The data to pass to the task.
    * @returns A promise that resolves to the Job instance.
    */
   async runTask<PayloadType = any, ResultType = any>(
     groupName: string,
-    taskName: string,
+    taskId: string,
     payload: PayloadType,
     options?: TaskJobOptions
   ) {
-    const task = this.getTask<PayloadType, ResultType>(groupName, taskName);
+    const task = this.getTask<PayloadType, ResultType>(groupName, taskId);
     if (task) {
       return await task.run(payload);
     }
 
-    const queue = await this.getConsumerQueue<PayloadType, ResultType>(groupName, taskName);
+    const queue = await this.getConsumerQueue<PayloadType, ResultType>(groupName, taskId);
     if (!queue) {
-      throw new Error(`Queue ${groupName}.${taskName} is not registered`);
+      throw new Error(`Queue ${groupName}.${taskId} is not registered`);
     }
 
-    return await queue.add(taskName, payload, options);
+    return await queue.add(taskId, payload, options);
   }
 
   /**
@@ -248,14 +248,14 @@ export class ToroTask {
    * @returns A promise that resolves to the Job instance.
    */
   async runTaskByKey<PayloadType = any, ResultType = any>(taskKey: `${string}.${string}`, payload: PayloadType) {
-    const [groupName, taskName] = taskKey.split('.');
-    return this.runTask<PayloadType, ResultType>(groupName, taskName, payload);
+    const [groupName, taskId] = taskKey.split('.');
+    return this.runTask<PayloadType, ResultType>(groupName, taskId, payload);
   }
 
   _convertToFlow(run: BulkTaskRun): FlowJob {
-    const task = this.getTask(run.taskGroup, run.taskName);
+    const task = this.getTask(run.taskGroup, run.taskId);
     if (!task) {
-      throw new Error(`Task ${run.taskGroup}.${run.taskName} not found`);
+      throw new Error(`Task ${run.taskGroup}.${run.taskId} not found`);
     }
     const queueName = task.queueName;
     const options = {
@@ -273,9 +273,9 @@ export class ToroTask {
   }
 
   _convertToChildFlow(run: BulkTaskRunChild): FlowChildJob {
-    const task = this.getTask(run.taskGroup, run.taskName);
+    const task = this.getTask(run.taskGroup, run.taskId);
     if (!task) {
-      throw new Error(`Task ${run.taskGroup}.${run.taskName} not found`);
+      throw new Error(`Task ${run.taskGroup}.${run.taskId} not found`);
     }
     const queueName = task.queueName;
     const options = {

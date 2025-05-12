@@ -58,7 +58,7 @@ export abstract class BaseTask<
 
   constructor(
     public readonly group: TaskGroup,
-    public readonly name: string, // Renamed parameter
+    public readonly id: string,
     public options: TOptions,
     trigger: SingleOrArray<TaskTrigger<PayloadType>> | undefined,
     parentLogger?: Logger
@@ -66,13 +66,13 @@ export abstract class BaseTask<
     if (!group) {
       throw new Error('TaskGroup instance is required.');
     }
-    if (!name) {
-      throw new Error('Task name is required.');
+    if (!id) {
+      throw new Error('Task id is required.');
     }
     parentLogger = parentLogger || group.logger;
 
-    const queueName = `${group.name}.${name}`; // Use taskName to build queueName
-    const logger = parentLogger.child({ taskName: name }); // Use taskName in logger
+    const queueName = `${group.name}.${id}`;
+    const logger = parentLogger.child({ taskId: id });
     super(); // Pass the calculated queueName
 
     this.taskClient = group.client;
@@ -142,8 +142,8 @@ export abstract class BaseTask<
     const data = {
       payload,
     };
-    // Use taskName for the default job name if needed, queue handles its own naming
-    return this.queue.add(this.name, data as any, finalOptions);
+    // Use id for the default job name if needed, queue handles its own naming
+    return this.queue.add(this.id, data as any, finalOptions);
   }
 
   async runBulk(jobs: BulkJob[]) {
@@ -168,19 +168,19 @@ export abstract class BaseTask<
     const data = {
       payload,
     };
-    // Use taskName for the default job name if needed
-    return this.queue._runJobAndWait(this.name, data as any, finalOptions);
+    // Use task id for the default job name if needed
+    return this.queue._runJobAndWait(this.id, data as any, finalOptions);
   }
 
   protected getJobName(job: Job): string {
-    // Use taskName as the default if job.name is empty or default
-    return job.name === '' || job.name === '__default__' ? this.name : job.name;
+    // Use task id for the default if job.name is empty or default
+    return job.name === '' || job.name === '__default__' ? this.id : job.name;
   }
 
   protected getJobLogger(job: Job): Logger {
     const effectiveJobName = this.getJobName(job);
-    // Include taskName in the job logger context
-    return this.logger.child({ jobId: job.id, jobName: effectiveJobName, taskName: this.name });
+    // Include task id in the job logger context
+    return this.logger.child({ jobId: job.id, jobName: effectiveJobName, taskId: this.id });
   }
 
   async process(job: Job, token?: string): Promise<any> {
@@ -197,7 +197,7 @@ export abstract class BaseTask<
    */
 
   public async requestTriggerSync(): Promise<void> {
-    const logPrefix = `[Request Sync: ${this.name}]`; // Use taskName in log
+    const logPrefix = `[Request Sync: ${this.id}]`; // Use task id in log
     this.logger.debug(`${logPrefix} Requesting trigger synchronization via EventManager.`);
     try {
       // Only need to sync event triggers via the manager
@@ -218,7 +218,7 @@ export abstract class BaseTask<
    */
   protected async _synchronizeCronEverySchedulers(): Promise<void> {
     // Add distinct log prefix
-    const logPrefix = `(Cron/Every Sync: ${this.name})`; // Use taskName in log
+    const logPrefix = `(Cron/Every Sync: ${this.id})`; // Use task id in log
     this.logger.debug(`${logPrefix} Starting synchronization...`);
 
     try {
@@ -288,7 +288,7 @@ export abstract class BaseTask<
         this.logger.debug(`${logPrefix} ${logSuffix} Upserting scheduler '${schedulerKey}'`);
         upsertPromises.push(
           this.queue.upsertJobScheduler(schedulerKey, repeatOpts, {
-            name: this.name, // Use taskName for the job name within the scheduler
+            name: this.id, // Use task id for the job name within the scheduler
             data: { payload: trigger.payload },
             opts: jobOptions,
           })
@@ -324,7 +324,7 @@ export abstract class BaseTask<
    * Collects desired event subscriptions and requests synchronization via the EventManager.
    */
   protected async _requestEventTriggerSync(): Promise<void> {
-    const logPrefix = `[Event Sync Request: ${this.name}]`; // Use taskName in log
+    const logPrefix = `[Event Sync Request: ${this.id}]`;
     this.logger.debug(`${logPrefix} Collecting desired event subscriptions...`);
     const manager = this.group.client.events.manager; // Access manager
 
@@ -341,7 +341,7 @@ export abstract class BaseTask<
 
         desiredSubscriptions.push({
           taskGroup: this.group.name,
-          taskName: this.name, // Use taskName here
+          taskId: this.id,
           triggerId: trigger.internalId,
           eventId: trigger.event,
           data,
@@ -360,7 +360,7 @@ export abstract class BaseTask<
 
     // 2. Request the sync job via the manager
     try {
-      const job = await manager.requestSync(this.group.name, this.name, desiredSubscriptions); // Use taskName
+      const job = await manager.requestSync(this.group.name, this.id, desiredSubscriptions); // Use task id
       if (job) {
         this.logger.debug({ jobId: job.id }, `${logPrefix} Sync job successfully requested.`);
       } else {
@@ -376,7 +376,7 @@ export abstract class BaseTask<
    * Updates the task's default job options and triggers, then requests synchronization.
    */
   async update(options?: TOptions, triggers?: SingleOrArray<TaskTrigger<PayloadType>>): Promise<void> {
-    const logPrefix = `[Task Update: ${this.name}]`; // Use taskName in log
+    const logPrefix = `[Task Update: ${this.id}]`; // Use task id in log
     this.logger.debug({ hasNewOptions: !!options, hasNewTriggers: !!triggers }, `${logPrefix} Starting update...`);
     let needsSyncRequest = false; // Renamed for clarity
 
@@ -409,7 +409,7 @@ export abstract class BaseTask<
    * Removes all BullMQ job schedulers (cron/every) and requests event trigger unregistration.
    */
   async removeAllTriggers(): Promise<void> {
-    const logPrefix = `[Remove Triggers: ${this.name}]`; // Use taskName in log
+    const logPrefix = `[Remove Triggers: ${this.id}]`; // Use task id in log
     this.logger.info(`${logPrefix} Starting removal of all triggers...`);
     const manager = this.group.client.events.manager;
 
@@ -431,7 +431,7 @@ export abstract class BaseTask<
     this.logger.info(`${logPrefix} Requesting removal of all event triggers via EventManager...`);
     try {
       // Pass empty array to signal removal
-      await manager.requestSync(this.group.name, this.name, []); // Use taskName
+      await manager.requestSync(this.group.name, this.id, []); // Use task id
       this.logger.info(`${logPrefix} Event trigger removal requested successfully.`);
     } catch (error) {
       this.logger.error({ err: error }, `${logPrefix} Failed to request event trigger removal.`);
@@ -441,7 +441,7 @@ export abstract class BaseTask<
 
   /** Helper method to normalize trigger input and update internal state */
   protected _initializeTriggers(triggersInput?: SingleOrArray<TaskTrigger<PayloadType>>): void {
-    const logPrefix = `[Init Triggers: ${this.name}]`; // Use taskName in log
+    const logPrefix = `[Init Triggers: ${this.id}]`; // Use task id in log
     this.logger.debug(`${logPrefix} Normalizing triggers and updating internal trigger maps...`);
     const normalizedTriggers: InternalTaskTrigger<PayloadType>[] = [];
 

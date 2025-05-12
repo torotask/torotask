@@ -36,12 +36,12 @@ export class EventSubscriptions {
   /**
    * Gets the Redis key for the Set containing event names a task is subscribed to.
    * @param taskGroup Task group name.
-   * @param taskName Task name.
+   * @param taskId Task id.
    * @returns The Redis key string.
    */
-  getTaskIndexKey(taskGroup: string, taskName: string): string {
+  getTaskIndexKey(taskGroup: string, taskId: string): string {
     const prefix = this.prefix ? `${this.prefix}:` : '';
-    return `${prefix}${TASK_INDEX_PREFIX}:${taskGroup}:${taskName}`;
+    return `${prefix}${TASK_INDEX_PREFIX}:${taskGroup}:${taskId}`;
   }
 
   /**
@@ -50,7 +50,7 @@ export class EventSubscriptions {
    * @returns A string identifier (e.g., "group:task:trigger:123" or "group:task:event:abc").
    */
   public getIdentifier(info: EventSubscriptionInfo): string {
-    const { taskGroup, taskName, triggerId, eventId } = info;
+    const { taskGroup, taskId, triggerId, eventId } = info;
     let suffix = '';
     if (triggerId !== undefined) {
       suffix = `:trigger:${triggerId}`;
@@ -64,7 +64,7 @@ export class EventSubscriptions {
       suffix = ':event:unidentified';
     }
     // Consistent identifier format
-    return `${taskGroup}:${taskName}${suffix}`;
+    return `${taskGroup}:${taskId}${suffix}`;
   }
 
   /**
@@ -77,7 +77,7 @@ export class EventSubscriptions {
    */
   async register(eventName: string, info: EventSubscriptionInfo): Promise<void> {
     const eventKey = this.getEventKey(eventName);
-    const taskIndexKey = this.getTaskIndexKey(info.taskGroup, info.taskName);
+    const taskIndexKey = this.getTaskIndexKey(info.taskGroup, info.taskId);
     const subscriptionId = this.getIdentifier(info);
     const subscriptionData = JSON.stringify(info);
 
@@ -139,9 +139,9 @@ export class EventSubscriptions {
    */
   async unregister(eventName: string, info: EventSubscriptionInfo): Promise<void> {
     const eventKey = this.getEventKey(eventName);
-    const taskIndexKey = this.getTaskIndexKey(info.taskGroup, info.taskName);
+    const taskIndexKey = this.getTaskIndexKey(info.taskGroup, info.taskId);
     const subscriptionId = this.getIdentifier(info);
-    const { taskGroup, taskName } = info; // Destructure for clarity
+    const { taskGroup, taskId } = info; // Destructure for clarity
 
     this.logger.debug({ eventName, info, subscriptionId }, 'Unregistering subscription');
 
@@ -161,7 +161,7 @@ export class EventSubscriptions {
         const taskHasOtherSubscriptionsForEvent = remainingValues.some((jsonString) => {
           try {
             const otherInfo = JSON.parse(jsonString) as EventSubscriptionInfo;
-            return otherInfo.taskGroup === taskGroup && otherInfo.taskName === taskName;
+            return otherInfo.taskGroup === taskGroup && otherInfo.taskId === taskId;
           } catch (parseError) {
             this.logger.warn(
               // Match original log
@@ -204,7 +204,7 @@ export class EventSubscriptions {
     } catch (error) {
       // Match original log message structure
       this.logger.error(
-        { err: error, eventName, taskGroup: info.taskGroup, taskName: info.taskName, fieldKey: subscriptionId },
+        { err: error, eventName, taskGroup: info.taskGroup, taskId: info.taskId, fieldKey: subscriptionId },
         'Failed to unregister event task subscription from Redis Hash' // Original message didn't include "from Redis Hash" but context is clear
       );
       throw error;
@@ -216,11 +216,11 @@ export class EventSubscriptions {
    * and then fetching the details from the relevant event keys.
    * Matches the original logic from EventManager.process for fetching current state.
    * @param taskGroup - The group of the task.
-   * @param taskName - The name of the task.
+   * @param taskId - The id of the task.
    * @returns A promise resolving to an array of subscription information objects.
    */
-  async getForTask(taskGroup: string, taskName: string): Promise<EventSubscriptionInfo[]> {
-    const eventNames = await this.getTaskEventIndex(taskGroup, taskName);
+  async getForTask(taskGroup: string, taskId: string): Promise<EventSubscriptionInfo[]> {
+    const eventNames = await this.getTaskEventIndex(taskGroup, taskId);
     if (eventNames.length === 0) {
       return [];
     }
@@ -235,26 +235,26 @@ export class EventSubscriptions {
         this.logger.trace(
           // Use trace for potentially verbose logging
           { eventName, count: subscriptionJsonStrings.length, key: eventKey },
-          `Fetched subscription JSONs from Hash for task ${taskGroup}:${taskName}.`
+          `Fetched subscription JSONs from Hash for task ${taskGroup}:${taskId}.`
         );
         subscriptionJsonStrings.forEach((jsonString) => {
           try {
             const info = JSON.parse(jsonString) as EventSubscriptionInfo;
             // Filter for the specific task
-            if (info.taskGroup === taskGroup && info.taskName === taskName) {
+            if (info.taskGroup === taskGroup && info.taskId === taskId) {
               allSubscriptions.push(info);
             }
           } catch (parseError) {
             this.logger.warn(
               { err: parseError, eventName, key: eventKey, jsonString },
-              `Failed to parse subscription JSON from Hash while getting subscriptions for task ${taskGroup}:${taskName}.`
+              `Failed to parse subscription JSON from Hash while getting subscriptions for task ${taskGroup}:${taskId}.`
             );
           }
         });
       } catch (fetchError) {
         this.logger.error(
           { err: fetchError, eventName, key: eventKey },
-          `Failed to fetch subscriptions from Hash for event ${eventName} while getting subscriptions for task ${taskGroup}:${taskName}.`
+          `Failed to fetch subscriptions from Hash for event ${eventName} while getting subscriptions for task ${taskGroup}:${taskId}.`
         );
         // Propagate error to signal failure in getting complete current state
         throw fetchError;
@@ -282,15 +282,15 @@ export class EventSubscriptions {
   /**
    * Retrieves the set of event names a specific task is subscribed to.
    * @param taskGroup - The group of the task.
-   * @param taskName - The name of the task.
+   * @param taskId - The id of the task.
    * @returns A promise resolving to an array of event names.
    */
-  async getTaskEventIndex(taskGroup: string, taskName: string): Promise<string[]> {
-    const taskIndexKey = this.getTaskIndexKey(taskGroup, taskName);
+  async getTaskEventIndex(taskGroup: string, taskId: string): Promise<string[]> {
+    const taskIndexKey = this.getTaskIndexKey(taskGroup, taskId);
     try {
       return await this.redis.smembers(taskIndexKey);
     } catch (error) {
-      this.logger.error({ err: error, taskGroup, taskName }, 'Error getting task event index');
+      this.logger.error({ err: error, taskGroup, taskId }, 'Error getting task event index');
       throw error;
     }
   }

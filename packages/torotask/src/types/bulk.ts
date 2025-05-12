@@ -12,7 +12,7 @@ export type BulkJob<T = any> = {
 
 export type BulkTaskRunBase<T> = {
   taskGroup: string;
-  taskName: string;
+  taskId: string;
   name: string;
   data?: any;
   options?: T;

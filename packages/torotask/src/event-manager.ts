@@ -51,23 +51,23 @@ export class EventManager extends TaskWorkerQueue<PayloadType, ReturnType> {
    * Uses a job ID based on the task to prevent duplicate concurrent syncs.
    *
    * @param taskGroup The group name of the task.
-   * @param taskName The name of the task.
+   * @param taskId The id of the task.
    * @param desiredSubscriptions The complete list of event subscriptions the task should have.
    * @param options Optional BullMQ job options.
    */
   async requestSync(
     taskGroup: string,
-    taskName: string,
+    taskId: string,
     desiredSubscriptions: EventSubscriptionInfo[],
     options?: TaskJobOptions
   ): Promise<TaskJob<PayloadType, ReturnType, string>> {
     const payload: PayloadType = {
       taskGroup,
-      taskName,
+      taskId,
       desiredSubscriptions,
     };
     this.logger.debug(
-      { taskGroup, taskName, desiredCount: desiredSubscriptions.length },
+      { taskGroup, taskId, desiredCount: desiredSubscriptions.length },
       `Requesting event trigger sync job.`
     );
 
@@ -90,8 +90,8 @@ export class EventManager extends TaskWorkerQueue<PayloadType, ReturnType> {
    * @param job The synchronization job.
    */
   async process(job: TaskJob<PayloadType, ReturnType, string>): Promise<ReturnType> {
-    const { taskGroup, taskName, desiredSubscriptions } = job.payload;
-    const logPrefix = `[Sync Process: ${taskGroup}:${taskName} (Job ${job.id})]`;
+    const { taskGroup, taskId, desiredSubscriptions } = job.payload;
+    const logPrefix = `[Sync Process: ${taskGroup}:${taskId} (Job ${job.id})]`;
     this.logger.debug(`${logPrefix} Starting synchronization using Repository.`);
 
     // --- Prepare desired state map (using triggerId as key, matching original logic) ---
@@ -125,19 +125,19 @@ export class EventManager extends TaskWorkerQueue<PayloadType, ReturnType> {
       let currentlyRegisteredSubscriptions: EventSubscriptionInfo[] = [];
       try {
         // Fetch all subscriptions for the task
-        currentlyRegisteredSubscriptions = await this.subscriptions.getForTask(taskGroup, taskName);
+        currentlyRegisteredSubscriptions = await this.subscriptions.getForTask(taskGroup, taskId);
         this.logger.debug(
           { currentCount: currentlyRegisteredSubscriptions.length },
           `${logPrefix} Fetched current subscriptions for task via repository.`
         );
       } catch (fetchError) {
         this.logger.error(
-          { err: fetchError, taskGroup, taskName },
+          { err: fetchError, taskGroup, taskId },
           `${logPrefix} Failed to fetch current subscriptions via repository.`
         );
         errorCount++;
         // Abort if we can't get the current state.
-        throw new Error(`Failed to fetch current state for ${taskGroup}:${taskName}`);
+        throw new Error(`Failed to fetch current state for ${taskGroup}:${taskId}`);
       }
 
       // Create map using triggerId as key, matching original logic

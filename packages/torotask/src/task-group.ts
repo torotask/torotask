@@ -22,8 +22,19 @@ export class TaskGroup<
   public readonly name: string;
   public readonly client: ToroTask;
   public readonly logger: Logger;
-  // Changed the type of the tasks map to allow any ActualSchemaInputType for the third generic
+
+  /**
+   * Collection of tasks indexed by the task name from definitions.
+   * This provides strict typing based on the definition keys.
+   */
   public tasks: TTasks;
+
+  /**
+   * Collection of tasks indexed by their IDs.
+   * Used internally for lookups where the ID might differ from the definition key.
+   * No strict typing is enforced on task IDs.
+   */
+  public tasksById: Record<string, Task<any, any, SchemaHandler>> = {};
 
   constructor(client: ToroTask, name: string, parentLogger: Logger, definitions?: TDefs) {
     if (!client) {
@@ -43,55 +54,78 @@ export class TaskGroup<
     if (definitions) {
       for (const key of Object.keys(definitions) as Array<Extract<keyof TDefs, string>>) {
         const definition = definitions[key]; // definition is TDefs[key]
-        this.createTask(definition as TDefs[Extract<keyof TDefs, string>] & { name: Extract<keyof TDefs, string> });
+        // Add the ID to the config if it doesn't have one (or use the key as the ID)
+        const config = {
+          ...definition,
+          id: definition.id || key,
+        };
+        this.createTask(config as TDefs[Extract<keyof TDefs, string>]);
       }
     }
   }
 
   /**
    * Creates a new Task within this group using a configuration object.
-   * TaskName ensures that config matches a specific definition in TDefs and its 'name' property.
-   * The created Task type matches TTasks[TaskName].
+   * Task Id ensures that config matches a specific definition in TDefs.
+   * The created Task type matches TTasks[TaskId].
    */
-  createTask<TaskName extends Extract<keyof TDefs, string>>(
-    // Config is the specific definition from TDefs, and its 'name' property must match TaskName.
-    config: TDefs[TaskName] & { name: TaskName }
-  ): TTasks[TaskName] {
+  createTask<TaskId extends Extract<keyof TDefs, string>>(
+    // Config is the specific definition from TDefs
+    config: TDefs[TaskId]
+  ): TTasks[TaskId] {
     // Return type is the specific task type from TTasks
-    // Generics for Task <P,R,S> are inferred from config (TDefs[TaskName])
+    // Generics for Task <P,R,S> are inferred from config (TDefs[TaskId])
     // because Task constructor takes config: TaskDefinition<P,R,S>
     const task = new Task(
       this as any, // Pass the TaskGroup instance
-      config, // Pass the original config (typed as TDefs[TaskName])
-      this.logger.child({ task: config.name }) // config.name is TaskName
+      config, // Pass the original config (typed as TDefs[TaskId])
+      this.logger.child({ task: config.id })
     );
 
-    if (this.tasks[config.name]) {
-      // config.name is TaskName (the key for TTasks)
-      this.logger.warn({ taskName: config.name }, 'Task already defined in this group. Overwriting.');
+    // The task ID from the config is the string key we use to register the task in the type-safe map
+    const taskDefinitionKey = config.id as Extract<keyof TDefs, string>;
+
+    if (this.tasks[taskDefinitionKey]) {
+      this.logger.warn(
+        { definitionKey: taskDefinitionKey, taskId: config.id },
+        'Task already defined in this group. Overwriting.'
+      );
     }
 
-    // config.name is TaskName (type keyof TDefs).
-    // this.tasks is TTasks.
-    // task is an instance of Task<P,R,S> (types inferred from TDefs[TaskName]).
-    // TTasks[TaskName] is also Task<P,R,S>.
-    // This assignment is now type-correct.
-    this.tasks[config.name] = task as TTasks[TaskName];
-    this.logger.debug({ taskName: config.name }, 'Task defined');
-    return task as TTasks[TaskName];
+    // Register by definition key in the type-safe map (using the resolved taskDefinitionKey)
+    this.tasks[taskDefinitionKey] = task as TTasks[TaskId];
+
+    // Also register by actual task ID in the ID-indexed collection (which might be different)
+    this.tasksById[task.id] = task;
+
+    this.logger.debug({ definitionKey: taskDefinitionKey, taskId: task.id }, 'Task defined');
+    return task as TTasks[TaskId];
   }
 
   /**
-   * Retrieves a defined Task by name.
+   * Retrieves a defined Task by name or ID.
    *
-   * @param name The name of the task.
+   * @param name The name of the task from definitions, or its ID.
    * @returns The Task instance if found, otherwise undefined.
    */
-  // Updated return type to reflect that tasks in the map can have any schema.
   getTask(name: string): Task<any, any, SchemaHandler> | undefined {
-    return this.tasks[name];
+    // First check in the type-safe tasks collection (by definition name)
+    const taskByName = this.tasks[name];
+    if (taskByName) return taskByName;
+
+    // If not found, check in the ID-indexed collection
+    return this.tasksById[name];
   }
 
+  /**
+   * Retrieves a defined Task by ID.
+   *
+   * @param id The ID of the task from definitions
+   * @returns The Task instance if found, otherwise undefined.
+   */
+  getTaskById(id: string): Task<any, any, SchemaHandler> | undefined {
+    return this.tasksById[id];
+  }
   /**
    * Gets all defined tasks in this group.
    *
@@ -128,7 +162,8 @@ export class TaskGroup<
     if (filter?.tasks) {
       tasksToProcess = filter.tasks
         .map((name) => {
-          const task = this.tasks[name];
+          // Use getTask to look up by both name and ID
+          const task = this.getTask(name as string);
           if (!task) {
             notFoundKeys.push(name);
           }

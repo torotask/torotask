@@ -1,5 +1,5 @@
-import { type ZodSchema, z } from 'zod';
-import { IsStrictlyUnknown } from './utils.js';
+import type { ZodSchema, z } from 'zod';
+import type { IsStrictlyUnknown } from './utils.js';
 
 // ZodNamespace is no longer needed as we are not using a schema builder function.
 
@@ -20,9 +20,11 @@ export type ResolvedSchemaType<SH extends SchemaHandler> = SH extends ZodSchema 
  * If a schema is present, the payload type is inferred from it.
  * Otherwise, it falls back to `PayloadExplicit` or `unknown`.
  */
-export type EffectivePayloadType<PayloadExplicit, SchemaTypeResolved extends ZodSchema | undefined> =
-  SchemaTypeResolved extends ZodSchema // If SchemaTypeResolved is a ZodSchema
-    ? z.infer<SchemaTypeResolved> // Then use inferred schema type
-    : IsStrictlyUnknown<PayloadExplicit> extends true // Else (no schema), if PayloadExplicit is unknown
-      ? unknown // Then use unknown
-      : PayloadExplicit; // Else (no schema, PayloadExplicit is NOT unknown), use PayloadExplicit
+export type EffectivePayloadType<
+  PayloadExplicit,
+  SchemaTypeResolved extends ZodSchema | undefined,
+> = SchemaTypeResolved extends ZodSchema // If SchemaTypeResolved is a ZodSchema
+  ? z.infer<SchemaTypeResolved> // Then use inferred schema type
+  : IsStrictlyUnknown<PayloadExplicit> extends true // Else (no schema), if PayloadExplicit is unknown
+    ? unknown // Then use unknown
+    : PayloadExplicit; // Else (no schema, PayloadExplicit is NOT unknown), use PayloadExplicit

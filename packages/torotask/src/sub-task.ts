@@ -22,25 +22,25 @@ export class SubTask<
   const DataType extends TaskJobData = TaskJobData<PayloadType>,
 > {
   public readonly parentTask: Task<any, any>; // Keep less specific for simplicity
-  public readonly name: string;
+  public readonly id: string;
   public readonly handler: SubTaskHandler<PayloadType, ResultType>; // Uses imported type
   public readonly logger: Logger;
 
-  constructor(parentTask: Task<any, any>, name: string, handler: SubTaskHandler<PayloadType, ResultType>) {
+  constructor(parentTask: Task<any, any>, id: string, handler: SubTaskHandler<PayloadType, ResultType>) {
     if (!parentTask) {
       throw new Error('Parent Task instance is required for SubTask.');
     }
-    if (!name) {
-      throw new Error('SubTask name is required.');
+    if (!id) {
+      throw new Error('SubTask id is required.');
     }
     if (!handler || typeof handler !== 'function') {
       throw new Error('SubTask handler is required and must be a function.');
     }
     this.parentTask = parentTask;
-    this.name = name;
+    this.id = id;
     this.handler = handler;
     // Inherit logger from parent task and add subtask context
-    this.logger = parentTask.logger.child({ subTaskName: this.name });
+    this.logger = parentTask.logger.child({ subTaskId: this.id });
 
     this.logger.info('SubTask defined');
   }
@@ -61,7 +61,7 @@ export class SubTask<
       payload,
     };
     // Call parent task's public helper method directly
-    return this.parentTask.queue.add(this.name, data, finalOptions);
+    return this.parentTask.queue.add(this.id, data, finalOptions);
   }
 
   async processSubJob(job: TaskJob<PayloadType, ResultType>, jobName: string, jobLogger: Logger): Promise<any> {
@@ -72,7 +72,7 @@ export class SubTask<
       client: this.parentTask.taskClient,
       group: this.parentTask.group,
       parentTask: this.parentTask,
-      subTaskName: this.name,
+      subTaskId: this.id,
       job: job as any,
       step: stepExecutor,
       queue: this.parentTask.queue,
@@ -102,6 +102,6 @@ export class SubTask<
       ...overrideOptions,
     };
     // Call parent task's public helper method directly
-    return this.parentTask.queue._runJobAndWait(this.name, data, finalOptions);
+    return this.parentTask.queue._runJobAndWait(this.id, data, finalOptions);
   }
 }
