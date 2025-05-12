@@ -73,7 +73,7 @@ export class TaskGroup<
     // Its 'schema' property is of type 'SchemaVal | undefined'.
 
     const task = new Task<PayloadExplicit, ResultType, SchemaVal>(
-      this, // Pass the TaskGroup instance
+      this as any, // Pass the TaskGroup instance
       config, // Pass the original config, Task constructor will handle it
       this.logger.child({ task: config.name })
     );
@@ -127,38 +127,95 @@ export class TaskGroup<
 
   // --- Worker Orchestration ---
 
-  /**
-   * Starts workers for tasks within this group, optionally filtered by task names.
-   *
-   * @param filter Optional filter object. If `filter.tasks` is provided, only starts workers for task names in the array.
-   * @param workerOptions Optional default WorkerOptions to pass to each task's worker.
-   */
-  async startWorkers(filter?: { tasks?: string[] }, workerOptions?: WorkerOptions): Promise<void> {
-    this.logger.debug({ filter }, 'Starting workers for task group');
-    const tasksToStart = filter?.tasks
-      ? filter.tasks.map((name) => this.tasks[name as keyof TTasks]).filter((task) => !!task)
-      : Object.values(this.tasks);
+  private _getFilteredTasks(
+    filter?: { tasks?: Array<keyof TTasks> },
+    actionContext: 'starting' | 'stopping' | string = 'processing'
+  ): Array<TTasks[keyof TTasks]> {
+    let tasksToProcess: Array<TTasks[keyof TTasks]>;
+    const notFoundKeys: Array<keyof TTasks> = [];
 
     if (filter?.tasks) {
-      const requested = filter.tasks.length;
-      const found = tasksToStart.length;
-      if (requested !== found) {
+      tasksToProcess = filter.tasks
+        .map((name) => {
+          const task = this.tasks[name];
+          if (!task) {
+            notFoundKeys.push(name);
+          }
+          return task;
+        })
+        .filter((task): task is TTasks[keyof TTasks] => Boolean(task)); // Type predicate filters undefined and asserts type
+
+      const requestedCount = filter.tasks.length;
+      const foundCount = tasksToProcess.length;
+
+      if (requestedCount !== foundCount) {
         this.logger.warn(
-          { requested, found },
-          'Some requested tasks for starting workers were not found in this group.'
+          {
+            requested: requestedCount,
+            found: foundCount,
+            missingKeys: notFoundKeys.map(String), // Convert keys to strings for logging
+            context: actionContext,
+          },
+          `Some requested tasks for ${actionContext} workers were not found in this group.`
         );
       }
+    } else {
+      // Get all tasks if no filter is provided
+      tasksToProcess = Object.values(this.tasks);
     }
 
-    tasksToStart.forEach(async (task) => {
-      try {
-        await task.queue.startWorker(workerOptions);
-      } catch (error) {
-        this.logger.error({ taskName: task.name, err: error }, 'Error starting worker for task');
-        // Continue starting other workers
-      }
-    });
-    this.logger.debug({ count: tasksToStart.length }, 'Finished attempting to start workers for task group');
+    if (tasksToProcess.length === 0 && (filter?.tasks?.length ?? 0) > 0) {
+      this.logger.info(
+        { filter: filter?.tasks?.join(', ') ?? 'all', context: actionContext },
+        `No matching tasks found to process workers for.`
+      );
+    } else if (tasksToProcess.length === 0) {
+      this.logger.info({ context: actionContext }, `No tasks available in the group to process workers for.`);
+    }
+
+    return tasksToProcess;
+  }
+
+  /**
+   * Starts background workers for specified tasks or all tasks in the group.
+   * @param filter Optional filter to specify which tasks to start workers for.
+   * Uses the exact keys defined for the tasks in this group.
+   * @param workerOptions Optional configuration for the workers being started.
+   */
+  async startWorkers(filter?: { tasks?: Array<keyof TTasks> }, workerOptions?: WorkerOptions): Promise<void> {
+    const actionContext = 'starting';
+    this.logger.debug({ filter: filter?.tasks?.join(', ') ?? 'all' }, `${actionContext} workers for task group`);
+
+    // Use the helper method to get tasks
+    const tasksToStart = this._getFilteredTasks(filter, actionContext);
+
+    if (tasksToStart.length === 0) {
+      this.logger.info({ filter: filter?.tasks?.join(', ') ?? 'all' }, 'No tasks found to start workers for.');
+      return;
+    }
+
+    this.logger.debug(
+      { count: tasksToStart.length },
+      `Attempting to start workers for ${tasksToStart.length} tasks...`
+    );
+
+    const results = await Promise.allSettled(
+      tasksToStart.map(async (task) => {
+        await task.startWorker(workerOptions);
+      })
+    );
+
+    const failedStarts = results.filter((r) => r.status === 'rejected').length;
+    if (failedStarts > 0) {
+      this.logger.warn(
+        { success: tasksToStart.length - failedStarts, failed: failedStarts },
+        'Some workers failed to start.'
+      );
+    } else {
+      this.logger.debug({ count: tasksToStart.length }, 'All requested workers started successfully.');
+    }
+
+    this.logger.debug({ count: tasksToStart.length }, `Finished ${actionContext} workers for task group`);
   }
 
   /**
@@ -167,32 +224,93 @@ export class TaskGroup<
    * @param filter Optional filter object. If `filter.tasks` is provided, only stops workers for task names in the array.
    * @returns A promise that resolves when all targeted workers have been requested to stop.
    */
-  async stopWorkers(filter?: { tasks?: string[] }): Promise<void> {
-    this.logger.info({ filter }, 'Stopping workers for task group');
-    const tasksToStop = filter?.tasks
-      ? filter.tasks.map((name) => this.tasks[name as keyof TTasks]).filter((task) => !!task)
-      : Object.values(this.tasks);
+  async stopWorkers(
+    // Use keyof TTasks for compile-time safety on task names
+    filter?: { tasks?: Array<keyof TTasks> }
+  ): Promise<void> {
+    const actionContext = 'stopping';
+    this.logger.info({ filter: filter?.tasks?.join(', ') ?? 'all' }, `${actionContext} workers for task group`);
 
-    if (filter?.tasks) {
-      const requested = filter.tasks.length;
-      const found = tasksToStop.length;
-      if (requested !== found) {
-        this.logger.warn(
-          { requested, found },
-          'Some requested tasks for stopping workers were not found in this group.'
-        );
-      }
+    // Use the helper method to get tasks
+    const tasksToStop = this._getFilteredTasks(filter, actionContext);
+
+    if (tasksToStop.length === 0) {
+      this.logger.info({ filter: filter?.tasks?.join(', ') ?? 'all' }, 'No tasks found to stop workers for.');
+      return;
     }
 
-    const stopPromises = tasksToStop.map((task) =>
-      task.queue.stopWorker().catch((error) => {
-        this.logger.error({ taskName: task.name, err: error }, 'Error stopping worker for task');
-        // Continue stopping other workers, do not reject Promise.all
+    this.logger.debug({ count: tasksToStop.length }, `Attempting to stop workers for ${tasksToStop.length} tasks...`);
+
+    // Use allSettled for stopping as well, in case some fail
+    const results = await Promise.allSettled(
+      tasksToStop.map(async (task) => {
+        await task.stopWorker();
       })
     );
 
-    await Promise.all(stopPromises);
-    this.logger.info({ count: tasksToStop.length }, 'Finished attempting to stop workers for task group');
+    const failedStops = results.filter((r) => r.status === 'rejected').length;
+    if (failedStops > 0) {
+      this.logger.warn(
+        { success: tasksToStop.length - failedStops, failed: failedStops },
+        'Some workers failed to stop.'
+      );
+    } else {
+      this.logger.info({ count: tasksToStop.length }, 'All requested workers stopped successfully.');
+    }
+
+    this.logger.info({ count: tasksToStop.length }, `Finished ${actionContext} workers for task group`);
+  }
+
+  /**
+   * Closes specified tasks or all tasks within this group, releasing resources.
+   *
+   * @param filter Optional filter to specify which tasks to close.
+   * Uses the exact keys defined for the tasks in this group.
+   * @returns A promise that resolves when all targeted tasks have attempted to close.
+   */
+  async close(
+    // Add the filter parameter
+    filter?: { tasks?: Array<keyof TTasks> }
+  ): Promise<void> {
+    const actionContext = 'closing';
+    this.logger.info(
+      { group: this.name, filter: filter?.tasks?.join(', ') ?? 'all' },
+      `Attempting to ${actionContext} task(s)`
+    );
+
+    // Use the helper method to get tasks
+    const tasksToClose = this._getFilteredTasks(filter, actionContext);
+
+    if (tasksToClose.length === 0) {
+      // _getFilteredTasks already logs if no tasks are found or if the filter was empty
+      return;
+    }
+
+    this.logger.debug(
+      { group: this.name, count: tasksToClose.length },
+      `Processing ${actionContext} for ${tasksToClose.length} task(s)...`
+    );
+
+    const results = await Promise.allSettled(
+      tasksToClose.map(async (task) => {
+        await task.close();
+      })
+    );
+
+    const failedCloses = results.filter((r) => r.status === 'rejected').length;
+    if (failedCloses > 0) {
+      this.logger.warn(
+        {
+          group: this.name,
+          success: tasksToClose.length - failedCloses,
+          failed: failedCloses,
+        },
+        `Some tasks failed to close cleanly.`
+      );
+    } else {
+      this.logger.info({ group: this.name, count: tasksToClose.length }, 'All targeted tasks closed successfully.');
+    }
+    this.logger.info({ group: this.name, count: tasksToClose.length }, `Finished ${actionContext} task(s)`);
   }
 
   // --- Potential future methods ---

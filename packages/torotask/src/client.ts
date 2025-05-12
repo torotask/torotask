@@ -6,7 +6,14 @@ import { LRU } from 'tiny-lru';
 import { EventDispatcher } from './event-dispatcher.js';
 import { TaskQueue } from './queue.js';
 import { TaskGroup } from './task-group.js';
-import type { BulkTaskRun, BulkTaskRunChild, BulkTaskRunNode, SchemaHandler, TaskJobOptions } from './types/index.js';
+import type {
+  BulkTaskRun,
+  BulkTaskRunChild,
+  BulkTaskRunNode,
+  SchemaHandler,
+  TaskDefinitionRegistry,
+  TaskJobOptions,
+} from './types/index.js';
 import { getConfigFromEnv } from './utils/get-config-from-env.js';
 import { TaskWorkflow } from './workflow.js';
 import type { Task } from './task.js';
@@ -122,13 +129,13 @@ export class ToroTask {
   /**
    * Creates or retrieves a TaskGroup instance.
    */
-  public createTaskGroup(name: string): TaskGroup {
+  public createTaskGroup(name: string, definitions?: TaskDefinitionRegistry): TaskGroup {
     if (this.taskGroups[name]) {
       return this.taskGroups[name];
     }
 
     this.logger.debug({ taskGroupName: name }, 'Creating new TaskGroup');
-    const newTaskGroup = new TaskGroup(this, name, this.logger);
+    const newTaskGroup = new TaskGroup(this, name, this.logger, definitions);
     this.taskGroups[name] = newTaskGroup;
     return newTaskGroup;
   }
@@ -463,9 +470,7 @@ export class ToroTask {
     const closePromises: Promise<void>[] = [];
 
     // Close all task resources (worker, queue, events) via task.close()
-    const taskClosePromises = Object.values(this.taskGroups).flatMap((group) =>
-      Array.from(group.getTasks().values()).map((task) => task.queue.close())
-    );
+    const taskClosePromises = Object.values(this.taskGroups).flatMap((group) => group.close());
     closePromises.push(...taskClosePromises);
 
     // Close EventDispatcher if it was initialized

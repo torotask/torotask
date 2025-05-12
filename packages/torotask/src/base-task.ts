@@ -507,4 +507,16 @@ export abstract class BaseTask<
     super.once(event, listener);
     return this;
   }
+
+  async startWorker(options?: TaskWorkerOptions) {
+    return this.queue.startWorker(options);
+  }
+
+  async stopWorker(): Promise<void> {
+    return this.queue.stopWorker();
+  }
+
+  async close(): Promise<void> {
+    return this.queue.close();
+  }
 }
