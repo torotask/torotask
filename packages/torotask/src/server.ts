@@ -4,7 +4,14 @@ import { pathToFileURL } from 'url';
 import { WorkerOptions } from 'bullmq';
 import { glob } from 'glob';
 import { type DestinationStream, type Logger, type LoggerOptions, pino } from 'pino';
-import type { TaskDefinition, TaskGroupRegistry, TaskServerOptions, TaskTrigger } from './types/index.js';
+import type {
+  TaskDefinition,
+  TaskGroupDefinition,
+  TaskGroupDefinitionRegistry,
+  TaskGroupRegistry,
+  TaskServerOptions,
+  TaskTrigger,
+} from './types/index.js';
 import { ToroTask, WorkerFilter } from './client.js';
 import { TaskGroup } from './task-group.js';
 import { EventDispatcher } from './event-dispatcher.js';
@@ -24,13 +31,17 @@ export class TaskServer {
   private readonly managedGroups: Set<TaskGroup> = new Set();
   private readonly ownClient: boolean = false; // Did we create the client?
   public readonly events: EventDispatcher;
+
+  /**
+   * Registry of task groups managed by this server
+   */
   public taskGroups: TaskGroupRegistry = {};
 
   // Store bound handlers to remove them later
   private unhandledRejectionListener?: (...args: any[]) => void;
   private uncaughtExceptionListener?: (...args: any[]) => void;
 
-  constructor(options: TaskServerOptions) {
+  constructor(options: TaskServerOptions, taskGroupDefinitions?: TaskGroupDefinitionRegistry) {
     // Refined Logger Initialization
     const loggerOptions = options.logger;
     const loggerName = options.loggerName ?? LOGGER_NAME;
@@ -89,6 +100,36 @@ export class TaskServer {
     };
 
     this.logger.debug('TaskServer initialized');
+
+    // Initialize task groups from definitions if provided
+    if (taskGroupDefinitions) {
+      this.initializeTaskGroups(taskGroupDefinitions);
+    }
+  }
+
+  /**
+   * Initializes task groups from the provided task group definitions.
+   * This creates all task groups and their tasks, and adds them to the server.
+   */
+  private initializeTaskGroups(taskGroupDefinitions: TaskGroupDefinitionRegistry): void {
+    const groupCount = Object.keys(taskGroupDefinitions).length;
+    this.logger.debug({ groupCount }, 'Initializing task groups from definitions');
+
+    for (const [_groupKey, groupDef] of Object.entries(taskGroupDefinitions)) {
+      const typedGroupDef = groupDef as TaskGroupDefinition<any>;
+      const group = this.client.createTaskGroup(typedGroupDef.name, typedGroupDef.tasks);
+      this.addGroups(group);
+      this.taskGroups[typedGroupDef.name] = group;
+
+      const taskCount = Object.keys(typedGroupDef.tasks).length;
+      this.logger.debug(
+        {
+          groupName: typedGroupDef.name,
+          taskCount,
+        },
+        'Task group initialized'
+      );
+    }
   }
 
   /**

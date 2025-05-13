@@ -1,6 +1,7 @@
 import type { SingleOrArray } from './utils.js';
 import type { TaskHandler, TaskOptions, TaskTrigger } from './task.js';
 import type { ToroTask } from '../client.js';
+import type { TaskGroupDefinitionRegistry } from './task-group-definition.js';
 
 import type { DestinationStream, Logger, LoggerOptions } from 'pino';
 

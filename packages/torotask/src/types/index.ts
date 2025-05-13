@@ -5,6 +5,7 @@ export * from './sub-task.js';
 export * from './queue.js';
 export * from './schema.js';
 export * from './server.js';
+export * from './server-helper.js';
 export * from './step.js';
 export * from './task.js';
 export * from './task-group.js';

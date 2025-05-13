@@ -1,5 +1,13 @@
 import { z } from 'zod';
-import type { TaskDefinition, SchemaHandler, TaskTrigger, SingleOrArray, ResolvedSchemaType } from './types/index.js';
+import type {
+  TaskDefinition,
+  TaskGroupDefinition,
+  SchemaHandler,
+  TaskTrigger,
+  SingleOrArray,
+  ResolvedSchemaType,
+  TaskDefinitionRegistry,
+} from './types/index.js';
 
 // Helper type to redefine config for defineTask input
 type DefineTaskConfigInput<PayloadType, ResultType, SchemaVal extends SchemaHandler> = Omit<
@@ -12,6 +20,21 @@ type DefineTaskConfigInput<PayloadType, ResultType, SchemaVal extends SchemaHand
       ? SingleOrArray<TaskTrigger<z.infer<ActualSchema>>>
       : SingleOrArray<TaskTrigger<unknown>>; // Fallback for triggers if schema exists but isn't a ZodTypeAny
 };
+
+/**
+ * Defines a task group configuration.
+ * This function helps with type inference for task group definitions.
+ *
+ * @template TDefs The type of task definitions contained in this group.
+ * @param name The name of the task group.
+ * @param definitions The task definitions for this group.
+ * @returns The task group definition object, correctly typed.
+ */
+export function defineTaskGroup<TDefs extends TaskDefinitionRegistry>(
+  config: TaskGroupDefinition<TDefs>
+): TaskGroupDefinition<TDefs> {
+  return config;
+}
 
 /**
  * Defines a task configuration.
