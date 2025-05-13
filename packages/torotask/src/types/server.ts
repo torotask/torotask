@@ -1,7 +1,7 @@
-import type { SingleOrArray } from './utils.js';
-import type { TaskHandler, TaskOptions, TaskTrigger } from './task.js';
 import type { ToroTask } from '../client.js';
-import type { TaskGroupDefinitionRegistry } from './task-group-definition.js';
+import type { TaskGroupDefinitionRegistry } from './task-group.js';
+import type { TaskTrigger } from './task.js';
+import type { SingleOrArray } from './utils.js';
 
 import type { DestinationStream, Logger, LoggerOptions } from 'pino';
 
@@ -36,6 +36,12 @@ export interface TaskServerOptions {
    * Required if using relative paths in `loadTasksFromDirectory`.
    */
   rootDir?: string;
+
+  /**
+   * Registry of task group definitions to be created by the server.
+   * This allows for type-safe access to task groups and their tasks.
+   */
+  taskGroups?: TaskGroupDefinitionRegistry;
 }
 
 1;

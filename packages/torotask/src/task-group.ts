@@ -19,7 +19,7 @@ export class TaskGroup<
   // TTasks is *derived* from TDefs using our mapped type
   TTasks extends TaskRegistry<TDefs> = TaskRegistry<TDefs>,
 > {
-  public readonly name: string;
+  public readonly id: string;
   public readonly client: ToroTask;
   public readonly logger: Logger;
 
@@ -36,17 +36,17 @@ export class TaskGroup<
    */
   public tasksById: Record<string, Task<any, any, SchemaHandler>> = {};
 
-  constructor(client: ToroTask, name: string, parentLogger: Logger, definitions?: TDefs) {
+  constructor(client: ToroTask, id: string, parentLogger: Logger, definitions?: TDefs) {
     if (!client) {
       throw new Error('ToroTask instance is required.');
     }
-    if (!name) {
-      throw new Error('TaskGroup name is required.');
+    if (!id) {
+      throw new Error('TaskGroup id is required.');
     }
     this.client = client;
-    this.name = name;
+    this.id = id;
     // Create a child logger for this task group
-    this.logger = parentLogger.child({ taskGroupName: this.name });
+    this.logger = parentLogger.child({ taskGroupId: this.id });
 
     this.logger.debug('TaskGroup initialized');
 
@@ -144,7 +144,7 @@ export class TaskGroup<
     const processed: BulkTaskRun[] = runs.map((run) => {
       return {
         ...run,
-        taskGroup: run.taskGroup || this.name,
+        taskGroup: run.taskGroup || this.id,
       };
     });
     return await this.client.runBulkTasks(processed);
@@ -300,7 +300,7 @@ export class TaskGroup<
   ): Promise<void> {
     const actionContext = 'closing';
     this.logger.info(
-      { group: this.name, filter: filter?.tasks?.join(', ') ?? 'all' },
+      { group: this.id, filter: filter?.tasks?.join(', ') ?? 'all' },
       `Attempting to ${actionContext} task(s)`
     );
 
@@ -313,7 +313,7 @@ export class TaskGroup<
     }
 
     this.logger.debug(
-      { group: this.name, count: tasksToClose.length },
+      { group: this.id, count: tasksToClose.length },
       `Processing ${actionContext} for ${tasksToClose.length} task(s)...`
     );
 
@@ -327,16 +327,16 @@ export class TaskGroup<
     if (failedCloses > 0) {
       this.logger.warn(
         {
-          group: this.name,
+          group: this.id,
           success: tasksToClose.length - failedCloses,
           failed: failedCloses,
         },
         `Some tasks failed to close cleanly.`
       );
     } else {
-      this.logger.info({ group: this.name, count: tasksToClose.length }, 'All targeted tasks closed successfully.');
+      this.logger.info({ group: this.id, count: tasksToClose.length }, 'All targeted tasks closed successfully.');
     }
-    this.logger.info({ group: this.name, count: tasksToClose.length }, `Finished ${actionContext} task(s)`);
+    this.logger.info({ group: this.id, count: tasksToClose.length }, `Finished ${actionContext} task(s)`);
   }
 
   // --- Potential future methods ---

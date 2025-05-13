@@ -2,6 +2,7 @@ import { z } from 'zod';
 import type {
   TaskDefinition,
   TaskGroupDefinition,
+  TaskGroupDefinitionRegistry,
   SchemaHandler,
   TaskTrigger,
   SingleOrArray,
@@ -34,6 +35,18 @@ export function defineTaskGroup<TDefs extends TaskDefinitionRegistry>(
   config: TaskGroupDefinition<TDefs>
 ): TaskGroupDefinition<TDefs> {
   return config;
+}
+
+/**
+ * Defines a task group registry.
+ * This function helps with type inference for task group definitions.
+ *
+ * @template TGroupDefs The type of task group definitions.
+ * @param groups The task group definitions.
+ * @returns The task group definition registry, correctly typed.
+ */
+export function defineTaskGroupRegistry(groups: TaskGroupDefinitionRegistry): TaskGroupDefinitionRegistry {
+  return groups;
 }
 
 /**

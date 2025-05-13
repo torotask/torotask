@@ -2,7 +2,7 @@ import type { TaskGroup } from '../task-group.js';
 import { TaskDefinitionRegistry, TaskRegistry } from './task.js';
 
 export interface TaskGroupRegistry {
-  [groupName: string]: TaskGroup<any, any>;
+  [groupId: string]: TaskGroup<any, any>;
 }
 
 /**
@@ -14,7 +14,7 @@ export interface TaskGroupDefinition<TDefs extends TaskDefinitionRegistry> {
   /**
    * The name of the task group
    */
-  name: string;
+  id?: string;
 
   /**
    * The task definitions contained in this group
@@ -26,7 +26,7 @@ export interface TaskGroupDefinition<TDefs extends TaskDefinitionRegistry> {
  * Registry of task group definitions
  */
 export interface TaskGroupDefinitionRegistry {
-  [groupName: string]: TaskGroupDefinition<any>;
+  [groupKey: string]: TaskGroupDefinition<any>;
 }
 
 export type StrictTaskAccess<T extends TaskDefinitionRegistry> = {

@@ -71,7 +71,7 @@ export abstract class BaseTask<
     }
     parentLogger = parentLogger || group.logger;
 
-    const queueName = `${group.name}.${id}`;
+    const queueName = `${group.id}.${id}`;
     const logger = parentLogger.child({ taskId: id });
     super(); // Pass the calculated queueName
 
@@ -340,7 +340,7 @@ export abstract class BaseTask<
           : undefined;
 
         desiredSubscriptions.push({
-          taskGroup: this.group.name,
+          taskGroup: this.group.id,
           taskId: this.id,
           triggerId: trigger.internalId,
           eventId: trigger.event,
@@ -360,7 +360,7 @@ export abstract class BaseTask<
 
     // 2. Request the sync job via the manager
     try {
-      const job = await manager.requestSync(this.group.name, this.id, desiredSubscriptions); // Use task id
+      const job = await manager.requestSync(this.group.id, this.id, desiredSubscriptions); // Use task id
       if (job) {
         this.logger.debug({ jobId: job.id }, `${logPrefix} Sync job successfully requested.`);
       } else {
@@ -431,7 +431,7 @@ export abstract class BaseTask<
     this.logger.info(`${logPrefix} Requesting removal of all event triggers via EventManager...`);
     try {
       // Pass empty array to signal removal
-      await manager.requestSync(this.group.name, this.id, []); // Use task id
+      await manager.requestSync(this.group.id, this.id, []); // Use task id
       this.logger.info(`${logPrefix} Event trigger removal requested successfully.`);
     } catch (error) {
       this.logger.error({ err: error }, `${logPrefix} Failed to request event trigger removal.`);

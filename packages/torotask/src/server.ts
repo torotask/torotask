@@ -41,7 +41,7 @@ export class TaskServer {
   private unhandledRejectionListener?: (...args: any[]) => void;
   private uncaughtExceptionListener?: (...args: any[]) => void;
 
-  constructor(options: TaskServerOptions, taskGroupDefinitions?: TaskGroupDefinitionRegistry) {
+  constructor(options: TaskServerOptions) {
     // Refined Logger Initialization
     const loggerOptions = options.logger;
     const loggerName = options.loggerName ?? LOGGER_NAME;
@@ -102,8 +102,8 @@ export class TaskServer {
     this.logger.debug('TaskServer initialized');
 
     // Initialize task groups from definitions if provided
-    if (taskGroupDefinitions) {
-      this.initializeTaskGroups(taskGroupDefinitions);
+    if (options.taskGroups) {
+      this.initializeTaskGroups(options.taskGroups);
     }
   }
 
@@ -115,16 +115,16 @@ export class TaskServer {
     const groupCount = Object.keys(taskGroupDefinitions).length;
     this.logger.debug({ groupCount }, 'Initializing task groups from definitions');
 
-    for (const [_groupKey, groupDef] of Object.entries(taskGroupDefinitions)) {
+    for (const [groupKey, groupDef] of Object.entries(taskGroupDefinitions)) {
       const typedGroupDef = groupDef as TaskGroupDefinition<any>;
-      const group = this.client.createTaskGroup(typedGroupDef.name, typedGroupDef.tasks);
+      const group = this.client.createTaskGroup(groupKey, typedGroupDef.tasks);
       this.addGroups(group);
-      this.taskGroups[typedGroupDef.name] = group;
+      this.taskGroups[groupKey] = group;
 
       const taskCount = Object.keys(typedGroupDef.tasks).length;
       this.logger.debug(
         {
-          groupName: typedGroupDef.name,
+          groupId: groupKey,
           taskCount,
         },
         'Task group initialized'
@@ -143,11 +143,11 @@ export class TaskServer {
       }
       if (group.client !== this.client) {
         this.logger.warn(
-          { groupName: group.name },
+          { groupId: group.id },
           'TaskGroup added was created with a different ToroTask instance. This may cause issues.'
         );
       }
-      this.logger.debug({ groupName: group.name }, 'Adding TaskGroup');
+      this.logger.debug({ groupId: group.id }, 'Adding TaskGroup');
       this.managedGroups.add(group);
     });
     return this;
@@ -155,7 +155,7 @@ export class TaskServer {
 
   /**
    * Scans a directory for task definition files and loads them.
-   * Assumes a structure like `baseDir/groupName/taskId.task.{js,ts}`.
+   * Assumes a structure like `baseDir/groupId/taskId.task.{js,ts}`.
    * Expects task files to have a default export: `{ handler: TaskHandler, options?: TaskOptions }`.
    *
    * @param baseDir The base directory containing task groups. Can be absolute or relative to `rootDir` (if provided during server construction).
@@ -203,7 +203,7 @@ export class TaskServer {
     for (const filePath of taskFiles) {
       try {
         const relativePath = path.relative(absoluteBaseDir, filePath);
-        const groupName = path.dirname(relativePath);
+        const groupId = path.dirname(relativePath);
         const fileName = path.basename(relativePath);
         const taskIdMatch = fileName.match(/^(.+?)\.task\.(js|ts)$/);
         let derivedTaskId: string = '';
@@ -213,7 +213,7 @@ export class TaskServer {
           continue;
         }
 
-        this.logger.debug({ groupName, derivedTaskId, filePath }, 'Loading task definition...');
+        this.logger.debug({ groupId, derivedTaskId, filePath }, 'Loading task definition...');
 
         const fileUrl = pathToFileURL(filePath).href;
         const taskModule = (await import(fileUrl)) as {
@@ -237,7 +237,7 @@ export class TaskServer {
           );
         }
 
-        const group = this.client.createTaskGroup(groupName);
+        const group = this.client.createTaskGroup(groupId);
         this.managedGroups.add(group);
 
         const explicitId = moduleToUse.id;
@@ -255,7 +255,7 @@ export class TaskServer {
           schema: moduleToUse.schema,
         });
 
-        this.logger.debug({ groupName, taskId: finalTaskId }, 'Successfully loaded and defined task.');
+        this.logger.debug({ groupId, taskId: finalTaskId }, 'Successfully loaded and defined task.');
         loadedCount++;
       } catch (error) {
         this.logger.error({ filePath, err: error }, 'Failed to load or define task from file.');
@@ -278,8 +278,8 @@ export class TaskServer {
   /**
    * Retrieves an existing Task instance by group and name.
    */
-  getTask<PayloadType = any, ResultType = any>(groupName: string, name: string) {
-    return this.client.getTask<PayloadType, ResultType>(groupName, name);
+  getTask<PayloadType = any, ResultType = any>(groupId: string, name: string) {
+    return this.client.getTask<PayloadType, ResultType>(groupId, name);
   }
 
   /**
@@ -296,14 +296,14 @@ export class TaskServer {
   /**
    * Runs a task in the specified group with the provided data.
    *
-   * @param groupName The name of the task group.
+   * @param groupId The name of the task group.
    * @param taskId The name of the task to run.
    * @param data The data to pass to the task.
    * @returns A promise that resolves to the Job instance.
    */
 
-  async runTask<PayloadType = any, ResultType = any>(groupName: string, taskId: string, payload: PayloadType) {
-    return this.client.runTask<PayloadType, ResultType>(groupName, taskId, payload);
+  async runTask<PayloadType = any, ResultType = any>(groupId: string, taskId: string, payload: PayloadType) {
+    return this.client.runTask<PayloadType, ResultType>(groupId, taskId, payload);
   }
 
   /**
@@ -336,10 +336,10 @@ export class TaskServer {
     await this.events.startWorker();
 
     // Start workers using the client's method, targeting managed groups
-    const groupNames = Array.from(this.managedGroups).map((g) => g.name);
+    const groupIds = Array.from(this.managedGroups).map((g) => g.id);
     const effectiveFilter: WorkerFilter = {
       ...(filter ?? {}),
-      groups: filter?.groups ? filter.groups.filter((g) => groupNames.includes(g)) : groupNames,
+      groups: filter?.groups ? filter.groups.filter((g) => groupIds.includes(g)) : groupIds,
     };
 
     if (effectiveFilter.groups?.length === 0 && filter?.groups) {
@@ -366,10 +366,10 @@ export class TaskServer {
     this.logger.info('Stopping TaskServer...');
 
     // Stop workers using the client's method, targeting managed groups
-    const groupNames = Array.from(this.managedGroups).map((g) => g.name);
+    const groupIds = Array.from(this.managedGroups).map((g) => g.id);
     const effectiveFilter: WorkerFilter = {
       ...(filter ?? {}),
-      groups: filter?.groups ? filter.groups.filter((g) => groupNames.includes(g)) : groupNames,
+      groups: filter?.groups ? filter.groups.filter((g) => groupIds.includes(g)) : groupIds,
     };
 
     if (effectiveFilter.groups?.length === 0 && filter?.groups) {

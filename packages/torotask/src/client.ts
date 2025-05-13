@@ -39,10 +39,10 @@ export type ToroTaskOptions = Partial<BullMQConnectionOptions> & {
 
 /** Worker Filter defined here */
 export interface WorkerFilter {
-  /** Array of group names to target. If omitted, targets all groups. */
+  /** Array of group ids to target. If omitted, targets all groups. */
   groups?: string[];
-  /** Map where keys are group names and values are arrays of task names within that group. */
-  tasks?: { [groupName: string]: string[] };
+  /** Map where keys are group ids and values are arrays of task ids within that group. */
+  tasks?: { [groupId: string]: string[] };
 }
 
 /**
@@ -131,41 +131,41 @@ export class ToroTask {
    * Creates or retrieves a TaskGroup instance.
    */
   public createTaskGroup<TDefs extends TaskDefinitionRegistry>(
-    name: string,
+    id: string,
     definitions?: TDefs
   ): TaskGroup<TDefs, TaskRegistry<TDefs>> {
-    if (this.taskGroups[name]) {
-      return this.taskGroups[name] as TaskGroup<TDefs, TaskRegistry<TDefs>>;
+    if (this.taskGroups[id]) {
+      return this.taskGroups[id] as TaskGroup<TDefs, TaskRegistry<TDefs>>;
     }
 
-    this.logger.debug({ taskGroupName: name }, 'Creating new TaskGroup');
-    const newTaskGroup = new TaskGroup<TDefs, TaskRegistry<TDefs>>(this, name, this.logger, definitions);
-    this.taskGroups[name] = newTaskGroup;
+    this.logger.debug({ taskGroupid: id }, 'Creating new TaskGroup');
+    const newTaskGroup = new TaskGroup<TDefs, TaskRegistry<TDefs>>(this, id, this.logger, definitions);
+    this.taskGroups[id] = newTaskGroup;
     return newTaskGroup;
   }
 
   /**
-   * Retrieves an existing TaskGroup instance by name.
+   * Retrieves an existing TaskGroup instance by id.
    */
-  public getTaskGroup(name: string): TaskGroup | undefined {
-    return this.taskGroups[name];
+  public getTaskGroup(id: string): TaskGroup | undefined {
+    return this.taskGroups[id];
   }
 
   /**
-   * Retrieves an existing Task instance by group and name.
+   * Retrieves an existing Task instance by group and id.
    */
   public getTask<PayloadType = any, ResultType = unknown>(
-    groupName: string,
-    name: string
+    groupId: string,
+    id: string
     // The Task class is generic as Task<PayloadExplicit, ResultType, SchemaInputVal extends ActualSchemaInputType = undefined>
     // We need to ensure the SchemaInputVal part of the return type matches what group.getTask returns.
   ): Task<PayloadType, ResultType, SchemaHandler> | undefined {
-    const group = this.getTaskGroup(groupName);
+    const group = this.getTaskGroup(groupId);
     if (!group) return undefined;
 
-    // group.getTask(name) returns Task<any, any, ActualSchemaInputType> | undefined
+    // group.getTask(id) returns Task<any, any, ActualSchemaInputType> | undefined
     // We cast to the user-specified PayloadType and ResultType, while maintaining ActualSchemaInputType for the schema part.
-    return group.getTask(name) as Task<PayloadType, ResultType, SchemaHandler> | undefined;
+    return group.getTask(id) as Task<PayloadType, ResultType, SchemaHandler> | undefined;
   }
 
   /**
@@ -178,9 +178,9 @@ export class ToroTask {
   public getTaskByKey<PayloadType = any, ResultType = unknown>(
     taskKey: `${string}.${string}`
   ): Task<PayloadType, ResultType, SchemaHandler> | undefined {
-    const [groupName, taskId] = taskKey.split('.');
+    const [groupId, taskId] = taskKey.split('.');
     // The call to this.getTask will now correctly return Task<PayloadType, ResultType, ActualSchemaInputType> | undefined
-    return this.getTask<PayloadType, ResultType>(groupName, taskId);
+    return this.getTask<PayloadType, ResultType>(groupId, taskId);
   }
 
   /**
@@ -196,8 +196,8 @@ export class ToroTask {
   /**
    * Retrieves a consumer queue, creating it if it doesn't exist.
    *
-   * @param group The group name of the task.
-   * @param task The task name.
+   * @param group The group id of the task.
+   * @param task The task id.
    * @returns A promise that resolves to the Queue instance or null if it doesn't exist.
    */
   private async getConsumerQueue<PayloadType = any, ResultType = any>(group: string, task: string) {
@@ -216,25 +216,25 @@ export class ToroTask {
   /**
    * Runs a task in the specified group with the provided data.
    *
-   * @param groupName The name of the task group.
-   * @param taskId The name of the task to run.
+   * @param groupId The id of the task group.
+   * @param taskId The id of the task to run.
    * @param data The data to pass to the task.
    * @returns A promise that resolves to the Job instance.
    */
   async runTask<PayloadType = any, ResultType = any>(
-    groupName: string,
+    groupId: string,
     taskId: string,
     payload: PayloadType,
     options?: TaskJobOptions
   ) {
-    const task = this.getTask<PayloadType, ResultType>(groupName, taskId);
+    const task = this.getTask<PayloadType, ResultType>(groupId, taskId);
     if (task) {
       return await task.run(payload);
     }
 
-    const queue = await this.getConsumerQueue<PayloadType, ResultType>(groupName, taskId);
+    const queue = await this.getConsumerQueue<PayloadType, ResultType>(groupId, taskId);
     if (!queue) {
-      throw new Error(`Queue ${groupName}.${taskId} is not registered`);
+      throw new Error(`Queue ${groupId}.${taskId} is not registered`);
     }
 
     return await queue.add(taskId, payload, options);
@@ -248,8 +248,8 @@ export class ToroTask {
    * @returns A promise that resolves to the Job instance.
    */
   async runTaskByKey<PayloadType = any, ResultType = any>(taskKey: `${string}.${string}`, payload: PayloadType) {
-    const [groupName, taskId] = taskKey.split('.');
-    return this.runTask<PayloadType, ResultType>(groupName, taskId, payload);
+    const [groupId, taskId] = taskKey.split('.');
+    return this.runTask<PayloadType, ResultType>(groupId, taskId, payload);
   }
 
   _convertToFlow(run: BulkTaskRun): FlowJob {
@@ -396,7 +396,7 @@ export class ToroTask {
     let groupsToProcess: TaskGroup[] = [];
 
     if (filter?.groups) {
-      // Filter by specified group names
+      // Filter by specified group ids
       groupsToProcess = filter.groups
         .map((name) => this.taskGroups[name])
         .filter((group): group is TaskGroup => !!group);
@@ -418,8 +418,8 @@ export class ToroTask {
 
     groupsToProcess.forEach(async (group) => {
       // Determine task filter for this specific group
-      const taskFilter = filter?.tasks?.[group.name] ? { tasks: filter.tasks[group.name] } : undefined;
-      if (filter?.tasks && !filter.groups?.includes(group.name) && !taskFilter) {
+      const taskFilter = filter?.tasks?.[group.id] ? { tasks: filter.tasks[group.id] } : undefined;
+      if (filter?.tasks && !filter.groups?.includes(group.id) && !taskFilter) {
         // If task filters exist but don't include this group (and group wasn't explicitly listed),
         // skip this group entirely.
         return;
@@ -453,8 +453,8 @@ export class ToroTask {
     }
 
     const stopPromises = groupsToProcess.map((group) => {
-      const taskFilter = filter?.tasks?.[group.name] ? { tasks: filter.tasks[group.name] } : undefined;
-      if (filter?.tasks && !filter.groups?.includes(group.name) && !taskFilter) {
+      const taskFilter = filter?.tasks?.[group.id] ? { tasks: filter.tasks[group.id] } : undefined;
+      if (filter?.tasks && !filter.groups?.includes(group.id) && !taskFilter) {
         // If task filters exist but don't include this group (and group wasn't explicitly listed),
         // skip stopping workers in this group.
         return Promise.resolve(); // Resolve immediately, nothing to stop here based on filter

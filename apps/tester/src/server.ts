@@ -2,6 +2,7 @@ import { TaskServer } from 'torotask';
 import path from 'path';
 import { pino } from 'pino';
 import { fileURLToPath } from 'url'; // Make sure this import is present
+import { taskGroups } from './tasks/index.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -18,9 +19,10 @@ export const logger = pino({
   },
 });
 
-// Pass the logger instance to the client
+// Create the server with our task group definitions
 export const server = new TaskServer({
   logger,
   clientOptions: {},
   rootDir: __dirname,
+  taskGroups,
 });
