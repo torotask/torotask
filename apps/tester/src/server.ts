@@ -20,9 +20,11 @@ export const logger = pino({
 });
 
 // Create the server with our task group definitions
-export const server = new TaskServer({
-  logger,
-  clientOptions: {},
-  rootDir: __dirname,
-  taskGroups,
-});
+export const server = new TaskServer(
+  {
+    logger,
+    clientOptions: {},
+    rootDir: __dirname,
+  },
+  taskGroups
+);

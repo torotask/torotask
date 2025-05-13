@@ -36,12 +36,6 @@ export interface TaskServerOptions {
    * Required if using relative paths in `loadTasksFromDirectory`.
    */
   rootDir?: string;
-
-  /**
-   * Registry of task group definitions to be created by the server.
-   * This allows for type-safe access to task groups and their tasks.
-   */
-  taskGroups?: TaskGroupDefinitionRegistry;
 }
 
 1;

@@ -1,9 +1,11 @@
-import type { TaskGroup } from '../task-group.js';
+import { TaskGroup } from '../task-group.js';
 import { TaskDefinitionRegistry, TaskRegistry } from './task.js';
 
-export interface TaskGroupRegistry {
-  [groupId: string]: TaskGroup<any, any>;
-}
+export type TaskGroupRegistry<TGroupDefs extends TaskGroupDefinitionRegistry> = {
+  [K in keyof TGroupDefs]: TGroupDefs[K] extends TaskGroupDefinition<infer T> // Infer the Payload (P) and Result (R) types from the definition
+    ? TaskGroup<T>
+    : never; // Should not happen if TGroupDefs is correctly constrained
+};
 
 /**
  * Defines a task group with a name and task definitions
@@ -28,11 +30,3 @@ export interface TaskGroupDefinition<TDefs extends TaskDefinitionRegistry> {
 export interface TaskGroupDefinitionRegistry {
   [groupKey: string]: TaskGroupDefinition<any>;
 }
-
-export type StrictTaskAccess<T extends TaskDefinitionRegistry> = {
-  // Only allow access to keys that exist in T
-  [K in keyof T]: TaskRegistry<T>[K];
-} & {
-  // Make indexing with arbitrary strings return undefined
-  [key: string]: undefined;
-};

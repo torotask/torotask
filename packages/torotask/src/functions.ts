@@ -41,11 +41,11 @@ export function defineTaskGroup<TDefs extends TaskDefinitionRegistry>(
  * Defines a task group registry.
  * This function helps with type inference for task group definitions.
  *
- * @template TGroupDefs The type of task group definitions.
+ * @template T The specific type of the task group definitions registry.
  * @param groups The task group definitions.
- * @returns The task group definition registry, correctly typed.
+ * @returns The task group definition registry, preserving its specific type.
  */
-export function defineTaskGroupRegistry(groups: TaskGroupDefinitionRegistry): TaskGroupDefinitionRegistry {
+export function defineTaskGroupRegistry<T extends TaskGroupDefinitionRegistry>(groups: T): T {
   return groups;
 }
 

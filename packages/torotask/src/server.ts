@@ -15,6 +15,8 @@ import type {
 import { ToroTask, WorkerFilter } from './client.js';
 import { TaskGroup } from './task-group.js';
 import { EventDispatcher } from './event-dispatcher.js';
+import type { Task } from './task.js';
+import type { TaskJob } from './job.js';
 
 const LOGGER_NAME = 'TaskServer';
 
@@ -22,26 +24,32 @@ const LOGGER_NAME = 'TaskServer';
  * A server class responsible for managing the lifecycle of BullMQ workers
  * based on TaskGroup definitions from the client package.
  * Provides features like centralized worker start/stop and optional global error handling.
+ *
+ * @template TGroupDefs The type of task group definitions provided to the server
  */
-export class TaskServer {
+export class TaskServer<
+  TGroupDefs extends TaskGroupDefinitionRegistry = TaskGroupDefinitionRegistry,
+  TGroups extends TaskGroupRegistry<TGroupDefs> = TaskGroupRegistry<TGroupDefs>,
+> {
   public readonly client: ToroTask;
   public readonly logger: Logger;
   private readonly rootDir?: string;
-  private readonly options: Required<Pick<TaskServerOptions, 'handleGlobalErrors'>>;
+  private readonly options: TaskServerOptions;
   private readonly managedGroups: Set<TaskGroup> = new Set();
   private readonly ownClient: boolean = false; // Did we create the client?
   public readonly events: EventDispatcher;
 
   /**
    * Registry of task groups managed by this server
+   * Uses StrictTaskGroupAccess to provide compile-time errors for unknown task groups
    */
-  public taskGroups: TaskGroupRegistry = {};
+  public taskGroups: TGroups;
 
   // Store bound handlers to remove them later
   private unhandledRejectionListener?: (...args: any[]) => void;
   private uncaughtExceptionListener?: (...args: any[]) => void;
 
-  constructor(options: TaskServerOptions) {
+  constructor(options: TaskServerOptions, taskGroupDefs?: TGroupDefs) {
     // Refined Logger Initialization
     const loggerOptions = options.logger;
     const loggerName = options.loggerName ?? LOGGER_NAME;
@@ -101,9 +109,10 @@ export class TaskServer {
 
     this.logger.debug('TaskServer initialized');
 
+    this.taskGroups = {} as TGroups;
     // Initialize task groups from definitions if provided
-    if (options.taskGroups) {
-      this.initializeTaskGroups(options.taskGroups);
+    if (taskGroupDefs) {
+      this.initializeTaskGroups(taskGroupDefs);
     }
   }
 
@@ -111,7 +120,7 @@ export class TaskServer {
    * Initializes task groups from the provided task group definitions.
    * This creates all task groups and their tasks, and adds them to the server.
    */
-  private initializeTaskGroups(taskGroupDefinitions: TaskGroupDefinitionRegistry): void {
+  private initializeTaskGroups(taskGroupDefinitions: TGroupDefs): void {
     const groupCount = Object.keys(taskGroupDefinitions).length;
     this.logger.debug({ groupCount }, 'Initializing task groups from definitions');
 
@@ -119,7 +128,7 @@ export class TaskServer {
       const typedGroupDef = groupDef as TaskGroupDefinition<any>;
       const group = this.client.createTaskGroup(groupKey, typedGroupDef.tasks);
       this.addGroups(group);
-      this.taskGroups[groupKey] = group;
+      this.taskGroups[groupKey as keyof TGroupDefs] = group as any;
 
       const taskCount = Object.keys(typedGroupDef.tasks).length;
       this.logger.debug(
@@ -278,8 +287,17 @@ export class TaskServer {
   /**
    * Retrieves an existing Task instance by group and name.
    */
-  getTask<PayloadType = any, ResultType = any>(groupId: string, name: string) {
-    return this.client.getTask<PayloadType, ResultType>(groupId, name);
+  getTask<G extends keyof TGroups, T extends keyof TGroups[G]['tasks']>(
+    groupId: G,
+    taskId: T
+  ): TGroups[G]['tasks'][T] | undefined {
+    const group = this.taskGroups[groupId];
+    if (group && group.tasks && Object.prototype.hasOwnProperty.call(group.tasks, taskId)) {
+      // Using 'as any' and then casting to the specific type can be a workaround
+      // if direct indexed access with generics proves problematic for the TS compiler/checker.
+      return (group.tasks as any)[taskId] as TGroups[G]['tasks'][T];
+    }
+    return undefined;
   }
 
   /**
@@ -296,14 +314,22 @@ export class TaskServer {
   /**
    * Runs a task in the specified group with the provided data.
    *
-   * @param groupId The name of the task group.
-   * @param taskId The name of the task to run.
+   * @param groupId The id of the task group.
+   * @param taskId The id of the task to run.
    * @param data The data to pass to the task.
    * @returns A promise that resolves to the Job instance.
    */
 
-  async runTask<PayloadType = any, ResultType = any>(groupId: string, taskId: string, payload: PayloadType) {
-    return this.client.runTask<PayloadType, ResultType>(groupId, taskId, payload);
+  async runTask<
+    G extends keyof TGroups,
+    T extends keyof TGroups[G]['tasks'],
+    // Infer Payload and Result from the specific task TGroups[G]['tasks'][T]
+    SpecificTask extends TGroups[G]['tasks'][T],
+    Payload = SpecificTask extends Task<infer P, any, any> ? P : unknown,
+    Result = SpecificTask extends Task<any, infer R, any> ? R : unknown,
+  >(groupId: G, taskId: T, payload: Payload): Promise<TaskJob<Payload, Result>> {
+    // Cast to string for the client call, as client.runTask likely expects string IDs.
+    return this.client.runTask<Payload, Result>(groupId as string, taskId as string, payload);
   }
 
   /**
