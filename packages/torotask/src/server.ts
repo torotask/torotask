@@ -287,15 +287,14 @@ export class TaskServer<
   /**
    * Retrieves an existing Task instance by group and name.
    */
-  getTask<G extends keyof TGroups, T extends keyof TGroups[G]['tasks']>(
-    groupId: G,
-    taskId: T
-  ): TGroups[G]['tasks'][T] | undefined {
+  getTask<
+    G extends keyof TGroups,
+    SpecificTaskGroup extends TGroups[G] = TGroups[G],
+    TaskName extends keyof SpecificTaskGroup['tasks'] = keyof SpecificTaskGroup['tasks'],
+  >(groupId: G, taskId: TaskName): SpecificTaskGroup['tasks'][TaskName] | undefined {
     const group = this.taskGroups[groupId];
     if (group && group.tasks && Object.prototype.hasOwnProperty.call(group.tasks, taskId)) {
-      // Using 'as any' and then casting to the specific type can be a workaround
-      // if direct indexed access with generics proves problematic for the TS compiler/checker.
-      return (group.tasks as any)[taskId] as TGroups[G]['tasks'][T];
+      return group.tasks[taskId as any] as any;
     }
     return undefined;
   }
@@ -322,14 +321,15 @@ export class TaskServer<
 
   async runTask<
     G extends keyof TGroups,
-    T extends keyof TGroups[G]['tasks'],
-    // Infer Payload and Result from the specific task TGroups[G]['tasks'][T]
-    SpecificTask extends TGroups[G]['tasks'][T],
-    Payload = SpecificTask extends Task<infer P, any, any> ? P : unknown,
-    Result = SpecificTask extends Task<any, infer R, any> ? R : unknown,
-  >(groupId: G, taskId: T, payload: Payload): Promise<TaskJob<Payload, Result>> {
-    // Cast to string for the client call, as client.runTask likely expects string IDs.
-    return this.client.runTask<Payload, Result>(groupId as string, taskId as string, payload);
+    SpecificTaskGroup extends TGroups[G] = TGroups[G],
+    TaskName extends keyof SpecificTaskGroup['tasks'] = keyof SpecificTaskGroup['tasks'],
+    ActualTask extends SpecificTaskGroup['tasks'][TaskName] = SpecificTaskGroup['tasks'][TaskName],
+    // Payload is the ActualPayloadType inferred from the Task instance
+    Payload = ActualTask extends Task<any, any, any, infer P> ? P : unknown,
+    Result = ActualTask extends Task<any, infer R, any, any> ? R : unknown,
+    ActualPayload extends Payload = Payload,
+  >(groupId: G, taskId: TaskName, payload: ActualPayload): Promise<TaskJob<ActualPayload, Result>> {
+    return this.client.runTask<ActualPayload, Result>(groupId as string, taskId as string, payload);
   }
 
   /**

@@ -103,29 +103,36 @@ export class TaskGroup<
   }
 
   /**
-   * Retrieves a defined Task by name or ID.
+   * Retrieves a defined Task by its definition name (which is also its ID).
+   * This method expects the `nameOrId` to be a known key of the task definitions for this group.
    *
-   * @param name The name of the task from definitions, or its ID.
-   * @returns The Task instance if found, otherwise undefined.
+   * @param nameOrId The definition name (key from TDefs, e.g., 'myTask'). Must be a key of TTasks.
+   * @returns The specifically typed Task instance (TTasks[Key]) if found, otherwise undefined.
    */
-  getTask(name: string): Task<any, any, SchemaHandler> | undefined {
-    // First check in the type-safe tasks collection (by definition name)
-    const taskByName = this.tasks[name];
-    if (taskByName) return taskByName;
-
-    // If not found, check in the ID-indexed collection
-    return this.tasksById[name];
+  getTask<Key extends Extract<keyof TTasks, string>>(nameOrId: Key): TTasks[Key] | undefined {
+    // `nameOrId` is a key of TTasks, which are indexed by task ID (definition name).
+    if (Object.prototype.hasOwnProperty.call(this.tasks, nameOrId)) {
+      return this.tasks[nameOrId];
+    }
+    return undefined;
   }
 
   /**
-   * Retrieves a defined Task by ID.
+   * Retrieves a defined Task strictly by its ID.
+   * This method expects the `id` to be a known key of the task definitions for this group
+   * to return a specifically typed Task.
    *
-   * @param id The ID of the task from definitions
-   * @returns The Task instance if found, otherwise undefined.
+   * @param id The ID of the task. Must be a key of TTasks.
+   * @returns The specifically typed Task instance (TTasks[Key]) if found, otherwise undefined.
    */
-  getTaskById(id: string): Task<any, any, SchemaHandler> | undefined {
-    return this.tasksById[id];
+  getTaskById<Key extends Extract<keyof TTasks, string>>(id: Key): TTasks[Key] | undefined {
+    // `id` is a key of TTasks. `this.tasks` is indexed by these keys.
+    if (Object.prototype.hasOwnProperty.call(this.tasks, id)) {
+      return this.tasks[id];
+    }
+    return undefined;
   }
+
   /**
    * Gets all defined tasks in this group.
    *
@@ -153,23 +160,24 @@ export class TaskGroup<
   // --- Worker Orchestration ---
 
   private _getFilteredTasks(
-    filter?: { tasks?: Array<keyof TTasks> },
-    actionContext: 'starting' | 'stopping' | string = 'processing'
-  ): Array<TTasks[keyof TTasks]> {
-    let tasksToProcess: Array<TTasks[keyof TTasks]>;
-    const notFoundKeys: Array<keyof TTasks> = [];
+    filter?: { tasks?: Array<Extract<keyof TTasks, string>> }, // Ensure filter tasks are specific keys
+    actionContext: 'starting' | 'stopping' | 'closing' | string = 'processing'
+  ): Array<TTasks[Extract<keyof TTasks, string>]> {
+    // Return type reflects specific tasks
+    let tasksToProcess: Array<TTasks[Extract<keyof TTasks, string>]> = [];
+    const notFoundKeys: Array<Extract<keyof TTasks, string>> = [];
 
-    if (filter?.tasks) {
+    if (filter?.tasks && filter.tasks.length > 0) {
       tasksToProcess = filter.tasks
         .map((name) => {
-          // Use getTask to look up by both name and ID
-          const task = this.getTask(name as string);
+          // name is Extract<keyof TTasks, string>
+          const task = this.getTask(name); // Directly use the typed getTask
           if (!task) {
             notFoundKeys.push(name);
           }
           return task;
         })
-        .filter((task): task is TTasks[keyof TTasks] => Boolean(task)); // Type predicate filters undefined and asserts type
+        .filter((task): task is TTasks[Extract<keyof TTasks, string>] => Boolean(task));
 
       const requestedCount = filter.tasks.length;
       const foundCount = tasksToProcess.length;
@@ -186,8 +194,10 @@ export class TaskGroup<
         );
       }
     } else {
-      // Get all tasks if no filter is provided
-      tasksToProcess = Object.values(this.tasks);
+      // Get all tasks if no filter is provided or if filter.tasks is empty
+      // Object.values(this.tasks) will correctly return Array<TTasks[keyof TTasks]>
+      // which is compatible with Array<TTasks[Extract<keyof TTasks, string>]>
+      tasksToProcess = Object.values(this.tasks) as Array<TTasks[Extract<keyof TTasks, string>]>;
     }
 
     if (tasksToProcess.length === 0 && (filter?.tasks?.length ?? 0) > 0) {
@@ -208,7 +218,10 @@ export class TaskGroup<
    * Uses the exact keys defined for the tasks in this group.
    * @param workerOptions Optional configuration for the workers being started.
    */
-  async startWorkers(filter?: { tasks?: Array<keyof TTasks> }, workerOptions?: WorkerOptions): Promise<void> {
+  async startWorkers(
+    filter?: { tasks?: Array<Extract<keyof TTasks, string>> },
+    workerOptions?: WorkerOptions
+  ): Promise<void> {
     const actionContext = 'starting';
     this.logger.debug({ filter: filter?.tasks?.join(', ') ?? 'all' }, `${actionContext} workers for task group`);
 
@@ -252,7 +265,7 @@ export class TaskGroup<
    */
   async stopWorkers(
     // Use keyof TTasks for compile-time safety on task names
-    filter?: { tasks?: Array<keyof TTasks> }
+    filter?: { tasks?: Array<Extract<keyof TTasks, string>> }
   ): Promise<void> {
     const actionContext = 'stopping';
     this.logger.info({ filter: filter?.tasks?.join(', ') ?? 'all' }, `${actionContext} workers for task group`);
@@ -296,7 +309,7 @@ export class TaskGroup<
    */
   async close(
     // Add the filter parameter
-    filter?: { tasks?: Array<keyof TTasks> }
+    filter?: { tasks?: Array<Extract<keyof TTasks, string>> }
   ): Promise<void> {
     const actionContext = 'closing';
     this.logger.info(

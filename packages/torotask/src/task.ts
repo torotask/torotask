@@ -36,23 +36,29 @@ export class Task<
   PayloadExplicit = unknown, // Default changed to unknown
   ResultType = unknown,
   SchemaInputVal extends SchemaHandler = undefined, // Task is generic over INPUT schema type
+  ActualPayloadType extends EffectivePayloadType<
+    PayloadExplicit,
+    ResolvedSchemaType<SchemaInputVal>
+  > = EffectivePayloadType<PayloadExplicit, ResolvedSchemaType<SchemaInputVal>>,
 > extends BaseTask<
-  EffectivePayloadType<PayloadExplicit, ResolvedSchemaType<SchemaInputVal>>, // BaseTask uses RESOLVED
+  ActualPayloadType,
   ResultType,
   string, // NameType for BaseTask
-  TaskJobData<EffectivePayloadType<PayloadExplicit, ResolvedSchemaType<SchemaInputVal>>>, // DataType for BaseTask
+  TaskJobData<ActualPayloadType>, // DataType for BaseTask
   TaskOptions // TOptions for BaseTask
 > {
+  /**
+   * A type-only property to help infer the actual payload type of the task.
+   * This is equivalent to EffectivePayloadType<PayloadExplicit, ResolvedSchemaType<SchemaInputVal>>.
+   */
+  public readonly _payloadType!: ActualPayloadType;
+
   protected readonly subTasks: Map<string, SubTask<any, any>>; // SubTask payload/result types might need further consideration for inference
   protected readonly allowCatchAll: boolean;
   // The handler's payload type is determined by EffectivePayloadType.
   // TaskHandler (imported) uses EffectivePayloadType from types/task.ts.
   // The local EffectivePayloadType must match for consistency.
-  protected handler: TaskHandler<
-    EffectivePayloadType<PayloadExplicit, ResolvedSchemaType<SchemaInputVal>>,
-    ResultType,
-    ResolvedSchemaType<SchemaInputVal>
-  >;
+  protected handler: TaskHandler<ActualPayloadType, ResultType, ResolvedSchemaType<SchemaInputVal>>;
   public readonly schema: ResolvedSchemaType<SchemaInputVal>; // Stores the RESOLVED schema instance or undefined
 
   constructor(
@@ -87,7 +93,7 @@ export class Task<
   }
 
   defineSubTask<
-    SubTaskPayloadType = EffectivePayloadType<PayloadExplicit, ResolvedSchemaType<SchemaInputVal>>, // Default SubTask payload to parent's effective type
+    SubTaskPayloadType = ActualPayloadType, // Default SubTask payload to parent's effective type
     SubTaskResultType = ResultType,
   >(
     subTaskId: string,
@@ -112,10 +118,7 @@ export class Task<
     return this.subTasks.get(subTaskId);
   }
 
-  async process(
-    job: TaskJob<EffectivePayloadType<PayloadExplicit, ResolvedSchemaType<SchemaInputVal>>, ResultType>,
-    token?: string
-  ): Promise<any> {
+  async process(job: TaskJob<ActualPayloadType, ResultType>, token?: string): Promise<any> {
     const { id, name: jobName } = job;
     const effectiveJobName = jobName === '' || jobName === '__default__' ? this.id : jobName;
     const jobLogger = this.logger.child({ jobId: id, jobName: effectiveJobName });
@@ -164,14 +167,10 @@ export class Task<
     }
   }
 
-  async processJob(
-    job: TaskJob<EffectivePayloadType<PayloadExplicit, ResolvedSchemaType<SchemaInputVal>>, ResultType>,
-    token?: string,
-    jobLogger?: Logger
-  ): Promise<any> {
+  async processJob(job: TaskJob<ActualPayloadType, ResultType>, token?: string, jobLogger?: Logger): Promise<any> {
     const effectiveJobLogger = jobLogger ?? this.getJobLogger(job);
     // Use CurrentPayloadType which is derived from the local EffectivePayloadType
-    type CurrentPayloadType = EffectivePayloadType<PayloadExplicit, ResolvedSchemaType<SchemaInputVal>>;
+    type CurrentPayloadType = ActualPayloadType;
 
     let validatedPayload: CurrentPayloadType = job.payload;
 
