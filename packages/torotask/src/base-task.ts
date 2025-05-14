@@ -60,7 +60,7 @@ export abstract class BaseTask<
     public readonly group: TaskGroup,
     public readonly id: string,
     public options: TOptions,
-    trigger: SingleOrArray<TaskTrigger<PayloadType>> | undefined,
+    triggers: SingleOrArray<TaskTrigger<PayloadType>> | undefined,
     parentLogger?: Logger
   ) {
     if (!group) {
@@ -92,7 +92,7 @@ export abstract class BaseTask<
     };
 
     // Initialize triggers and internal maps
-    this._initializeTriggers(trigger);
+    this._initializeTriggers(triggers);
 
     // Relay events from the worker queue
     const eventNames = this.queue.eventNames(); // eventNames is (string | symbol)[]

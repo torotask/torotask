@@ -39,7 +39,7 @@ export class StepExecutor<JobType extends TaskJob = TaskJob> {
   /**
    * Centralized method to execute a step, handling memoization, state persistence, and errors.
    * @param userStepId User-defined ID for the step.
-   * @param stepKind A string identifier for the kind of step (e.g., 'run', 'sleep').
+   * @param stepKind A string identifier for the kind of step (e.g., 'do', 'sleep').
    * @param coreLogic The async function that performs the actual work of the step.
    *                  If it initiates a pending state (e.g., sleep, wait), it should:
    *                  1. Update \`this.job.state.stepState\` with the new status (e.g., 'sleeping').
@@ -144,8 +144,8 @@ export class StepExecutor<JobType extends TaskJob = TaskJob> {
     }
   }
 
-  async run<T>(userStepId: string, handler: () => Promise<T>): Promise<T> {
-    return this._executeStep<T>(userStepId, 'run', async (_internalStepId: string) => {
+  async do<T>(userStepId: string, handler: () => Promise<T>): Promise<T> {
+    return this._executeStep<T>(userStepId, 'do', async (_internalStepId: string) => {
       return handler();
     });
   }
@@ -254,10 +254,10 @@ export class StepExecutor<JobType extends TaskJob = TaskJob> {
     );
   }
 
-  async invoke<T = any>(userStepId: string, childWorkflowName: string, input: any): Promise<T> {
+  async runTask<T = any>(userStepId: string, childWorkflowName: string, input: any): Promise<T> {
     return this._executeStep<T>(
       userStepId,
-      'invoke',
+      'runTask',
       async (internalStepId: string) => {
         this.logger.info(
           { internalStepId, userStepId, childWorkflowName, input },
@@ -271,7 +271,7 @@ export class StepExecutor<JobType extends TaskJob = TaskJob> {
         if (memoizedResult.status === 'waiting_for_child') {
           this.logger.info(
             { internalStepId, userStepId, child: memoizedResult.childIdentifier },
-            `Handling intermediate 'waiting_for_child' state for 'invoke' - NOT IMPLEMENTED. Assuming child '${memoizedResult.childIdentifier}' is still running.`
+            `Handling intermediate 'waiting_for_child' state for 'runTask' - NOT IMPLEMENTED. Assuming child '${memoizedResult.childIdentifier}' is still running.`
           );
           throw new WaitForChildError(memoizedResult.childIdentifier!, internalStepId);
         }

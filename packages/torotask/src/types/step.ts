@@ -18,6 +18,6 @@ export interface StepResult<T = any> {
   // For pending states
   eventName?: string;
   timeoutAt?: number; // Timestamp (ms since epoch)
-  childIdentifier?: string; // For invoke
+  childIdentifier?: string; // For runTask
   childTaskIds?: string[]; // For waitForChildTasks
 }
