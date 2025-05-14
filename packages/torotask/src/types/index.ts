@@ -1,4 +1,5 @@
 export * from './bulk.js';
+export * from './client.js';
 export * from './events.js';
 export * from './job.js'; // Export the renamed interface TaskRun';
 export * from './sub-task.js';

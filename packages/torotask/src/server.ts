@@ -1,25 +1,12 @@
-import fs from 'fs';
-import path from 'path';
-import { pathToFileURL } from 'url';
 import { WorkerOptions } from 'bullmq';
-import { glob } from 'glob';
-import { type DestinationStream, type Logger, type LoggerOptions, pino } from 'pino';
 import type {
-  TaskDefinition,
-  TaskGroupDefinition,
   TaskGroupDefinitionRegistry,
   TaskGroupRegistry,
   TaskServerOptions,
-  TaskTrigger,
-  EffectivePayloadType, // Added
-  ResolvedSchemaType, // Added
-  SchemaHandler, // Added
+  WorkerFilterGroups,
 } from './types/index.js';
-import { ToroTask, WorkerFilter } from './client.js';
-import { TaskGroup } from './task-group.js';
-import { EventDispatcher } from './event-dispatcher.js';
-import type { Task } from './task.js';
-import type { TaskJob } from './job.js';
+import { ToroTask } from './client.js';
+import { filterGroups } from './utils/filter-groups.js';
 
 const LOGGER_NAME = 'TaskServer';
 
@@ -34,349 +21,29 @@ const LOGGER_NAME = 'TaskServer';
 export class TaskServer<
   TAllTaskGroupsDefs extends TaskGroupDefinitionRegistry = TaskGroupDefinitionRegistry,
   TGroups extends TaskGroupRegistry<TAllTaskGroupsDefs> = TaskGroupRegistry<TAllTaskGroupsDefs>,
-> {
-  public readonly client: ToroTask<TAllTaskGroupsDefs>;
-  public readonly logger: Logger;
-  private readonly rootDir?: string;
-  private readonly options: TaskServerOptions<TAllTaskGroupsDefs>;
-  private readonly managedGroups: Set<TaskGroup<any, any>> = new Set();
-  private readonly ownClient: boolean = false; // Did we create the client?
-  public readonly events: EventDispatcher;
-
-  /**
-   * Registry of task groups managed by this server
-   * Uses StrictTaskGroupAccess to provide compile-time errors for unknown task groups
-   */
-  public taskGroups: TGroups;
-
+> extends ToroTask<TAllTaskGroupsDefs> {
   // Store bound handlers to remove them later
   private unhandledRejectionListener?: (...args: any[]) => void;
   private uncaughtExceptionListener?: (...args: any[]) => void;
 
-  constructor(options: TaskServerOptions<TAllTaskGroupsDefs>, taskGroupDefs?: TAllTaskGroupsDefs) {
+  constructor(
+    public readonly options: TaskServerOptions,
+    taskGroupDefs?: TAllTaskGroupsDefs
+  ) {
     // Refined Logger Initialization
-    const loggerOptions = options.logger;
-    const loggerName = options.loggerName ?? LOGGER_NAME;
-
-    if (
-      typeof loggerOptions === 'object' &&
-      loggerOptions !== null &&
-      typeof (loggerOptions as Logger).info === 'function'
-    ) {
-      // It looks like a Logger instance
-      this.logger = (loggerOptions as Logger).child({ name: loggerName });
-    } else if (
-      typeof loggerOptions === 'object' &&
-      loggerOptions !== null &&
-      typeof (loggerOptions as DestinationStream).write === 'function'
-    ) {
-      // It looks like a DestinationStream
-      this.logger = pino(loggerOptions as DestinationStream).child({ name: loggerName });
-    } else {
-      // Assume it's LoggerOptions or undefined
-      this.logger = pino(loggerOptions as LoggerOptions | undefined).child({ name: loggerName });
-    }
-
-    // Store rootDir if provided
-    this.rootDir = options.rootDir;
-    if (this.rootDir) {
-      this.logger.debug({ rootDir: this.rootDir }, 'TaskServer root directory set.');
-    } else {
-      this.logger.warn(
-        'TaskServer `rootDir` not provided. Relative paths in `loadTasksFromDirectory` will be rejected.'
-      );
-    }
-
-    // Initialize Client
-    if (options.client) {
-      this.client = options.client as ToroTask<TAllTaskGroupsDefs>;
-      this.ownClient = false;
-      this.logger.debug('Using provided ToroTask instance.');
-    } else if (options.clientOptions) {
-      this.client = new ToroTask<TAllTaskGroupsDefs>({
-        ...options.clientOptions,
-        logger: options.clientOptions.logger ?? this.logger.child({ component: 'ToroTask' }),
-      });
-      this.ownClient = true;
-      this.logger.debug('Created new ToroTask instance.');
-    } else {
-      throw new Error('TaskServer requires either a `client` instance or `clientOptions`.');
-    }
-
-    // Create / fetch eventDispatcher
-    this.events = this.client.events;
-
-    // Store other options with defaults
-    this.options = {
-      handleGlobalErrors: options.handleGlobalErrors ?? true,
-    };
-
+    options.loggerName = options.loggerName ?? LOGGER_NAME;
+    super(options, taskGroupDefs);
     this.logger.debug('TaskServer initialized');
-
-    this.taskGroups = {} as TGroups;
-    // Initialize task groups from definitions if provided
-    if (taskGroupDefs) {
-      this.initializeTaskGroups(taskGroupDefs);
-    }
   }
 
   /**
-   * Initializes task groups from the provided task group definitions.
-   * This creates all task groups and their tasks, and adds them to the server.
-   */
-  private initializeTaskGroups(taskGroupDefinitions: TAllTaskGroupsDefs): void {
-    const groupCount = Object.keys(taskGroupDefinitions).length;
-    this.logger.debug({ groupCount }, 'Initializing task groups from definitions');
-
-    for (const [groupKey, groupDef] of Object.entries(taskGroupDefinitions)) {
-      const typedGroupDef = groupDef as TaskGroupDefinition<any>;
-      if (!typedGroupDef.id) {
-        typedGroupDef.id = groupKey;
-      }
-      const group = this.client.createTaskGroup(groupKey, typedGroupDef.tasks);
-      this.addGroups(group);
-      this.taskGroups[groupKey as keyof TAllTaskGroupsDefs] = group as any;
-
-      const taskCount = Object.keys(typedGroupDef.tasks).length;
-      this.logger.debug(
-        {
-          groupId: groupKey,
-          taskCount,
-        },
-        'Task group initialized'
-      );
-    }
-  }
-
-  /**
-   * Adds TaskGroups to be managed by this server.
-   */
-  addGroups(...groups: TaskGroup<any, any>[]): this {
-    groups.forEach((group) => {
-      if (!group || !(group instanceof TaskGroup)) {
-        this.logger.warn({ group }, 'Skipping invalid item passed to addGroups');
-        return;
-      }
-      if (group.client !== this.client) {
-        this.logger.warn(
-          { groupId: group.id },
-          'TaskGroup added was created with a different ToroTask instance. This may cause issues.'
-        );
-      }
-      this.logger.debug({ groupId: group.id }, 'Adding TaskGroup');
-      this.managedGroups.add(group);
-    });
-    return this;
-  }
-
-  /**
-   * Scans a directory for task definition files and loads them.
-   * Assumes a structure like `baseDir/groupId/taskId.task.{js,ts}`.
-   * Expects task files to have a default export: `{ handler: TaskHandler, options?: TaskOptions }`.
-   *
-   * @param baseDir The base directory containing task groups. Can be absolute or relative to `rootDir` (if provided during server construction).
-   * @param pattern Glob pattern relative to baseDir (defaults to `**\/*.task.{js,ts}`).
-   * @deprecated Use `task definitions` instead.
-   */
-  async loadTasksFromDirectory(baseDir: string, pattern?: string): Promise<void> {
-    const effectivePattern = pattern ?? '**/*.task.{js,ts}';
-    let absoluteBaseDir: string;
-
-    // Resolve baseDir
-    if (path.isAbsolute(baseDir)) {
-      absoluteBaseDir = baseDir;
-    } else {
-      if (!this.rootDir) {
-        throw new Error(
-          `Cannot load tasks from relative path "${baseDir}" because TaskServer was not configured with a 'rootDir'. Provide an absolute path or set 'rootDir' in TaskServerOptions.`
-        );
-      }
-      absoluteBaseDir = path.resolve(this.rootDir, baseDir);
-      this.logger.debug(
-        { relativePath: baseDir, resolvedPath: absoluteBaseDir },
-        'Resolved relative baseDir using rootDir'
-      );
-    }
-
-    this.logger.debug({ baseDir: absoluteBaseDir, pattern: effectivePattern }, 'Loading tasks from directory...');
-
-    try {
-      if (!fs.existsSync(absoluteBaseDir) || !fs.statSync(absoluteBaseDir).isDirectory()) {
-        throw new Error(`Base directory does not exist or is not a directory: ${absoluteBaseDir}`);
-      }
-    } catch (error) {
-      this.logger.error({ baseDir: absoluteBaseDir, err: error }, 'Failed to access base task directory.');
-      throw error; // Re-throw for clarity
-    }
-
-    const searchPattern = path.join(absoluteBaseDir, effectivePattern).replace(/\\/g, '/');
-    const taskFiles = await glob(searchPattern, { absolute: true });
-
-    this.logger.debug({ count: taskFiles.length }, 'Found potential task files');
-
-    let loadedCount = 0;
-    let errorCount = 0;
-
-    for (const filePath of taskFiles) {
-      try {
-        const relativePath = path.relative(absoluteBaseDir, filePath);
-        const groupId = path.dirname(relativePath);
-        const fileName = path.basename(relativePath);
-        const taskIdMatch = fileName.match(/^(.+?)\.task\.(js|ts)$/);
-        let derivedTaskId: string = '';
-        if (taskIdMatch?.[1]) {
-          derivedTaskId = taskIdMatch[1];
-        } else {
-          continue;
-        }
-
-        this.logger.debug({ groupId, derivedTaskId, filePath }, 'Loading task definition...');
-
-        const fileUrl = pathToFileURL(filePath).href;
-        const taskModule = (await import(fileUrl)) as {
-          default?: TaskDefinition & { trigger?: TaskTrigger; triggers?: TaskTrigger[] };
-        };
-
-        let finalTaskId: string = derivedTaskId;
-        let moduleToUse: TaskDefinition & { trigger?: TaskTrigger; triggers?: TaskTrigger[] };
-
-        if (taskModule.default?.handler && typeof taskModule.default.handler === 'function') {
-          moduleToUse = taskModule.default;
-        } else if (typeof (taskModule as any).handler === 'function') {
-          moduleToUse = taskModule as any;
-          this.logger.warn(
-            { filePath },
-            'Task file uses direct export instead of default export. Consider using default export { handler, options?, trigger/triggers? }.'
-          );
-        } else {
-          throw new Error(
-            `Invalid or missing export. Expected { handler: function, options?:..., trigger/triggers?:... } via default or module.exports.`
-          );
-        }
-
-        const group = this.client.createTaskGroup(groupId);
-        this.managedGroups.add(group);
-
-        const explicitId = moduleToUse.id;
-        if (explicitId) {
-          finalTaskId = explicitId;
-          this.logger.debug({ derivedTaskId, explicitName: finalTaskId }, 'Using explicit task name from options.');
-        }
-
-        const options = moduleToUse.options || {};
-        group.createTask(finalTaskId, {
-          options: options,
-          triggers: moduleToUse.triggers ?? moduleToUse.trigger,
-          handler: moduleToUse.handler,
-          schema: moduleToUse.schema,
-        });
-
-        this.logger.debug({ groupId, taskId: finalTaskId }, 'Successfully loaded and defined task.');
-        loadedCount++;
-      } catch (error) {
-        this.logger.error({ filePath, err: error }, 'Failed to load or define task from file.');
-        errorCount++;
-      }
-    }
-
-    this.logger.debug(
-      { loaded: loadedCount, errors: errorCount, totalFound: taskFiles.length },
-      'Finished loading tasks from directory.'
-    );
-    if (errorCount > 0) {
-      // Optionally throw an aggregate error or indicate failure
-    }
-    this.logger.warn(
-      "The 'loadTasksFromDirectory' method is deprecated. Consider switching to 'registerTasksFromDefinitionObject'."
-    );
-  }
-
-  /**
-    G extends keyof TGroups,
-    SpecificTaskGroup extends TGroups[G] = TGroups[G],
-    TaskName extends keyof SpecificTaskGroup['tasks'] = keyof SpecificTaskGroup['tasks'],
-  >(groupId: G, taskId: TaskName): SpecificTaskGroup['tasks'][TaskName] | undefined {
-    const group = this.taskGroups[groupId];
-    if (group && group.tasks && Object.prototype.hasOwnProperty.call(group.tasks, taskId)) {
-      return group.tasks[taskId as any] as any;
-    }
-    return undefined;
-  }
-
-  /**
-   * Gets a task in the specified group with the provided data.
-   *
-   * @param taskKey The key of the task to run in format group.task.
-   * @param data The data to pass to the task.
-   * @returns A promise that resolves to the Job instance.
-   */
-  getTaskByKey<
-    G extends Extract<keyof TAllTaskGroupsDefs, string>,
-    T extends Extract<keyof TAllTaskGroupsDefs[G], string>,
-    Def = TAllTaskGroupsDefs[G][T],
-    PayloadType = Def extends TaskDefinition<infer P, any, any>
-      ? EffectivePayloadType<P, ResolvedSchemaType<Def extends TaskDefinition<any, any, infer S> ? S : undefined>>
-      : any,
-    ResultType = Def extends TaskDefinition<any, infer R, any> ? R : unknown,
-  >(taskKey: `${G}.${T}`): Task<PayloadType, ResultType, SchemaHandler> | undefined {
-    return this.client.getTaskByKey<G, T, Def, PayloadType, ResultType>(taskKey);
-  }
-
-  /**
-   * Runs a task in the specified group with the provided data.
-   *
-   * @param groupId The id of the task group.
-   * @param taskName The name of the task to run.
-   * @param data The data to pass to the task.
-   * @returns A promise that resolves to the Job instance.
-   */
-
-  async runTask<
-    G extends keyof TGroups,
-    SpecificTaskGroup extends TGroups[G] = TGroups[G],
-    TaskName extends keyof SpecificTaskGroup['tasks'] = keyof SpecificTaskGroup['tasks'],
-    ActualTask extends SpecificTaskGroup['tasks'][TaskName] = SpecificTaskGroup['tasks'][TaskName],
-    // Payload is the ActualPayloadType inferred from the Task instance
-    Payload = ActualTask extends Task<any, any, any, infer P> ? P : unknown,
-    Result = ActualTask extends Task<any, infer R, any, any> ? R : unknown,
-    ActualPayload extends Payload = Payload,
-  >(groupId: G, taskName: TaskName, payload: ActualPayload): Promise<TaskJob<ActualPayload, Result>> {
-    const group = this.taskGroups[groupId];
-    if (group && group.runTask) {
-      return group.runTask<string, ActualTask, ActualPayload>(taskName as string, payload);
-    } else {
-      throw new Error(`Task group "${groupId as string}" not found.`);
-    }
-  }
-
-  /**
-   * Runs a task in the specified group with the provided data.
-   *
-   * @param taskKey The key of the task to run in format group.task.
-   * @param data The data to pass to the task.
-   * @returns A promise that resolves to the Job instance.
-   */
-  async runTaskByKey<
-    G extends Extract<keyof TAllTaskGroupsDefs, string>,
-    T extends Extract<keyof TAllTaskGroupsDefs[G], string>,
-    Def = TAllTaskGroupsDefs[G][T],
-    PayloadType = Def extends TaskDefinition<infer P, any, any>
-      ? EffectivePayloadType<P, ResolvedSchemaType<Def extends TaskDefinition<any, any, infer S> ? S : undefined>>
-      : any,
-    ResultType = Def extends TaskDefinition<any, infer R, any> ? R : unknown,
-  >(taskKey: `${G}.${T}`, payload: PayloadType): Promise<TaskJob<PayloadType, ResultType>> {
-    return this.client.runTaskByKey<G, T, Def, PayloadType, ResultType>(taskKey, payload);
-  }
-
-  /**
-   * Starts the workers for all managed TaskGroups (or filtered ones) and
-   * attaches global error handlers if configured.
+   * Starts server and workers based on the provided filter.
    *
    * @param filter Optional filter to target specific groups or tasks.
-   * @param workerOptions Optional default BullMQ WorkerOptions to pass down.
+   * @param workerOptions Optional default WorkerOptions to pass down.
    */
-  async start(filter?: WorkerFilter, workerOptions?: WorkerOptions): Promise<void> {
-    this.logger.info('Starting TaskServer...');
+  async start(filter?: WorkerFilterGroups<TGroups>, workerOptions?: WorkerOptions): Promise<void> {
+    this.logger.info('Starting TaskServer workers...');
 
     // Attach global handlers if configured
     if (this.options.handleGlobalErrors) {
@@ -386,63 +53,54 @@ export class TaskServer<
     // TODO Add event dispatcher options somewhere, possibly create dedicated method on client
     await this.events.startWorker();
 
-    // Start workers using the client's method, targeting managed groups
-    const groupIds = Array.from(this.managedGroups).map((g) => g.id);
-    const effectiveFilter: WorkerFilter = {
-      ...(filter ?? {}),
-      groups: filter?.groups ? filter.groups.filter((g) => groupIds.includes(g)) : groupIds,
+    const groupsToProcess = filterGroups(this, filter, 'starting workers');
+
+    if (groupsToProcess.length === 0) {
+      this.logger.info('No groups to start workers for based on the filter.');
+      return;
+    }
+
+    const mergedOptions: WorkerOptions = {
+      prefix: this.queuePrefix,
+      connection: this.connectionOptions,
+      ...workerOptions,
     };
 
-    if (effectiveFilter.groups?.length === 0 && filter?.groups) {
-      this.logger.warn('No managed groups matched the provided group filter for starting workers.');
-      return;
-    }
-    if (effectiveFilter.groups?.length === 0 && this.managedGroups.size > 0) {
-      this.logger.warn('No groups are currently managed by the server to start workers for.');
-      return;
-    }
+    await Promise.allSettled(
+      groupsToProcess.map(async (group) => {
+        await group.startWorkers(undefined, mergedOptions);
+      })
+    );
 
-    await this.client.startWorkers(effectiveFilter, workerOptions);
-    this.logger.info('TaskServer started, workers initialized.');
+    this.logger.info('Finished request to start workers');
   }
 
   /**
-   * Stops the workers for all managed TaskGroups (or filtered ones) and
-   * removes global error handlers if they were attached by this server.
+   * Stops server and workers based on the provided filter.
    *
    * @param filter Optional filter to target specific groups or tasks.
-   * @returns A promise that resolves when workers have been requested to stop.
+   * @returns A promise that resolves when all targeted workers have been requested to stop.
    */
-  async stop(filter?: WorkerFilter): Promise<void> {
-    this.logger.info('Stopping TaskServer...');
+  async stop(filter?: WorkerFilterGroups<TGroups>): Promise<void> {
+    this.logger.info({ filter }, 'Stopping workers across task groups');
+    const groupsToProcess = filterGroups(this, filter, 'stopping workers');
 
-    // Stop workers using the client's method, targeting managed groups
-    const groupIds = Array.from(this.managedGroups).map((g) => g.id);
-    const effectiveFilter: WorkerFilter = {
-      ...(filter ?? {}),
-      groups: filter?.groups ? filter.groups.filter((g) => groupIds.includes(g)) : groupIds,
-    };
-
-    if (effectiveFilter.groups?.length === 0 && filter?.groups) {
-      this.logger.warn('No managed groups matched the provided group filter for stopping workers.');
-      // Proceed to detach handlers and potentially close client
-    } else if (effectiveFilter.groups?.length === 0 && this.managedGroups.size > 0) {
-      this.logger.warn('No groups are currently managed by the server to stop workers for.');
-      // Proceed to detach handlers and potentially close client
-    } else {
-      await this.client.stopWorkers(effectiveFilter);
-      this.logger.info('Request to stop workers completed.');
+    if (groupsToProcess.length === 0) {
+      this.logger.info('No groups to stop workers for based on the filter.');
+      return;
     }
+
+    await Promise.allSettled(
+      groupsToProcess.map(async (group) => {
+        await group.stopWorkers();
+      })
+    );
+
+    this.logger.info('Finished request to stop workers');
 
     // Detach global handlers if we attached them
     this.detachGlobalErrorHandlers();
-
-    // Optionally close the client if we created it
-    if (this.ownClient) {
-      this.logger.debug('Closing internally created ToroTask.');
-      this.logger.debug('Closing internally created ToroTask.');
-      await this.client.close();
-    }
+    await this.close();
     this.logger.info('TaskServer stopped.');
   }
 

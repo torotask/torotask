@@ -9,8 +9,10 @@ import type {
   SchemaHandler,
   TaskDefinitionRegistry,
   TaskRegistry,
+  WorkerFilterTasks,
 } from './types/index.js';
 import type { TaskJob } from './job.js';
+import { filterGroupTasks } from './utils/filter-group-tasks.js';
 
 /**
  * Represents a logical group of related Tasks.
@@ -119,7 +121,7 @@ export class TaskGroup<
    * @param key The definition name (key from TDefs, e.g., 'myTask'). Must be a key of TTasks.
    * @returns The specifically typed Task instance (TTasks[Key]) if found, otherwise undefined.
    */
-  getTask<Key extends Extract<keyof TTasks, string>>(key: Key): TTasks[Key] | undefined {
+  getTaskByKey<Key extends Extract<keyof TTasks, string>>(key: Key): TTasks[Key] | undefined {
     // `nameOrId` is a key of TTasks, which are indexed by task ID (definition name).
     if (Object.prototype.hasOwnProperty.call(this.tasks, key)) {
       return this.tasks[key];
@@ -135,7 +137,7 @@ export class TaskGroup<
    * @param id The ID of the task. Must be a key of TTasks.
    * @returns The specifically typed Task instance (TTasks[Key]) if found, otherwise undefined.
    */
-  getTaskById<Payload = any, ResultType = any>(id: string): Task<Payload, ResultType, SchemaHandler> | undefined {
+  getTask<Payload = any, ResultType = any>(id: string): Task<Payload, ResultType, SchemaHandler> | undefined {
     return this.tasksById[id];
   }
 
@@ -155,7 +157,7 @@ export class TaskGroup<
    * @param payload The payload to pass to the task, inferred from the task's definition.
    * @returns A promise that resolves to the TaskJob instance.
    */
-  async runTask<
+  async runTaskByKey<
     TaskName extends Extract<keyof TTasks, string>,
     ActualTask extends TTasks[TaskName] = TTasks[TaskName],
     // Payload is the ActualPayloadType inferred from the Task instance
@@ -182,77 +184,21 @@ export class TaskGroup<
 
   // --- Worker Orchestration ---
 
-  private _getFilteredTasks(
-    filter?: { tasks?: Array<Extract<keyof TTasks, string>> }, // Ensure filter tasks are specific keys
-    actionContext: 'starting' | 'stopping' | 'closing' | string = 'processing'
-  ): Array<TTasks[Extract<keyof TTasks, string>]> {
-    // Return type reflects specific tasks
-    let tasksToProcess: Array<TTasks[Extract<keyof TTasks, string>]> = [];
-    const notFoundKeys: Array<Extract<keyof TTasks, string>> = [];
-
-    if (filter?.tasks && filter.tasks.length > 0) {
-      tasksToProcess = filter.tasks
-        .map((name) => {
-          // name is Extract<keyof TTasks, string>
-          const task = this.getTask(name); // Directly use the typed getTask
-          if (!task) {
-            notFoundKeys.push(name);
-          }
-          return task;
-        })
-        .filter((task): task is TTasks[Extract<keyof TTasks, string>] => Boolean(task));
-
-      const requestedCount = filter.tasks.length;
-      const foundCount = tasksToProcess.length;
-
-      if (requestedCount !== foundCount) {
-        this.logger.warn(
-          {
-            requested: requestedCount,
-            found: foundCount,
-            missingKeys: notFoundKeys.map(String), // Convert keys to strings for logging
-            context: actionContext,
-          },
-          `Some requested tasks for ${actionContext} workers were not found in this group.`
-        );
-      }
-    } else {
-      // Get all tasks if no filter is provided or if filter.tasks is empty
-      // Object.values(this.tasks) will correctly return Array<TTasks[keyof TTasks]>
-      // which is compatible with Array<TTasks[Extract<keyof TTasks, string>]>
-      tasksToProcess = Object.values(this.tasks) as Array<TTasks[Extract<keyof TTasks, string>]>;
-    }
-
-    if (tasksToProcess.length === 0 && (filter?.tasks?.length ?? 0) > 0) {
-      this.logger.info(
-        { filter: filter?.tasks?.join(', ') ?? 'all', context: actionContext },
-        `No matching tasks found to process workers for.`
-      );
-    } else if (tasksToProcess.length === 0) {
-      this.logger.info({ context: actionContext }, `No tasks available in the group to process workers for.`);
-    }
-
-    return tasksToProcess;
-  }
-
   /**
    * Starts background workers for specified tasks or all tasks in the group.
    * @param filter Optional filter to specify which tasks to start workers for.
    * Uses the exact keys defined for the tasks in this group.
    * @param workerOptions Optional configuration for the workers being started.
    */
-  async startWorkers(
-    filter?: { tasks?: Array<Extract<keyof TTasks, string>> },
-    workerOptions?: WorkerOptions
-  ): Promise<void> {
+  async startWorkers(filter?: WorkerFilterTasks<TTasks>, workerOptions?: WorkerOptions): Promise<void> {
     const actionContext = 'starting';
-    this.logger.debug({ filter: filter?.tasks?.join(', ') ?? 'all' }, `${actionContext} workers for task group`);
+    this.logger.debug({ filter: filter?.tasksByKey?.join(', ') ?? 'all' }, `${actionContext} workers for task group`);
 
     // Use the helper method to get tasks
-    const tasksToStart = this._getFilteredTasks(filter, actionContext);
+    const tasksToStart = filterGroupTasks<TDefs, TTasks>(this, filter, actionContext);
 
     if (tasksToStart.length === 0) {
-      this.logger.info({ filter: filter?.tasks?.join(', ') ?? 'all' }, 'No tasks found to start workers for.');
+      this.logger.info({ filter: filter?.tasksByKey?.join(', ') ?? 'all' }, 'No tasks found to start workers for.');
       return;
     }
 
@@ -288,16 +234,16 @@ export class TaskGroup<
    */
   async stopWorkers(
     // Use keyof TTasks for compile-time safety on task names
-    filter?: { tasks?: Array<Extract<keyof TTasks, string>> }
+    filter?: WorkerFilterTasks<TTasks>
   ): Promise<void> {
     const actionContext = 'stopping';
-    this.logger.info({ filter: filter?.tasks?.join(', ') ?? 'all' }, `${actionContext} workers for task group`);
+    this.logger.info({ filter: filter?.tasksByKey?.join(', ') ?? 'all' }, `${actionContext} workers for task group`);
 
     // Use the helper method to get tasks
-    const tasksToStop = this._getFilteredTasks(filter, actionContext);
+    const tasksToStop = filterGroupTasks<TDefs, TTasks>(this, filter, actionContext);
 
     if (tasksToStop.length === 0) {
-      this.logger.info({ filter: filter?.tasks?.join(', ') ?? 'all' }, 'No tasks found to stop workers for.');
+      this.logger.info({ filter: filter?.tasksByKey?.join(', ') ?? 'all' }, 'No tasks found to stop workers for.');
       return;
     }
 
@@ -332,16 +278,16 @@ export class TaskGroup<
    */
   async close(
     // Add the filter parameter
-    filter?: { tasks?: Array<Extract<keyof TTasks, string>> }
+    filter?: WorkerFilterTasks<TTasks>
   ): Promise<void> {
     const actionContext = 'closing';
     this.logger.info(
-      { group: this.id, filter: filter?.tasks?.join(', ') ?? 'all' },
+      { group: this.id, filter: filter?.tasksByKey?.join(', ') ?? 'all' },
       `Attempting to ${actionContext} task(s)`
     );
 
     // Use the helper method to get tasks
-    const tasksToClose = this._getFilteredTasks(filter, actionContext);
+    const tasksToClose = filterGroupTasks<TDefs, TTasks>(this, filter, actionContext);
 
     if (tasksToClose.length === 0) {
       // _getFilteredTasks already logs if no tasks are found or if the filter was empty

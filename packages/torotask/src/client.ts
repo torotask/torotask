@@ -1,5 +1,5 @@
-import type { ConnectionOptions as BullMQConnectionOptions, FlowChildJob, FlowJob, Job } from 'bullmq';
-import { ConnectionOptions, WorkerOptions } from 'bullmq';
+import type { FlowChildJob, FlowJob, Job } from 'bullmq';
+import { ConnectionOptions } from 'bullmq';
 import { Redis, RedisOptions } from 'ioredis';
 import { type Logger, P, pino } from 'pino';
 import { LRU } from 'tiny-lru';
@@ -18,46 +18,31 @@ import type {
   TaskDefinition,
   EffectivePayloadType,
   ResolvedSchemaType,
+  TaskGroupRegistry,
+  TaskGroupDefinition,
+  ToroTaskOptions,
 } from './types/index.js';
 import { getConfigFromEnv } from './utils/get-config-from-env.js';
 import { TaskWorkflow } from './workflow.js';
 import type { Task } from './task.js';
+import { TaskJob } from './job.js';
 
 const LOGGER_NAME = 'ToroTask';
 const BASE_PREFIX = 'torotask';
 const QUEUE_PREFIX = 'tasks';
 
-/** BullMQ Client Options using intersection */
-export type ToroTaskOptions = Partial<BullMQConnectionOptions> & {
-  /**
-   * A Pino logger instance or configuration options for creating one.
-   * If not provided, a default logger will be created.
-   */
-  logger?: Logger;
-  loggerName?: string;
-  env?: Record<string, any>;
-  prefix?: string;
-  queuePrefix?: string;
-  queueTTL?: number;
-};
-
-/** Worker Filter defined here */
-export interface WorkerFilter {
-  /** Array of group ids to target. If omitted, targets all groups. */
-  groups?: string[];
-  /** Map where keys are group ids and values are arrays of task ids within that group. */
-  tasks?: { [groupId: string]: string[] };
-}
-
 /**
  * A client class to manage BullMQ connection settings, TaskGroups, and an EventDispatcher.
  */
-export class ToroTask<TAllTaskGroupsDefs extends TaskGroupDefinitionRegistry = TaskGroupDefinitionRegistry> {
+export class ToroTask<
+  TAllTaskGroupsDefs extends TaskGroupDefinitionRegistry = TaskGroupDefinitionRegistry,
+  TGroups extends TaskGroupRegistry<TAllTaskGroupsDefs> = TaskGroupRegistry<TAllTaskGroupsDefs>,
+> {
   public readonly connectionOptions: ConnectionOptions;
   public readonly logger: Logger;
   public readonly prefix: string;
   public readonly queuePrefix: string;
-  private readonly taskGroups: Record<string, TaskGroup<any, any>> = {};
+
   private _eventDispatcher: EventDispatcher | null = null; // Backing field for lazy loading
   private _workflow: TaskWorkflow | null = null; // Backing field for lazy loading
   private _redis: Redis | null = null;
@@ -66,7 +51,10 @@ export class ToroTask<TAllTaskGroupsDefs extends TaskGroupDefinitionRegistry = T
     5 * 60_000 // TTL in ms (default: 5 minutes)
   );
 
-  constructor(options?: ToroTaskOptions) {
+  public readonly taskGroups: TGroups;
+  public readonly taskGroupsById: Record<string, TaskGroup<any, any>>;
+
+  constructor(options?: ToroTaskOptions, taskGroupDefs?: TAllTaskGroupsDefs) {
     const { env, logger, loggerName, prefix, queuePrefix, queueTTL, ...connectionOpts } = options || {};
 
     const toroTaskEnvConfig = getConfigFromEnv('TOROTASK_REDIS_', env);
@@ -83,7 +71,41 @@ export class ToroTask<TAllTaskGroupsDefs extends TaskGroupDefinitionRegistry = T
     this.logger = (logger ?? pino()).child({ name: loggerName ?? LOGGER_NAME });
     this.prefix = prefix || BASE_PREFIX;
     this.queuePrefix = [this.prefix, queuePrefix || QUEUE_PREFIX].join(':');
+
+    this.taskGroups = {} as TGroups;
+    this.taskGroupsById = {};
+    // Initialize task groups from definitions if provided
+    if (taskGroupDefs) {
+      this.initializeTaskGroups(taskGroupDefs);
+    }
+
     this.logger.debug('ToroTask initialized');
+  }
+
+  /**
+   * Initializes task groups from the provided task group definitions.
+   * This creates all task groups and their tasks, and adds them to the server.
+   */
+  private initializeTaskGroups(taskGroupDefinitions: TAllTaskGroupsDefs): void {
+    const groupCount = Object.keys(taskGroupDefinitions).length;
+    this.logger.debug({ groupCount }, 'Initializing task groups from definitions');
+
+    for (const [groupKey, groupDef] of Object.entries(taskGroupDefinitions)) {
+      const typedGroupDef = groupDef as TaskGroupDefinition<any>;
+
+      const groupId = typedGroupDef.id || groupKey;
+      const group = this.createTaskGroup(groupId, typedGroupDef.tasks);
+      this.taskGroups[groupKey as keyof TAllTaskGroupsDefs] = group as any;
+
+      const taskCount = Object.keys(typedGroupDef.tasks).length;
+      this.logger.debug(
+        {
+          groupId: groupKey,
+          taskCount,
+        },
+        'Task group initialized'
+      );
+    }
   }
 
   /**
@@ -138,13 +160,12 @@ export class ToroTask<TAllTaskGroupsDefs extends TaskGroupDefinitionRegistry = T
     id: string,
     definitions?: TDefs
   ): TaskGroup<TDefs, TaskRegistry<TDefs>> {
-    if (this.taskGroups[id]) {
-      return this.taskGroups[id] as TaskGroup<TDefs, TaskRegistry<TDefs>>;
+    if (this.taskGroupsById[id]) {
+      return this.taskGroupsById[id] as TaskGroup<TDefs, TaskRegistry<TDefs>>;
     }
-
     this.logger.debug({ taskGroupid: id }, 'Creating new TaskGroup');
     const newTaskGroup = new TaskGroup<TDefs, TaskRegistry<TDefs>>(this, id, this.logger, definitions);
-    this.taskGroups[id] = newTaskGroup;
+    this.taskGroupsById[id] = newTaskGroup;
     return newTaskGroup;
   }
 
@@ -152,7 +173,16 @@ export class ToroTask<TAllTaskGroupsDefs extends TaskGroupDefinitionRegistry = T
    * Retrieves an existing TaskGroup instance by id.
    */
   public getTaskGroup(id: string): TaskGroup | undefined {
-    return this.taskGroups[id];
+    return this.taskGroupsById[id];
+  }
+
+  /**
+   * Retrieves an existing TaskGroup instance by key.
+   */
+  public getTaskGroupByKey<G extends keyof TGroups, SpecificTaskGroup extends TGroups[G] = TGroups[G]>(
+    key: G
+  ): SpecificTaskGroup | undefined {
+    return this.taskGroups[key] as SpecificTaskGroup;
   }
 
   /**
@@ -172,6 +202,18 @@ export class ToroTask<TAllTaskGroupsDefs extends TaskGroupDefinitionRegistry = T
     return group.getTask(id) as Task<PayloadType, ResultType, SchemaHandler> | undefined;
   }
 
+  public getTaskByKey<
+    G extends keyof TGroups,
+    SpecificTaskGroup extends TGroups[G] = TGroups[G],
+    TaskName extends keyof SpecificTaskGroup['tasks'] = keyof SpecificTaskGroup['tasks'],
+  >(groupId: G, taskId: TaskName): SpecificTaskGroup['tasks'][TaskName] | undefined {
+    const group = this.taskGroups[groupId];
+    if (group && group.tasks && Object.prototype.hasOwnProperty.call(group.tasks, taskId)) {
+      return group.tasks[taskId as any] as any;
+    }
+    return undefined;
+  }
+
   /**
    * Gets a task in the specified group with the provided data.
    *
@@ -183,26 +225,6 @@ export class ToroTask<TAllTaskGroupsDefs extends TaskGroupDefinitionRegistry = T
     taskKey: `${string}.${string}`
   ): Task<PayloadType, ResultType, SchemaHandler> | undefined {
     const [groupId, taskId] = taskKey.split('.');
-    return this.getTask<PayloadType, ResultType>(groupId, taskId);
-  }
-
-  /**
-   * Gets a task in the specified group with the provided data.
-   *
-   * @param taskPath The path of the task to run in format group.task.
-   * @param data The data to pass to the task.
-   * @returns A promise that resolves to the Job instance.
-   */
-  public getTaskByKey<
-    G extends Extract<keyof TAllTaskGroupsDefs, string>,
-    T extends Extract<keyof TAllTaskGroupsDefs[G], string>,
-    Def = TAllTaskGroupsDefs[G][T],
-    PayloadType = Def extends TaskDefinition<infer P, any, any>
-      ? EffectivePayloadType<P, ResolvedSchemaType<Def extends TaskDefinition<any, any, infer S> ? S : undefined>>
-      : any,
-    ResultType = Def extends TaskDefinition<any, infer R, any> ? R : unknown,
-  >(taskKey: `${G}.${T}`): Task<PayloadType, ResultType, SchemaHandler> | undefined {
-    const [groupId, taskId] = taskKey.split('.') as [G, T];
     return this.getTask<PayloadType, ResultType>(groupId, taskId);
   }
 
@@ -278,21 +300,28 @@ export class ToroTask<TAllTaskGroupsDefs extends TaskGroupDefinitionRegistry = T
   /**
    * Runs a task in the specified group with the provided data.
    *
-   * @param taskKey
-   * @param payload
-   * @returns
+   * @param groupKey The key of the task group.
+   * @param taskName The name of the task to run.
+   * @param data The data to pass to the task.
+   * @returns A promise that resolves to the Job instance.
    */
+
   async runTaskByKey<
-    G extends Extract<keyof TAllTaskGroupsDefs, string>,
-    T extends Extract<keyof TAllTaskGroupsDefs[G], string>,
-    Def = TAllTaskGroupsDefs[G][T],
-    PayloadType = Def extends TaskDefinition<infer P, any, any>
-      ? EffectivePayloadType<P, ResolvedSchemaType<Def extends TaskDefinition<any, any, infer S> ? S : undefined>>
-      : any,
-    ResultType = Def extends TaskDefinition<any, infer R, any> ? R : unknown,
-  >(taskKey: `${G}.${T}`, payload: PayloadType) {
-    const [groupId, taskId] = taskKey.split('.') as [G, T];
-    return this.runTask<PayloadType, ResultType>(groupId, taskId, payload);
+    G extends keyof TGroups,
+    SpecificTaskGroup extends TGroups[G] = TGroups[G],
+    TaskName extends keyof SpecificTaskGroup['tasks'] = keyof SpecificTaskGroup['tasks'],
+    ActualTask extends SpecificTaskGroup['tasks'][TaskName] = SpecificTaskGroup['tasks'][TaskName],
+    // Payload is the ActualPayloadType inferred from the Task instance
+    Payload = ActualTask extends Task<any, any, any, infer P> ? P : unknown,
+    Result = ActualTask extends Task<any, infer R, any, any> ? R : unknown,
+    ActualPayload extends Payload = Payload,
+  >(groupId: G, taskName: TaskName, payload: ActualPayload): Promise<TaskJob<ActualPayload, Result>> {
+    const group = this.taskGroups[groupId];
+    if (group && group.runTaskByKey) {
+      return group.runTaskByKey<string, ActualTask, ActualPayload>(taskName as string, payload);
+    } else {
+      throw new Error(`Task group "${groupId as string}" not found.`);
+    }
   }
 
   _convertToFlow(run: BulkTaskRun): FlowJob {
@@ -426,87 +455,6 @@ export class ToroTask<TAllTaskGroupsDefs extends TaskGroupDefinitionRegistry = T
 
     this.logger.info({ count: queueNames.length }, 'Finished creating Queue instances for all found queues.');
     return queueInstances;
-  }
-
-  /**
-   * Starts workers based on the provided filter.
-   *
-   * @param filter Optional filter to target specific groups or tasks.
-   * @param workerOptions Optional default WorkerOptions to pass down.
-   */
-  async startWorkers(filter?: WorkerFilter, workerOptions?: WorkerOptions): Promise<void> {
-    this.logger.info({ filter }, 'Starting workers across task groups');
-    let groupsToProcess: TaskGroup[] = [];
-
-    if (filter?.groups) {
-      // Filter by specified group ids
-      groupsToProcess = filter.groups
-        .map((name) => this.taskGroups[name])
-        .filter((group): group is TaskGroup => !!group);
-      const requested = filter.groups.length;
-      const found = groupsToProcess.length;
-      if (requested !== found) {
-        this.logger.warn({ requested, found }, 'Some requested groups for starting workers were not found.');
-      }
-    } else {
-      // Process all known groups
-      groupsToProcess = Object.values(this.taskGroups);
-    }
-
-    const mergedOptions: WorkerOptions = {
-      prefix: this.queuePrefix,
-      connection: this.connectionOptions,
-      ...workerOptions,
-    };
-
-    groupsToProcess.forEach(async (group) => {
-      // Determine task filter for this specific group
-      const taskFilter = filter?.tasks?.[group.id] ? { tasks: filter.tasks[group.id] } : undefined;
-      if (filter?.tasks && !filter.groups?.includes(group.id) && !taskFilter) {
-        // If task filters exist but don't include this group (and group wasn't explicitly listed),
-        // skip this group entirely.
-        return;
-      }
-      await group.startWorkers(taskFilter, mergedOptions);
-    });
-    this.logger.info('Finished request to start workers');
-  }
-
-  /**
-   * Stops workers based on the provided filter.
-   *
-   * @param filter Optional filter to target specific groups or tasks.
-   * @returns A promise that resolves when all targeted workers have been requested to stop.
-   */
-  async stopWorkers(filter?: WorkerFilter): Promise<void> {
-    this.logger.info({ filter }, 'Stopping workers across task groups');
-    let groupsToProcess: TaskGroup[] = [];
-
-    if (filter?.groups) {
-      groupsToProcess = filter.groups
-        .map((name) => this.taskGroups[name])
-        .filter((group): group is TaskGroup => !!group);
-      const requested = filter.groups.length;
-      const found = groupsToProcess.length;
-      if (requested !== found) {
-        this.logger.warn({ requested, found }, 'Some requested groups for stopping workers were not found.');
-      }
-    } else {
-      groupsToProcess = Object.values(this.taskGroups);
-    }
-
-    const stopPromises = groupsToProcess.map((group) => {
-      const taskFilter = filter?.tasks?.[group.id] ? { tasks: filter.tasks[group.id] } : undefined;
-      if (filter?.tasks && !filter.groups?.includes(group.id) && !taskFilter) {
-        // If task filters exist but don't include this group (and group wasn't explicitly listed),
-        // skip stopping workers in this group.
-        return Promise.resolve(); // Resolve immediately, nothing to stop here based on filter
-      }
-      return group.stopWorkers(taskFilter);
-    });
-
-    await Promise.all(stopPromises);
-    this.logger.info('Finished request to stop workers');
   }
 
   /**
