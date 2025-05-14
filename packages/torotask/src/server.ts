@@ -126,6 +126,9 @@ export class TaskServer<
 
     for (const [groupKey, groupDef] of Object.entries(taskGroupDefinitions)) {
       const typedGroupDef = groupDef as TaskGroupDefinition<any>;
+      if (!typedGroupDef.id) {
+        typedGroupDef.id = groupKey;
+      }
       const group = this.client.createTaskGroup(groupKey, typedGroupDef.tasks);
       this.addGroups(group);
       this.taskGroups[groupKey as keyof TGroupDefs] = group as any;
@@ -169,6 +172,7 @@ export class TaskServer<
    *
    * @param baseDir The base directory containing task groups. Can be absolute or relative to `rootDir` (if provided during server construction).
    * @param pattern Glob pattern relative to baseDir (defaults to `**\/*.task.{js,ts}`).
+   * @deprecated Use `task definitions` instead.
    */
   async loadTasksFromDirectory(baseDir: string, pattern?: string): Promise<void> {
     const effectivePattern = pattern ?? '**/*.task.{js,ts}';
@@ -256,8 +260,7 @@ export class TaskServer<
         }
 
         const options = moduleToUse.options || {};
-        group.createTask({
-          id: finalTaskId,
+        group.createTask(finalTaskId, {
           options: options,
           triggers: moduleToUse.triggers ?? moduleToUse.trigger,
           handler: moduleToUse.handler,
@@ -314,7 +317,7 @@ export class TaskServer<
    * Runs a task in the specified group with the provided data.
    *
    * @param groupId The id of the task group.
-   * @param taskId The id of the task to run.
+   * @param taskName The name of the task to run.
    * @param data The data to pass to the task.
    * @returns A promise that resolves to the Job instance.
    */
@@ -328,8 +331,13 @@ export class TaskServer<
     Payload = ActualTask extends Task<any, any, any, infer P> ? P : unknown,
     Result = ActualTask extends Task<any, infer R, any, any> ? R : unknown,
     ActualPayload extends Payload = Payload,
-  >(groupId: G, taskId: TaskName, payload: ActualPayload): Promise<TaskJob<ActualPayload, Result>> {
-    return this.client.runTask<ActualPayload, Result>(groupId as string, taskId as string, payload);
+  >(groupId: G, taskName: TaskName, payload: ActualPayload): Promise<TaskJob<ActualPayload, Result>> {
+    const group = this.taskGroups[groupId];
+    if (group && group.runTask) {
+      return group.runTask<string, ActualTask, ActualPayload>(taskName as string, payload);
+    } else {
+      throw new Error(`Task group "${groupId as string}" not found.`);
+    }
   }
 
   /**

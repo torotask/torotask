@@ -56,11 +56,8 @@ export class TaskGroup<
       for (const key of Object.keys(definitions) as Array<Extract<keyof TDefs, string>>) {
         const definition = definitions[key]; // definition is TDefs[key]
         // Add the ID to the config if it doesn't have one (or use the key as the ID)
-        const config = {
-          ...definition,
-          id: definition.id || key,
-        };
-        this.createTask(config as TDefs[Extract<keyof TDefs, string>]);
+        const id = definition.id || key;
+        this.createTask(id, definition as TDefs[Extract<keyof TDefs, string>]);
       }
     }
   }
@@ -72,13 +69,16 @@ export class TaskGroup<
    */
   createTask<TaskId extends Extract<keyof TDefs, string>>(
     // Config is the specific definition from TDefs
+    id: string,
     config: TDefs[TaskId]
   ): TTasks[TaskId] {
     // Return type is the specific task type from TTasks
     // Generics for Task <P,R,S> are inferred from config (TDefs[TaskId])
     // because Task constructor takes config: TaskDefinition<P,R,S>
+
     const task = new Task(
       this as any, // Pass the TaskGroup instance
+      id,
       config, // Pass the original config (typed as TDefs[TaskId])
       this.logger.child({ task: config.id })
     );
@@ -107,13 +107,13 @@ export class TaskGroup<
    * Retrieves a defined Task by its definition name (which is also its ID).
    * This method expects the `nameOrId` to be a known key of the task definitions for this group.
    *
-   * @param nameOrId The definition name (key from TDefs, e.g., 'myTask'). Must be a key of TTasks.
+   * @param key The definition name (key from TDefs, e.g., 'myTask'). Must be a key of TTasks.
    * @returns The specifically typed Task instance (TTasks[Key]) if found, otherwise undefined.
    */
-  getTask<Key extends Extract<keyof TTasks, string>>(nameOrId: Key): TTasks[Key] | undefined {
+  getTask<Key extends Extract<keyof TTasks, string>>(key: Key): TTasks[Key] | undefined {
     // `nameOrId` is a key of TTasks, which are indexed by task ID (definition name).
-    if (Object.prototype.hasOwnProperty.call(this.tasks, nameOrId)) {
-      return this.tasks[nameOrId];
+    if (Object.prototype.hasOwnProperty.call(this.tasks, key)) {
+      return this.tasks[key];
     }
     return undefined;
   }
@@ -146,7 +146,7 @@ export class TaskGroup<
   /**
    * Runs a task within this group with the provided payload.
    *
-   * @param taskId The ID of the task to run (must be a key of TTasks).
+   * @param taskName The name of the task to run (must be a key of TTasks).
    * @param payload The payload to pass to the task, inferred from the task's definition.
    * @returns A promise that resolves to the TaskJob instance.
    */
@@ -157,8 +157,8 @@ export class TaskGroup<
     Payload = ActualTask extends Task<any, any, any, infer P> ? P : unknown,
     Result = ActualTask extends Task<any, infer R, any, any> ? R : unknown,
     ActualPayload extends Payload = Payload,
-  >(taskId: TaskName, payload: ActualPayload): Promise<TaskJob<ActualPayload, Result>> {
-    return this.client.runTask<ActualPayload, Result>(this.id, taskId, payload);
+  >(taskName: TaskName, payload: ActualPayload): Promise<TaskJob<ActualPayload, Result>> {
+    return this.client.runTask<ActualPayload, Result>(this.id, taskName, payload);
   }
 
   /**

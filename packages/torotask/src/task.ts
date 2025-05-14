@@ -8,7 +8,7 @@ import type {
   EffectivePayloadType,
   ResolvedSchemaType,
   SubTaskHandler,
-  TaskDefinition,
+  TaskConfig,
   TaskHandler,
   TaskHandlerContext,
   TaskHandlerOptions,
@@ -63,14 +63,15 @@ export class Task<
 
   constructor(
     taskGroup: TaskGroup,
+    id: string,
     // config's PayloadExplicit defaults to unknown, ResultType to unknown, SchemaInputVal to undefined
     // TaskDefinition itself uses EffectivePayloadType internally for its handler and triggers.
-    config: TaskDefinition<PayloadExplicit, ResultType, SchemaInputVal>,
+    config: TaskConfig<PayloadExplicit, ResultType, SchemaInputVal>,
     groupLogger: Logger
   ) {
     // Pass the effective payload type to BaseTask's triggers if necessary,
     // currently TaskDefinition handles the trigger's payload type.
-    super(taskGroup, config.id, config.options ?? {}, config.triggers, groupLogger);
+    super(taskGroup, id, config.options ?? {}, config.triggers, groupLogger);
 
     this.handler = config.handler;
 

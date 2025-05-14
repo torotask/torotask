@@ -95,12 +95,11 @@ export type TaskTrigger<PayloadType = unknown> =
   | TaskTriggerCron<PayloadType>
   | TaskTriggerEvery<PayloadType>;
 
-export interface TaskDefinition<
+export interface TaskConfig<
   PayloadExplicit = unknown,
   ResultType = unknown,
   SchemaInputValue extends SchemaHandler = undefined,
 > {
-  id: string;
   handler: TaskHandler<
     EffectivePayloadType<PayloadExplicit, ResolvedSchemaType<SchemaInputValue>>,
     ResultType,
@@ -109,6 +108,14 @@ export interface TaskDefinition<
   options?: TaskOptions;
   schema?: SchemaInputValue;
   triggers?: SingleOrArray<TaskTrigger<EffectivePayloadType<PayloadExplicit, ResolvedSchemaType<SchemaInputValue>>>>;
+}
+
+export interface TaskDefinition<
+  PayloadExplicit = unknown,
+  ResultType = unknown,
+  SchemaInputValue extends SchemaHandler = undefined,
+> extends TaskConfig<PayloadExplicit, ResultType, SchemaInputValue> {
+  id?: string;
 }
 
 //export type TaskRegistry = Record<string, Task<any, any, SchemaHandler>>;
