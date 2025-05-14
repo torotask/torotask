@@ -56,8 +56,7 @@ export class TaskGroup<
       for (const key of Object.keys(definitions) as Array<Extract<keyof TDefs, string>>) {
         const definition = definitions[key]; // definition is TDefs[key]
         // Add the ID to the config if it doesn't have one (or use the key as the ID)
-        const id = definition.id || key;
-        this.createTask(id, definition as TDefs[Extract<keyof TDefs, string>]);
+        this.createTask(key, definition as TDefs[Extract<keyof TDefs, string>]);
       }
     }
   }
@@ -69,37 +68,47 @@ export class TaskGroup<
    */
   createTask<TaskId extends Extract<keyof TDefs, string>>(
     // Config is the specific definition from TDefs
-    id: string,
+    key: string,
     config: TDefs[TaskId]
   ): TTasks[TaskId] {
     // Return type is the specific task type from TTasks
     // Generics for Task <P,R,S> are inferred from config (TDefs[TaskId])
     // because Task constructor takes config: TaskDefinition<P,R,S>
 
+    const id = config.id || key;
+    const taskDefinitionKey = key as Extract<keyof TDefs, string>;
+
     const task = new Task(
       this as any, // Pass the TaskGroup instance
-      id,
+      id, // Pass the actualRuntimeId to the Task constructor
       config, // Pass the original config (typed as TDefs[TaskId])
-      this.logger.child({ task: config.id })
+      this.logger.child({ task: id }) // Use actualRuntimeId for logger
     );
 
-    // The task ID from the config is the string key we use to register the task in the type-safe map
-    const taskDefinitionKey = config.id as Extract<keyof TDefs, string>;
+    // TaskId is the camelCase definition key (e.g., "myTask")
+    // 'id' (actualRuntimeId) is the ID for BullMQ (e.g., "my_task" or "explicit_id")
 
     if (this.tasks[taskDefinitionKey]) {
+      // Use TaskId (the definition key) for this.tasks
       this.logger.warn(
-        { definitionKey: taskDefinitionKey, taskId: config.id },
-        'Task already defined in this group. Overwriting.'
+        { definitionKey: taskDefinitionKey, taskId: id }, // Log with definitionKey and actualRuntimeId
+        'Task with definitionKey already defined in this group. Overwriting.'
+      );
+    }
+    if (this.tasksById[id] && this.tasksById[id] !== task) {
+      this.logger.warn(
+        { currentDefinitionKey: taskDefinitionKey, existingTaskId: id },
+        `Task with actualRuntimeId "${id}" is already registered in tasksById, possibly from a different definition key. Overwriting.`
       );
     }
 
-    // Register by definition key in the type-safe map (using the resolved taskDefinitionKey)
+    // Register by definition key (TaskId) in the type-safe map
     this.tasks[taskDefinitionKey] = task as TTasks[TaskId];
 
-    // Also register by actual task ID in the ID-indexed collection (which might be different)
-    this.tasksById[task.id] = task;
+    // Also register by actual task ID (id parameter) in the ID-indexed collection
+    this.tasksById[id] = task;
 
-    this.logger.debug({ definitionKey: taskDefinitionKey, taskId: task.id }, 'Task defined');
+    this.logger.debug({ definitionKey: taskDefinitionKey, taskId: id }, 'Task defined');
     return task as TTasks[TaskId];
   }
 
@@ -126,12 +135,8 @@ export class TaskGroup<
    * @param id The ID of the task. Must be a key of TTasks.
    * @returns The specifically typed Task instance (TTasks[Key]) if found, otherwise undefined.
    */
-  getTaskById<Key extends Extract<keyof TTasks, string>>(id: Key): TTasks[Key] | undefined {
-    // `id` is a key of TTasks. `this.tasks` is indexed by these keys.
-    if (Object.prototype.hasOwnProperty.call(this.tasks, id)) {
-      return this.tasks[id];
-    }
-    return undefined;
+  getTaskById<Payload = any, ResultType = any>(id: string): Task<Payload, ResultType, SchemaHandler> | undefined {
+    return this.tasksById[id];
   }
 
   /**
