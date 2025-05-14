@@ -10,6 +10,7 @@ import type {
   TaskDefinitionRegistry,
   TaskRegistry,
 } from './types/index.js';
+import type { TaskJob } from './job.js';
 
 /**
  * Represents a logical group of related Tasks.
@@ -138,9 +139,26 @@ export class TaskGroup<
    *
    * @returns A map of task names to Task instances.
    */
-  // Updated return type for consistency.
   getTasks(): TTasks {
     return this.tasks;
+  }
+
+  /**
+   * Runs a task within this group with the provided payload.
+   *
+   * @param taskId The ID of the task to run (must be a key of TTasks).
+   * @param payload The payload to pass to the task, inferred from the task's definition.
+   * @returns A promise that resolves to the TaskJob instance.
+   */
+  async runTask<
+    TaskName extends Extract<keyof TTasks, string>,
+    ActualTask extends TTasks[TaskName] = TTasks[TaskName],
+    // Payload is the ActualPayloadType inferred from the Task instance
+    Payload = ActualTask extends Task<any, any, any, infer P> ? P : unknown,
+    Result = ActualTask extends Task<any, infer R, any, any> ? R : unknown,
+    ActualPayload extends Payload = Payload,
+  >(taskId: TaskName, payload: ActualPayload): Promise<TaskJob<ActualPayload, Result>> {
+    return this.client.runTask<ActualPayload, Result>(this.id, taskId, payload);
   }
 
   /**
