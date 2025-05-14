@@ -12,8 +12,12 @@ import type {
   BulkTaskRunNode,
   SchemaHandler,
   TaskDefinitionRegistry,
+  TaskGroupDefinitionRegistry,
   TaskJobOptions,
   TaskRegistry,
+  TaskDefinition,
+  EffectivePayloadType,
+  ResolvedSchemaType,
 } from './types/index.js';
 import { getConfigFromEnv } from './utils/get-config-from-env.js';
 import { TaskWorkflow } from './workflow.js';
@@ -48,7 +52,7 @@ export interface WorkerFilter {
 /**
  * A client class to manage BullMQ connection settings, TaskGroups, and an EventDispatcher.
  */
-export class ToroTask {
+export class ToroTask<TAllTaskGroupsDefs extends TaskGroupDefinitionRegistry = TaskGroupDefinitionRegistry> {
   public readonly connectionOptions: ConnectionOptions;
   public readonly logger: Logger;
   public readonly prefix: string;
@@ -171,15 +175,34 @@ export class ToroTask {
   /**
    * Gets a task in the specified group with the provided data.
    *
-   * @param taskKey The key of the task to run in format group.task.
+   * @param taskPath The path of the task to run in format group.task.
    * @param data The data to pass to the task.
    * @returns A promise that resolves to the Job instance.
    */
-  public getTaskByKey<PayloadType = any, ResultType = unknown>(
+  public getTaskByPath<PayloadType = any, ResultType = unknown>(
     taskKey: `${string}.${string}`
   ): Task<PayloadType, ResultType, SchemaHandler> | undefined {
     const [groupId, taskId] = taskKey.split('.');
-    // The call to this.getTask will now correctly return Task<PayloadType, ResultType, ActualSchemaInputType> | undefined
+    return this.getTask<PayloadType, ResultType>(groupId, taskId);
+  }
+
+  /**
+   * Gets a task in the specified group with the provided data.
+   *
+   * @param taskPath The path of the task to run in format group.task.
+   * @param data The data to pass to the task.
+   * @returns A promise that resolves to the Job instance.
+   */
+  public getTaskByKey<
+    G extends Extract<keyof TAllTaskGroupsDefs, string>,
+    T extends Extract<keyof TAllTaskGroupsDefs[G], string>,
+    Def = TAllTaskGroupsDefs[G][T],
+    PayloadType = Def extends TaskDefinition<infer P, any, any>
+      ? EffectivePayloadType<P, ResolvedSchemaType<Def extends TaskDefinition<any, any, infer S> ? S : undefined>>
+      : any,
+    ResultType = Def extends TaskDefinition<any, infer R, any> ? R : unknown,
+  >(taskKey: `${G}.${T}`): Task<PayloadType, ResultType, SchemaHandler> | undefined {
+    const [groupId, taskId] = taskKey.split('.') as [G, T];
     return this.getTask<PayloadType, ResultType>(groupId, taskId);
   }
 
@@ -243,12 +266,32 @@ export class ToroTask {
   /**
    * Runs a task in the specified group with the provided data.
    *
-   * @param taskKey The key of the task to run in format group.task.
+   * @param taskPath The key of the task to run in format group.task.
    * @param data The data to pass to the task.
    * @returns A promise that resolves to the Job instance.
    */
-  async runTaskByKey<PayloadType = any, ResultType = any>(taskKey: `${string}.${string}`, payload: PayloadType) {
-    const [groupId, taskId] = taskKey.split('.');
+  async runTaskByPath<PayloadType = any, ResultType = any>(taskPath: `${string}.${string}`, payload: PayloadType) {
+    const [groupId, taskId] = taskPath.split('.');
+    return this.runTask<PayloadType, ResultType>(groupId, taskId, payload);
+  }
+
+  /**
+   * Runs a task in the specified group with the provided data.
+   *
+   * @param taskKey
+   * @param payload
+   * @returns
+   */
+  async runTaskByKey<
+    G extends Extract<keyof TAllTaskGroupsDefs, string>,
+    T extends Extract<keyof TAllTaskGroupsDefs[G], string>,
+    Def = TAllTaskGroupsDefs[G][T],
+    PayloadType = Def extends TaskDefinition<infer P, any, any>
+      ? EffectivePayloadType<P, ResolvedSchemaType<Def extends TaskDefinition<any, any, infer S> ? S : undefined>>
+      : any,
+    ResultType = Def extends TaskDefinition<any, infer R, any> ? R : unknown,
+  >(taskKey: `${G}.${T}`, payload: PayloadType) {
+    const [groupId, taskId] = taskKey.split('.') as [G, T];
     return this.runTask<PayloadType, ResultType>(groupId, taskId, payload);
   }
 

@@ -11,6 +11,9 @@ import type {
   TaskGroupRegistry,
   TaskServerOptions,
   TaskTrigger,
+  EffectivePayloadType, // Added
+  ResolvedSchemaType, // Added
+  SchemaHandler, // Added
 } from './types/index.js';
 import { ToroTask, WorkerFilter } from './client.js';
 import { TaskGroup } from './task-group.js';
@@ -25,17 +28,18 @@ const LOGGER_NAME = 'TaskServer';
  * based on TaskGroup definitions from the client package.
  * Provides features like centralized worker start/stop and optional global error handling.
  *
- * @template TGroupDefs The type of task group definitions provided to the server
+ * @template TAllTaskGroupsDefs The type of all task group definitions provided to the server
+ * @template TGroups The type of task groups derived from the task group definitions
  */
 export class TaskServer<
-  TGroupDefs extends TaskGroupDefinitionRegistry = TaskGroupDefinitionRegistry,
-  TGroups extends TaskGroupRegistry<TGroupDefs> = TaskGroupRegistry<TGroupDefs>,
+  TAllTaskGroupsDefs extends TaskGroupDefinitionRegistry = TaskGroupDefinitionRegistry,
+  TGroups extends TaskGroupRegistry<TAllTaskGroupsDefs> = TaskGroupRegistry<TAllTaskGroupsDefs>,
 > {
-  public readonly client: ToroTask;
+  public readonly client: ToroTask<TAllTaskGroupsDefs>;
   public readonly logger: Logger;
   private readonly rootDir?: string;
-  private readonly options: TaskServerOptions;
-  private readonly managedGroups: Set<TaskGroup> = new Set();
+  private readonly options: TaskServerOptions<TAllTaskGroupsDefs>;
+  private readonly managedGroups: Set<TaskGroup<any, any>> = new Set();
   private readonly ownClient: boolean = false; // Did we create the client?
   public readonly events: EventDispatcher;
 
@@ -49,7 +53,7 @@ export class TaskServer<
   private unhandledRejectionListener?: (...args: any[]) => void;
   private uncaughtExceptionListener?: (...args: any[]) => void;
 
-  constructor(options: TaskServerOptions, taskGroupDefs?: TGroupDefs) {
+  constructor(options: TaskServerOptions<TAllTaskGroupsDefs>, taskGroupDefs?: TAllTaskGroupsDefs) {
     // Refined Logger Initialization
     const loggerOptions = options.logger;
     const loggerName = options.loggerName ?? LOGGER_NAME;
@@ -85,11 +89,11 @@ export class TaskServer<
 
     // Initialize Client
     if (options.client) {
-      this.client = options.client;
+      this.client = options.client as ToroTask<TAllTaskGroupsDefs>;
       this.ownClient = false;
       this.logger.debug('Using provided ToroTask instance.');
     } else if (options.clientOptions) {
-      this.client = new ToroTask({
+      this.client = new ToroTask<TAllTaskGroupsDefs>({
         ...options.clientOptions,
         logger: options.clientOptions.logger ?? this.logger.child({ component: 'ToroTask' }),
       });
@@ -120,7 +124,7 @@ export class TaskServer<
    * Initializes task groups from the provided task group definitions.
    * This creates all task groups and their tasks, and adds them to the server.
    */
-  private initializeTaskGroups(taskGroupDefinitions: TGroupDefs): void {
+  private initializeTaskGroups(taskGroupDefinitions: TAllTaskGroupsDefs): void {
     const groupCount = Object.keys(taskGroupDefinitions).length;
     this.logger.debug({ groupCount }, 'Initializing task groups from definitions');
 
@@ -131,7 +135,7 @@ export class TaskServer<
       }
       const group = this.client.createTaskGroup(groupKey, typedGroupDef.tasks);
       this.addGroups(group);
-      this.taskGroups[groupKey as keyof TGroupDefs] = group as any;
+      this.taskGroups[groupKey as keyof TAllTaskGroupsDefs] = group as any;
 
       const taskCount = Object.keys(typedGroupDef.tasks).length;
       this.logger.debug(
@@ -147,7 +151,7 @@ export class TaskServer<
   /**
    * Adds TaskGroups to be managed by this server.
    */
-  addGroups(...groups: TaskGroup[]): this {
+  addGroups(...groups: TaskGroup<any, any>[]): this {
     groups.forEach((group) => {
       if (!group || !(group instanceof TaskGroup)) {
         this.logger.warn({ group }, 'Skipping invalid item passed to addGroups');
@@ -288,9 +292,6 @@ export class TaskServer<
   }
 
   /**
-   * Retrieves an existing Task instance by group and name.
-   */
-  getTask<
     G extends keyof TGroups,
     SpecificTaskGroup extends TGroups[G] = TGroups[G],
     TaskName extends keyof SpecificTaskGroup['tasks'] = keyof SpecificTaskGroup['tasks'],
@@ -309,8 +310,16 @@ export class TaskServer<
    * @param data The data to pass to the task.
    * @returns A promise that resolves to the Job instance.
    */
-  getTaskByKey<PayloadType = any, ResultType = any>(taskKey: `${string}.${string}`) {
-    return this.client.getTaskByKey<PayloadType, ResultType>(taskKey);
+  getTaskByKey<
+    G extends Extract<keyof TAllTaskGroupsDefs, string>,
+    T extends Extract<keyof TAllTaskGroupsDefs[G], string>,
+    Def = TAllTaskGroupsDefs[G][T],
+    PayloadType = Def extends TaskDefinition<infer P, any, any>
+      ? EffectivePayloadType<P, ResolvedSchemaType<Def extends TaskDefinition<any, any, infer S> ? S : undefined>>
+      : any,
+    ResultType = Def extends TaskDefinition<any, infer R, any> ? R : unknown,
+  >(taskKey: `${G}.${T}`): Task<PayloadType, ResultType, SchemaHandler> | undefined {
+    return this.client.getTaskByKey<G, T, Def, PayloadType, ResultType>(taskKey);
   }
 
   /**
@@ -347,8 +356,16 @@ export class TaskServer<
    * @param data The data to pass to the task.
    * @returns A promise that resolves to the Job instance.
    */
-  async runTaskByKey<PayloadType = any, ResultType = any>(key: `${string}.${string}`, payload: PayloadType) {
-    return this.client.runTaskByKey<PayloadType, ResultType>(key, payload);
+  async runTaskByKey<
+    G extends Extract<keyof TAllTaskGroupsDefs, string>,
+    T extends Extract<keyof TAllTaskGroupsDefs[G], string>,
+    Def = TAllTaskGroupsDefs[G][T],
+    PayloadType = Def extends TaskDefinition<infer P, any, any>
+      ? EffectivePayloadType<P, ResolvedSchemaType<Def extends TaskDefinition<any, any, infer S> ? S : undefined>>
+      : any,
+    ResultType = Def extends TaskDefinition<any, infer R, any> ? R : unknown,
+  >(taskKey: `${G}.${T}`, payload: PayloadType): Promise<TaskJob<PayloadType, ResultType>> {
+    return this.client.runTaskByKey<G, T, Def, PayloadType, ResultType>(taskKey, payload);
   }
 
   /**
