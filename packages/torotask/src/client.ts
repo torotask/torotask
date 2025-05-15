@@ -256,6 +256,18 @@ export class ToroTask<
     return queue;
   }
 
+  public async getJobById<PayloadType = any, ResultType = any>(
+    queueName: string,
+    jobId: string
+  ): Promise<TaskJob<PayloadType, ResultType> | undefined> {
+    const queue = this._consumerQueues.get(queueName);
+
+    if (queue) {
+      const job = await queue.getJob(jobId);
+      return job as TaskJob<PayloadType, ResultType>;
+    }
+  }
+
   /**
    * Runs a task in the specified group with the provided data.
    *
