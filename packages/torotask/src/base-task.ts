@@ -139,11 +139,8 @@ export abstract class BaseTask<
       ...this.jobsOptions,
       ...overrideOptions,
     };
-    const data = {
-      payload,
-    };
     // Use id for the default job name if needed, queue handles its own naming
-    return this.queue.add(this.id, data as any, finalOptions);
+    return this.queue.add(this.id, payload, finalOptions);
   }
 
   async runBulk(jobs: BulkJob[]) {
@@ -160,16 +157,13 @@ export abstract class BaseTask<
     return this.queue.addBulk(bulkJobs);
   }
 
-  async runAndWait(payload: PayloadType, overrideOptions?: JobsOptions) {
+  async runAndWait(payload: PayloadType, overrideOptions?: JobsOptions, state?: TaskJobOptions['state']) {
     const finalOptions: JobsOptions = {
       ...this.jobsOptions,
       ...overrideOptions,
     };
-    const data = {
-      payload,
-    };
     // Use task id for the default job name if needed
-    return this.queue._runJobAndWait(this.id, data as any, finalOptions);
+    return this.queue._runJobAndWait(this.id, payload, finalOptions, state);
   }
 
   protected getJobName(job: Job): string {

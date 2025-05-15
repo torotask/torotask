@@ -1,7 +1,7 @@
 import { Queue, QueueOptions, JobsOptions, Job } from 'bullmq'; // Import JobsOptions
 import { Logger } from 'pino';
 import { ToroTask } from './client.js';
-import type { BulkJob, TaskJobData, TaskJobOptions, TaskQueueOptions } from './types/index.js';
+import type { BulkJob, TaskJobData, TaskJobOptions, TaskJobState, TaskQueueOptions } from './types/index.js';
 import { TaskJob } from './job.js';
 
 export class TaskQueue<
@@ -56,13 +56,15 @@ export class TaskQueue<
    * Public method intended for use by subclasses or related classes (e.g., SubTask).
    */
   public override async add(
-    name: NameType, // Use TaskQueue's derived NameType
-    payload: PayloadType, // Use TaskQueue's derived DataType
-    options?: TaskJobOptions // Use specific TaskJobOptions
+    name: NameType,
+    payload: PayloadType,
+    options?: TaskJobOptions,
+    state?: TaskJobState
   ): Promise<TaskJob<PayloadType, ResultType, NameType>> {
     // Return specific TaskJob
     const data = {
       payload,
+      state,
     };
     const job = await super.add(name, data, options as JobsOptions);
 
@@ -97,19 +99,20 @@ export class TaskQueue<
    */
   public async _runJobAndWait(
     name: NameType,
-    data: DataType,
-    options: TaskJobOptions // Use TaskJobOptions
+    payload: PayloadType,
+    options: TaskJobOptions,
+    state?: TaskJobState
   ): Promise<ResultType> {
     // Use specific JobReturn generic
     const waitLogger = this.logger.child({ jobName: name, action: 'runAndWait' });
-    waitLogger.info({ data, options }, 'Adding job and waiting for completion');
+    waitLogger.info({ payload, options }, 'Adding job and waiting for completion');
 
     // Call the corrected _runJob
-    const job = await this.add(name, data as any, options); // Cast data if needed
+    const job = await this.add(name, payload, options, state); // Cast data if needed
     const jobLogger = this.logger.child({ jobId: job.id, jobName: name });
 
     try {
-      jobLogger.info('Waiting for job completion...');
+      jobLogger.debug('Waiting for job completion...');
       // Make sure queueEvents is accessible (might need to be passed or stored)
       // Assuming this.queueEvents exists similar to BaseQueue/WorkerQueue
       if (!this.queueEvents) {

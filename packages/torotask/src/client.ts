@@ -335,7 +335,10 @@ export class ToroTask<
     return {
       name: run.name,
       queueName: queueName,
-      data: run.data,
+      data: {
+        payload: run.payload,
+        state: run.state,
+      },
       opts: options,
       children: run.children?.map((child) => this._convertToChildFlow(child)) || undefined,
     };
@@ -355,7 +358,10 @@ export class ToroTask<
     return {
       name: run.name,
       queueName: queueName,
-      data: run.data,
+      data: {
+        payload: run.payload,
+        state: run.state,
+      },
       opts: options,
       children: run.children?.map((child) => this._convertToChildFlow(child)) || undefined,
     };
