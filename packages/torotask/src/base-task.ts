@@ -144,12 +144,14 @@ export abstract class BaseTask<
     return this.queue.add(this.id, payload, finalOptions);
   }
 
-  async runBulk(jobs: BulkJob[]) {
+  async runMany(jobs: Omit<BulkJob, 'data'>[], overrideOptions?: TaskJobOptions) {
     const bulkJobs = jobs.map((job) => {
       return {
         ...job,
+        name: job.name ?? this.id,
         options: {
           ...this.jobsOptions,
+          ...(overrideOptions ?? {}),
           ...(job.options ?? {}),
         },
       };

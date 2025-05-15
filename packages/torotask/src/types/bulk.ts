@@ -1,23 +1,24 @@
 import type { JobNode } from 'bullmq';
-import type { TaskJobOptions, TaskJobState } from './job.js';
+import type { TaskJobData, TaskJobOptions, TaskJobState } from './job.js';
 import { P } from 'pino';
 
 export type BulkRunOptions = Omit<TaskJobOptions, 'repeat'>;
 
-export type BulkJob<T = any> = {
-  name: string;
-  data: T;
+export type BulkJob<PayloadType = any, DataType extends TaskJobData<PayloadType> = TaskJobData<PayloadType>> = {
+  name?: string;
+  payload?: PayloadType;
+  data?: DataType;
   state?: TaskJobState;
   options?: BulkRunOptions;
 };
 
-export type BulkTaskRunBase<T> = {
+export type BulkTaskRunBase<TPayload> = {
   taskGroup: string;
   taskId: string;
   name: string;
-  payload?: T;
+  payload?: TPayload;
   state?: TaskJobState;
-  options?: T;
+  options?: TPayload;
   children?: BulkTaskRunChild[];
 };
 

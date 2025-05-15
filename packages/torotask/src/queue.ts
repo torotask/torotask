@@ -80,10 +80,15 @@ export class TaskQueue<
     this.logger.info({ jobs }, `Bulk adding jobs ${jobs.length} to queue [${this.name}]`);
 
     const bulkJobs = jobs.map((job) => {
+      const data = {
+        ...job.data,
+      };
+      if (job.payload) data.payload = job.payload;
+      if (job.state) data.state = job.state;
       return {
         name: job.name,
-        data: job.data,
         opts: job.options,
+        data: data,
       };
     });
 
@@ -133,7 +138,7 @@ export class TaskQueue<
         throw new Error(`Failed to refetch job ${job.id} after completion.`);
       }
 
-      jobLogger.info({ returnValue: finishedJob.returnvalue }, 'Job completed successfully');
+      jobLogger.debug({ returnValue: finishedJob.returnvalue }, 'Job completed successfully');
       return finishedJob.returnvalue;
     } catch (error) {
       jobLogger.error(

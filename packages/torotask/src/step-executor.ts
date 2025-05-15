@@ -1,12 +1,22 @@
+import { isArray, isPlainObject } from 'lodash-es';
 import ms, { type StringValue } from 'ms';
 import { Logger } from 'pino';
-import { TaskJob } from './job.js';
-import type { SimplifiedJob, StepResult, TaskGroupDefinitionRegistry, TaskJobState } from './types/index.js';
-import { DelayedError, WaitingChildrenError } from './step-errors.js';
-import { getDateTime } from './utils/get-datetime.js';
-import { serializeError, deserializeError } from './utils/serialize-error.js';
-import { Task } from './task.js';
 import { ToroTask } from './client.js';
+import { TaskJob } from './job.js';
+import { DelayedError, WaitingChildrenError } from './step-errors.js';
+import { Task } from './task.js';
+import type {
+  SimplifiedJob,
+  StepBulkJob,
+  StepResult,
+  StepTaskJobOptions,
+  TaskGroupDefinitionRegistry,
+  TaskGroupRegistry,
+  TaskJobState,
+} from './types/index.js';
+import { getDateTime } from './utils/get-datetime.js';
+import { isControlError } from './utils/is-control-error.js';
+import { deserializeError, serializeError } from './utils/serialize-error.js';
 
 export class StepExecutor<
   JobType extends TaskJob = TaskJob,
@@ -51,14 +61,20 @@ export class StepExecutor<
 
   /**
    * Process step result before storing it in the job state.
-   * This method automatically prpeares TaskJob instances ready for serialization.
+   * This method automatically prepares TaskJob instances ready for serialization.
+   * Recursively processes arrays and objects to find and serialize any TaskJob instances.
    *
    * @param result The result from a step's core logic
    * @param stepKind The kind of step that produced this result
    * @returns A processed version of the result suitable for storage
    */
   protected async memoizeStepResult<T>(result: T, stepKind: string): Promise<any> {
-    // Handle TaskJob instances by calling toJSON
+    // Base case: null or undefined
+    if (result === null || result === undefined) {
+      return result;
+    }
+
+    // Handle TaskJob instances by simplifying them
     if (result instanceof TaskJob) {
       const complexJob: TaskJob = result;
       this.logger.debug({ jobId: result.id, stepKind }, `Automatically processing TaskJob instance for serialization`);
@@ -72,18 +88,46 @@ export class StepExecutor<
 
       return simpleJob;
     }
-    // For other types, just return as is
+
+    // Handle arrays by recursively processing each element
+    if (isArray(result)) {
+      this.logger.debug({ stepKind, arrayLength: result.length }, `Processing array for potential TaskJob instances`);
+      return Promise.all(result.map((item) => this.memoizeStepResult(item, stepKind)));
+    }
+
+    // Handle plain objects by recursively processing each property
+    if (isPlainObject(result)) {
+      this.logger.debug(
+        { stepKind, objectKeys: Object.keys(result as object).length },
+        `Processing object for potential TaskJob instances`
+      );
+      const processedObject: Record<string, any> = {};
+
+      for (const [key, value] of Object.entries(result as object)) {
+        processedObject[key] = await this.memoizeStepResult(value, stepKind);
+      }
+
+      return processedObject;
+    }
+
+    // For other types (primitives, functions, etc.), just return as is
     return result;
   }
 
   /**
    * Checks if the memoized data is a job that needs to be reconstructed.
+   * Recursively processes arrays and objects to find and reconstruct any serialized jobs.
    *
    * @param memoizedData The data from the memoized result
    * @param userStepId The ID of the step for logging purposes
    * @returns The original data or a reconstructed job
    */
   protected async reconstructJobIfNeeded<T>(memoizedData: any, userStepId: string): Promise<T> {
+    // Base case: null or undefined
+    if (memoizedData === null || memoizedData === undefined) {
+      return memoizedData as T;
+    }
+
     // Check if this is a memoized job by looking for our marker
     if (memoizedData && memoizedData._isMemoizedTaskJob) {
       this.logger.debug(
@@ -109,6 +153,31 @@ export class StepExecutor<
         );
         throw deserializeError(error);
       }
+    }
+
+    // Handle arrays by recursively processing each element
+    if (isArray(memoizedData)) {
+      this.logger.debug(
+        { userStepId, arrayLength: memoizedData.length },
+        `Processing array for potential serialized jobs`
+      );
+      const result = await Promise.all(memoizedData.map((item) => this.reconstructJobIfNeeded(item, userStepId)));
+      return result as unknown as T;
+    }
+
+    // Handle plain objects by recursively processing each property
+    if (isPlainObject(memoizedData)) {
+      this.logger.debug(
+        { userStepId, objectKeys: Object.keys(memoizedData).length },
+        `Processing object for potential serialized jobs`
+      );
+      const result: Record<string, any> = {};
+
+      for (const [key, value] of Object.entries(memoizedData)) {
+        result[key] = await this.reconstructJobIfNeeded(value, userStepId);
+      }
+
+      return result as unknown as T;
     }
 
     // Not a job, return original data
@@ -454,6 +523,43 @@ export class StepExecutor<
         throw new Error(`Task '${taskKey}' not found in group '${groupKey}'.`);
       }
       return (await task.runAndWait(payload, { ...options, parent: this.job })) as Result;
+    });
+  }
+
+  async runTasks<
+    GroupName extends keyof TGroups,
+    TargetGroup extends TGroups[GroupName] = TGroups[GroupName],
+    TaskName extends keyof TargetGroup['tasks'] = keyof TargetGroup['tasks'],
+    ActualTask extends TargetGroup['tasks'][TaskName] = TargetGroup['tasks'][TaskName],
+    Payload = ActualTask extends Task<any, any, any, infer P> ? P : unknown,
+    Result = ActualTask extends Task<any, infer R, any, any> ? R : unknown,
+    ActualPayload extends Payload = Payload,
+    TJob extends TaskJob<ActualPayload, Result> = TaskJob<ActualPayload, Result>,
+  >(
+    userStepId: string,
+    groupName: GroupName,
+    taskName: TaskName,
+    tasks: StepBulkJob<ActualPayload>[],
+    options?: StepTaskJobOptions
+  ): Promise<TJob[]> {
+    return this._executeStep<TJob[]>(userStepId, 'runTasks', async (_internalStepId: string) => {
+      if (!this.parentTask) {
+        throw new Error('Cannot start tasks: parentTask is not available.');
+      }
+      const client = this.parentTask.group.client;
+      const groupKey = groupName.toString();
+      const taskGroup = client.taskGroups[groupKey];
+      if (!taskGroup) {
+        throw new Error(`Task group '${groupKey}' not found.`);
+      }
+      const taskKey = taskName.toString();
+      const task = taskGroup.tasks[taskKey];
+      if (!task) {
+        throw new Error(`Task '${taskKey}' not found in group '${groupKey}'.`);
+      }
+      const taskJobs = (await task.runMany(tasks, { ...options, parent: this.job })) as TJob[];
+
+      return taskJobs;
     });
   }
 

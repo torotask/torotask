@@ -1,4 +1,5 @@
-import type { TaskJobState } from './job.js';
+import { BulkJob } from './bulk.js';
+import type { TaskJobOptions, TaskJobState } from './job.js';
 
 export type StepStatus = 'completed' | 'errored' | 'sleeping' | 'waiting_for_child' | 'waiting_for_children';
 //| 'waiting_for_event';
@@ -32,3 +33,7 @@ export interface SimplifiedJob {
   returnValue?: any;
   _isMemoizedTaskJob: boolean;
 }
+
+export type StepTaskJobOptions = Omit<TaskJobOptions, 'parent'>;
+
+export type StepBulkJob<Payload> = Omit<BulkJob<Payload>, 'data' | 'state'>;
