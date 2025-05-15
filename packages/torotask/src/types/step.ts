@@ -23,3 +23,12 @@ export interface StepResult<T = any> {
   childIdentifier?: string; // For runTask
   childTaskIds?: string[]; // For waitForChildTasks
 }
+
+export interface SimplifiedJob {
+  jobId: string;
+  queue: string;
+  state?: string;
+  timestamp?: number;
+  returnValue?: any;
+  _isMemoizedTaskJob: boolean;
+}

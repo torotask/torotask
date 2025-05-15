@@ -1,7 +1,7 @@
 import ms, { type StringValue } from 'ms';
 import { Logger } from 'pino';
 import { TaskJob } from './job.js';
-import type { StepResult, TaskGroupDefinitionRegistry, TaskJobState } from './types/index.js';
+import type { SimplifiedJob, StepResult, TaskGroupDefinitionRegistry, TaskJobState } from './types/index.js';
 import { SleepError, WaitForChildrenError } from './step-errors.js';
 import { getDateTime } from './utils/get-datetime.js';
 import { serializeError, deserializeError } from './utils/serialize-error.js';
@@ -12,6 +12,8 @@ export class StepExecutor<
   JobType extends TaskJob = TaskJob,
   TAllTaskGroupsDefs extends TaskGroupDefinitionRegistry = TaskGroupDefinitionRegistry,
   TCurrentTaskGroup extends keyof TAllTaskGroupsDefs = never,
+  TPayload = JobType extends TaskJob<infer P, any, any> ? P : unknown,
+  TResult = JobType extends TaskJob<any, infer R, any> ? R : unknown,
 > {
   private logger: Logger;
   private stepCounts: Map<string, number> = new Map();
@@ -354,7 +356,24 @@ export class StepExecutor<
       if (!childTask) {
         throw new Error(`Task '${childTaskKey}' not found in this Task group.`);
       }
-      return await childTask.runAndWait(payload);
+      return await childTask.runAndWait(payload, { parent: this.job });
+    });
+  }
+
+  async startGroupTask<
+    ChildTaskName extends keyof TAllTaskGroupsDefs[TCurrentTaskGroup]['tasks'],
+    ChildTask extends TAllTaskGroupsDefs[TCurrentTaskGroup]['tasks'][ChildTaskName],
+    Payload = ChildTask extends Task<infer P, any, any> ? P : unknown,
+    Result = ChildTask extends Task<any, infer R, any> ? R : unknown,
+    TJob extends TaskJob<Payload, Result> = TaskJob<Payload, Result>,
+  >(userStepId: string, childTaskName: ChildTaskName, payload: Payload): Promise<TJob> {
+    return this._executeStep<TJob>(userStepId, 'startGroupTask', async (_internalStepId: string) => {
+      const childTaskKey = childTaskName.toString();
+      const childTask = this.parentTask?.group.tasks[childTaskKey];
+      if (!childTask) {
+        throw new Error(`Task '${childTaskKey}' not found in this Task group.`);
+      }
+      return (await childTask.run(payload, { parent: this.job })) as TJob;
     });
   }
 
