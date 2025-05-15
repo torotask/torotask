@@ -5,8 +5,10 @@ import type {
   TaskServerOptions,
   WorkerFilterGroups,
 } from './types/index.js';
+import { DelayedError, WaitingChildrenError } from './step-errors.js';
 import { ToroTask } from './client.js';
 import { filterGroups } from './utils/filter-groups.js';
+import { isControlError } from './utils/is-control-error.js';
 
 const LOGGER_NAME = 'TaskServer';
 
@@ -32,6 +34,8 @@ export class TaskServer<
   ) {
     // Refined Logger Initialization
     options.loggerName = options.loggerName ?? LOGGER_NAME;
+    options.handleGlobalErrors = options.handleGlobalErrors ?? true;
+
     super(options, taskGroupDefs);
     this.logger.debug('TaskServer initialized');
   }
@@ -132,14 +136,20 @@ export class TaskServer<
     }
   }
 
-  private handleUnhandledRejection(reason: unknown, promise: Promise<unknown>): void {
-    this.logger.fatal({ reason, promise }, 'Unhandled Promise Rejection detected by TaskServer');
-    // Optional: Exit strategy or further action
-    // process.exit(1);
+  private handleUnhandledRejection(error: any, _promise: Promise<unknown>): void {
+    // Check for BullMQ flow control errors (missing awaits)
+    if (isControlError(error)) {
+      this.logger.error(
+        { error, errorName: error.name, errorMessage: error.message },
+        `Likely missing await detected: ${error.name} was thrown but not caught. This is usually caused by not awaiting a promise that throws flow control errors.`
+      );
+    } else {
+      this.logger.error({ error }, 'Unhandled Promise Rejection detected by TaskServer');
+    }
   }
 
-  private handleUncaughtException(error: Error, origin: NodeJS.UncaughtExceptionOrigin): void {
-    this.logger.fatal({ err: error, origin }, 'Uncaught Exception detected by TaskServer');
+  private handleUncaughtException(error: Error, _origin: NodeJS.UncaughtExceptionOrigin): void {
+    this.logger.error({ err: error }, 'Uncaught Exception detected by TaskServer');
     // Optional: Exit strategy (often recommended for uncaught exceptions)
     // process.exit(1);
   }

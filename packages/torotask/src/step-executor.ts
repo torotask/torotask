@@ -213,8 +213,11 @@ export class StepExecutor<
       );
       return result;
     } catch (error: any) {
-      if (error?.isWorkflowPendingError === true && error.stepInternalId === internalStepId) {
-        this.logger.info(
+      if (
+        (error instanceof DelayedError || error instanceof WaitingChildrenError) &&
+        error.message.includes(internalStepId)
+      ) {
+        this.logger.debug(
           { internalStepId, stepKind, errName: error.name, details: error },
           `Step '${userStepId}' (id: ${internalStepId}) initiated a pending state (${error.name}). State already persisted by step method.`
         );

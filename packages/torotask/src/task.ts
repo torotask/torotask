@@ -19,6 +19,7 @@ import type {
 // Import new/updated utility types
 import { TaskJob } from './job.js';
 import { StepExecutor } from './step-executor.js';
+import { isControlError } from './utils/is-control-error.js';
 
 /**
  * Represents a defined task associated with a TaskGroup.
@@ -149,12 +150,7 @@ export class Task<
       }
     } catch (error: any) {
       // Check for workflow pending errors using instanceof first (type-safe) and then by name/property (more flexible)
-      if (
-        error instanceof DelayedError ||
-        error instanceof WaitingChildrenError ||
-        error?.name === 'DelayedError' ||
-        error?.name === 'WaitingChildrenError'
-      ) {
+      if (isControlError(error)) {
         jobLogger.debug(
           {
             err: error,
