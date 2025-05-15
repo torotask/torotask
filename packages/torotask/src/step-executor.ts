@@ -6,6 +6,7 @@ import { SleepError, WaitForChildError, WaitForChildrenError } from './step-erro
 import { getDateTime } from './utils/get-datetime.js';
 import { serializeError, deserializeError } from './utils/serialize-error.js';
 import { Task } from './task.js';
+import { ToroTask } from './client.js';
 
 export class StepExecutor<
   JobType extends TaskJob = TaskJob,
@@ -14,12 +15,14 @@ export class StepExecutor<
 > {
   private logger: Logger;
   private stepCounts: Map<string, number> = new Map();
+  private client: ToroTask;
 
   constructor(
     private job: JobType,
-    private parentTask?: Task<any, any, any>
+    private parentTask: Task<TPayload, TResult, any>
   ) {
     this.logger = job.logger || (console as unknown as Logger);
+    this.client = parentTask.group.client;
 
     if (typeof this.job.state !== 'object' || this.job.state === null) {
       this.job.state = {} as TaskJobState;
