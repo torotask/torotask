@@ -19,7 +19,6 @@ import type {
 // Import new/updated utility types
 import { TaskJob } from './job.js';
 import { StepExecutor } from './step-executor.js';
-import { SleepError, WaitForChildrenError, WaitForChildError } from './step-errors.js';
 
 /**
  * Represents a defined task associated with a TaskGroup.
@@ -149,21 +148,25 @@ export class Task<
         );
       }
     } catch (error: any) {
+      // Check for workflow pending errors using instanceof first (type-safe) and then by name/property (more flexible)
       if (
         error instanceof DelayedError ||
-        error.name == 'DelayedError' ||
-        error instanceof SleepError ||
-        error.name == 'SleepError' ||
         error instanceof WaitingChildrenError ||
-        error.name == 'WaitingChildrenError' ||
-        error instanceof WaitForChildrenError ||
-        error.name == 'WaitForChildrenError' ||
-        error instanceof WaitForChildError ||
-        error.name == 'WaitForChildError'
+        error?.name === 'DelayedError' ||
+        error?.name === 'WaitingChildrenError'
       ) {
-        // These are BullMQ flow control errors, re-throw or handle as per BullMQ docs
-        jobLogger.debug({ err: error }, `Job processing resulted in a flow control state: ${error.name}`);
-        return; // Or re-throw error;
+        jobLogger.debug(
+          {
+            err: error,
+            name: error.name,
+            errorType: error.constructor.name,
+            stepId: error?.stepInternalId,
+          },
+          `Job processing resulted in a workflow pending state (${error.name}). Re-throwing for BullMQ to handle.`
+        );
+
+        // Always re-throw workflow pending errors so BullMQ can handle them
+        throw error;
       }
 
       jobLogger.error(

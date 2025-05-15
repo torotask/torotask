@@ -2,7 +2,7 @@ import ms, { type StringValue } from 'ms';
 import { Logger } from 'pino';
 import { TaskJob } from './job.js';
 import type { SimplifiedJob, StepResult, TaskGroupDefinitionRegistry, TaskJobState } from './types/index.js';
-import { SleepError, WaitForChildrenError } from './step-errors.js';
+import { DelayedError, WaitingChildrenError } from './step-errors.js';
 import { getDateTime } from './utils/get-datetime.js';
 import { serializeError, deserializeError } from './utils/serialize-error.js';
 import { Task } from './task.js';
@@ -122,7 +122,7 @@ export class StepExecutor<
    *                  If it initiates a pending state (e.g., sleep, wait), it should:
    *                  1. Update \`this.job.state.stepState\` with the new status (e.g., 'sleeping').
    *                  2. Call \`await this.persistState()\`.
-   *                  3. Throw a \`WorkflowPendingError\` (e.g., \`SleepError\`).
+   *                  3. Throw a \`WorkflowPendingError\` (e.g., \`DelayedError\`).
    *                  If it completes successfully, it returns the result.
    *                  If it fails with an unexpected error, it throws that error.
    * @param handleMemoizedState Optional handler for memoized states that are not 'completed' or 'errored'.
@@ -221,7 +221,7 @@ export class StepExecutor<
         throw error;
       }
 
-      this.logger.error(
+      this.logger.debug(
         { internalStepId, stepKind, err: error },
         `Core logic for step '${userStepId}' (id: ${internalStepId}) threw an unexpected error.`
       );
@@ -255,9 +255,9 @@ export class StepExecutor<
         await this.job.moveToDelayed(newSleepUntil, this.job.token);
         this.logger.info(
           { internalStepId, durationMs, sleepUntil: newSleepUntil },
-          `Step '${userStepId}' (id: ${internalStepId}) is now sleeping, throwing SleepError.`
+          `Step '${userStepId}' (id: ${internalStepId}) is now sleeping, throwing DelayedError.`
         );
-        throw new SleepError(internalStepId);
+        throw new DelayedError(`Step "${internalStepId}" is sleeping.`);
       },
       async (memoizedResult, internalStepId) => {
         if (memoizedResult.status === 'sleeping') {
@@ -273,12 +273,12 @@ export class StepExecutor<
           } else {
             this.logger.info(
               { internalStepId, sleepUntil },
-              `Step '${userStepId}' (id: ${internalStepId}) still sleeping, re-asserting delay and throwing SleepError.`
+              `Step '${userStepId}' (id: ${internalStepId}) still sleeping, re-asserting delay and throwing DelayedError.`
             );
             await this.job.moveToDelayed(sleepUntil, this.job.token);
             return {
               processed: true,
-              errorToThrow: new SleepError(internalStepId),
+              errorToThrow: new DelayedError(`Step "${internalStepId}" is sleeping.`),
             };
           }
         }
@@ -312,9 +312,9 @@ export class StepExecutor<
         await this.job.moveToDelayed(timestampMs, this.job.token);
         this.logger.info(
           { internalStepId, userStepId, timestampMs },
-          `Step '${userStepId}' (id: ${internalStepId}) is now sleeping until specific time, throwing SleepError.`
+          `Step '${userStepId}' (id: ${internalStepId}) is now sleeping until specific time, throwing DelayedError.`
         );
-        throw new SleepError(internalStepId);
+        throw new DelayedError(`Step "${internalStepId}" is sleeping until specific time.`);
       },
       async (memoizedResult, internalStepId) => {
         if (memoizedResult.status === 'sleeping') {
@@ -330,12 +330,12 @@ export class StepExecutor<
           } else {
             this.logger.info(
               { internalStepId, userStepId, sleepUntilTime },
-              `Step '${userStepId}' (id: ${internalStepId}) still sleeping until specific time, re-asserting delay and throwing SleepError.`
+              `Step '${userStepId}' (id: ${internalStepId}) still sleeping until specific time, re-asserting delay and throwing DelayedError.`
             );
             await this.job.moveToDelayed(sleepUntilTime, this.job.token);
             return {
               processed: true,
-              errorToThrow: new SleepError(internalStepId),
+              errorToThrow: new DelayedError(`Step "${internalStepId}" is sleeping until specific time.`),
             };
           }
         }
@@ -450,9 +450,11 @@ export class StepExecutor<
         if (shouldWait) {
           this.logger.debug(
             { internalStepId, userStepId },
-            `Step '${userStepId}' (id: ${internalStepId}) successfully moved to waiting for children, throwing WaitForChildrenError.`
+            `Step '${userStepId}' (id: ${internalStepId}) successfully moved to waiting for children, throwing WaitingChildrenError.`
           );
-          throw new WaitForChildrenError(internalStepId);
+
+          // Create and throw the error - BullMQ will recognize it
+          throw new WaitingChildrenError(`Step "${internalStepId}" is waiting for child tasks.`);
         } else {
           this.logger.debug(
             { internalStepId, userStepId },
@@ -472,11 +474,11 @@ export class StepExecutor<
           if (shouldStillWait) {
             this.logger.debug(
               { internalStepId, userStepId },
-              `Still waiting for children for step '${userStepId}' (id: ${internalStepId}). Re-throwing WaitForChildrenError.`
+              `Still waiting for children for step '${userStepId}' (id: ${internalStepId}). Re-throwing WaitingChildrenError.`
             );
             return {
               processed: true,
-              errorToThrow: new WaitForChildrenError(internalStepId),
+              errorToThrow: new WaitingChildrenError(`Step "${internalStepId}" is waiting for child tasks.`),
             };
           } else {
             this.logger.debug(
@@ -492,44 +494,6 @@ export class StepExecutor<
       }
     );
   }
-
-  /*async waitForEvent<T = any>(userStepId: string, eventName: string, timeoutMs?: number): Promise<T> {
-    return this._executeStep<T>(
-      userStepId,
-      'waitForEvent',
-      async (internalStepId: string) => {
-        this.logger.info(
-          { internalStepId, userStepId, eventName, timeoutMs },
-          `waitForEvent called for step '${userStepId}' (id: ${internalStepId}) - NOT IMPLEMENTED.`
-        );
-        const timeoutAt = timeoutMs ? Date.now() + timeoutMs : undefined;
-        this.job.state.stepState![internalStepId] = { status: 'waiting_for_event', eventName: eventName, timeoutAt };
-        await this.persistState();
-        throw new WaitForEventError(eventName, internalStepId, timeoutMs);
-      },
-      async (memoizedResult, internalStepId) => {
-        if (memoizedResult.status === 'waiting_for_event') {
-          this.logger.info(
-            { internalStepId, userStepId, event: memoizedResult.eventName },
-            `Handling intermediate 'waiting_for_event' state - NOT IMPLEMENTED. Assuming event '${memoizedResult.eventName}' not yet received.`
-          );
-          if (memoizedResult.timeoutAt && Date.now() >= memoizedResult.timeoutAt) {
-            this.logger.warn(
-              { internalStepId, userStepId, eventName: memoizedResult.eventName },
-              `Event '${memoizedResult.eventName}' timed out for step '${userStepId}'.`
-            );
-            throw new Error(`Event '${memoizedResult.eventName}' timed out.`);
-          }
-          throw new WaitForEventError(
-            memoizedResult.eventName!,
-            internalStepId,
-            memoizedResult.timeoutAt ? memoizedResult.timeoutAt - Date.now() : undefined
-          );
-        }
-        return { processed: false };
-      }
-    );
-  }*/
 
   async sendEvent(userStepId: string, eventName: string, eventData: any): Promise<void> {
     return this._executeStep<void>(userStepId, 'sendEvent', async () => {
