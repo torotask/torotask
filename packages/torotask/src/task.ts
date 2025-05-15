@@ -19,6 +19,7 @@ import type {
 // Import new/updated utility types
 import { TaskJob } from './job.js';
 import { StepExecutor } from './step-executor.js';
+import { SleepError, WaitForChildrenError, WaitForChildError } from './step-errors.js';
 
 /**
  * Represents a defined task associated with a TaskGroup.
@@ -151,11 +152,16 @@ export class Task<
       if (
         error instanceof DelayedError ||
         error.name == 'DelayedError' ||
+        error instanceof SleepError ||
+        error.name == 'SleepError' ||
         error instanceof WaitingChildrenError ||
-        error.name == 'WaitingChildrenError'
+        error.name == 'WaitingChildrenError' ||
+        error instanceof WaitForChildrenError ||
+        error.name == 'WaitForChildrenError' ||
+        error instanceof WaitForChildError ||
+        error.name == 'WaitForChildError'
       ) {
         // These are BullMQ flow control errors, re-throw or handle as per BullMQ docs
-        // Depending on BullMQ version, returning undefined might be the correct way to let BullMQ handle it.
         jobLogger.debug({ err: error }, `Job processing resulted in a flow control state: ${error.name}`);
         return; // Or re-throw error;
       }
@@ -191,6 +197,7 @@ export class Task<
         );
         if (error instanceof z.ZodError) {
           const messages = error.errors.map((e) => `${e.path.join('.') || 'payload'}: ${e.message}`);
+          // TODO should be an unrecoverable error?
           throw new Error(`Payload validation failed: ${messages.join('; ')}`);
         }
         throw error;
@@ -217,15 +224,6 @@ export class Task<
       token,
       queue: this.queue,
     };
-    try {
-      // this.handler's PayloadType is also CurrentPayloadType due to consistent EffectivePayloadType usage
-      return await this.handler(handlerOptions, handlerContext);
-    } catch (error) {
-      effectiveJobLogger.error(
-        { err: error instanceof Error ? error : new Error(String(error)) },
-        `Job handler execution failed for job "${job.name}" (id: ${job.id})`
-      );
-      throw error;
-    }
+    return await this.handler(handlerOptions, handlerContext);
   }
 }
