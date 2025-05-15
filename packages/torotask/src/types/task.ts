@@ -22,6 +22,7 @@ export type TaskOptions = Prettify<
     batch?: TaskWorkerOptions['batch'];
     workerOptions?: Partial<Omit<TaskWorkerOptions, 'batch'>>;
     queueOptions?: Partial<TaskQueueOptions>;
+    skipSchemaValidation?: boolean;
   }
 >;
 

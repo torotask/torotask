@@ -175,7 +175,7 @@ export class Task<
 
     let validatedPayload: CurrentPayloadType = job.payload;
 
-    if (this.schema) {
+    if (this.schema && !this.options.skipSchemaValidation) {
       try {
         // Type assertion needed because this.schema is Schema (ZodSchema | undefined)
         // and parse expects `this` to be ZodSchema<CurrentPayloadType>
