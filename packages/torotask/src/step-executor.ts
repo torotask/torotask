@@ -352,31 +352,31 @@ export class StepExecutor<
     ChildTask extends TAllTaskGroupsDefs[TCurrentTaskGroup]['tasks'][ChildTaskName],
     Payload = ChildTask extends Task<infer P, any, any> ? P : unknown,
     Result = ChildTask extends Task<any, infer R, any> ? R : unknown,
-  >(userStepId: string, childTaskName: ChildTaskName, payload: Payload): Promise<Result> {
-    return this._executeStep<Result>(userStepId, 'runGroupTask', async (_internalStepId: string) => {
-      const childTaskKey = childTaskName.toString();
-      const childTask = this.parentTask?.group.tasks[childTaskKey];
-      if (!childTask) {
-        throw new Error(`Task '${childTaskKey}' not found in this Task group.`);
-      }
-      return await childTask.runAndWait(payload, { parent: this.job });
-    });
-  }
-
-  async startGroupTask<
-    ChildTaskName extends keyof TAllTaskGroupsDefs[TCurrentTaskGroup]['tasks'],
-    ChildTask extends TAllTaskGroupsDefs[TCurrentTaskGroup]['tasks'][ChildTaskName],
-    Payload = ChildTask extends Task<infer P, any, any> ? P : unknown,
-    Result = ChildTask extends Task<any, infer R, any> ? R : unknown,
     TJob extends TaskJob<Payload, Result> = TaskJob<Payload, Result>,
   >(userStepId: string, childTaskName: ChildTaskName, payload: Payload): Promise<TJob> {
-    return this._executeStep<TJob>(userStepId, 'startGroupTask', async (_internalStepId: string) => {
+    return this._executeStep<TJob>(userStepId, 'runGroupTask', async (_internalStepId: string) => {
       const childTaskKey = childTaskName.toString();
       const childTask = this.parentTask?.group.tasks[childTaskKey];
       if (!childTask) {
         throw new Error(`Task '${childTaskKey}' not found in this Task group.`);
       }
       return (await childTask.run(payload, { parent: this.job })) as TJob;
+    });
+  }
+
+  async runGroupTaskAndWait<
+    ChildTaskName extends keyof TAllTaskGroupsDefs[TCurrentTaskGroup]['tasks'],
+    ChildTask extends TAllTaskGroupsDefs[TCurrentTaskGroup]['tasks'][ChildTaskName],
+    Payload = ChildTask extends Task<infer P, any, any> ? P : unknown,
+    Result = ChildTask extends Task<any, infer R, any> ? R : unknown,
+  >(userStepId: string, childTaskName: ChildTaskName, payload: Payload): Promise<Result> {
+    return this._executeStep<Result>(userStepId, 'runGroupTaskAndWait', async (_internalStepId: string) => {
+      const childTaskKey = childTaskName.toString();
+      const childTask = this.parentTask?.group.tasks[childTaskKey];
+      if (!childTask) {
+        throw new Error(`Task '${childTaskKey}' not found in this Task group.`);
+      }
+      return await childTask.runAndWait(payload, { parent: this.job });
     });
   }
 
@@ -387,36 +387,9 @@ export class StepExecutor<
     ChildTask extends TargetGroup['tasks'][TaskName],
     Payload = ChildTask extends Task<infer P, any, any> ? P : unknown,
     Result = ChildTask extends Task<any, infer R, any> ? R : unknown,
-  >(userStepId: string, groupName: GroupName, taskName: TaskName, payload: Payload): Promise<Result> {
-    return this._executeStep<Result>(userStepId, 'runTask', async (_internalStepId: string) => {
-      if (!this.parentTask) {
-        throw new Error('Cannot run task: parentTask is not available.');
-      }
-      const client = this.parentTask.group.client;
-      const groupKey = groupName.toString();
-      const taskGroup = client.taskGroups[groupKey];
-      if (!taskGroup) {
-        throw new Error(`Task group '${groupKey}' not found.`);
-      }
-      const taskKey = taskName.toString();
-      const task = taskGroup.tasks[taskKey];
-      if (!task) {
-        throw new Error(`Task '${taskKey}' not found in group '${groupKey}'.`);
-      }
-      return (await task.runAndWait(payload, { parent: this.job })) as any;
-    });
-  }
-
-  async startTask<
-    GroupName extends keyof TAllTaskGroupsDefs,
-    TargetGroup extends TAllTaskGroupsDefs[GroupName],
-    TaskName extends keyof TargetGroup['tasks'],
-    ChildTask extends TargetGroup['tasks'][TaskName],
-    Payload = ChildTask extends Task<infer P, any, any> ? P : unknown,
-    Result = ChildTask extends Task<any, infer R, any> ? R : unknown,
     TJob extends TaskJob<Payload, Result> = TaskJob<Payload, Result>,
   >(userStepId: string, groupName: GroupName, taskName: TaskName, payload: Payload): Promise<TJob> {
-    return this._executeStep<TJob>(userStepId, 'startTask', async (_internalStepId: string) => {
+    return this._executeStep<TJob>(userStepId, 'runTask', async (_internalStepId: string) => {
       if (!this.parentTask) {
         throw new Error('Cannot start task: parentTask is not available.');
       }
@@ -434,6 +407,33 @@ export class StepExecutor<
       const taskJob = (await task.run(payload, { parent: this.job })) as TJob;
 
       return taskJob;
+    });
+  }
+
+  async runTaskAndWait<
+    GroupName extends keyof TAllTaskGroupsDefs,
+    TargetGroup extends TAllTaskGroupsDefs[GroupName],
+    TaskName extends keyof TargetGroup['tasks'],
+    ChildTask extends TargetGroup['tasks'][TaskName],
+    Payload = ChildTask extends Task<infer P, any, any> ? P : unknown,
+    Result = ChildTask extends Task<any, infer R, any> ? R : unknown,
+  >(userStepId: string, groupName: GroupName, taskName: TaskName, payload: Payload): Promise<Result> {
+    return this._executeStep<Result>(userStepId, 'runTaskAndWait', async (_internalStepId: string) => {
+      if (!this.parentTask) {
+        throw new Error('Cannot run task: parentTask is not available.');
+      }
+      const client = this.parentTask.group.client;
+      const groupKey = groupName.toString();
+      const taskGroup = client.taskGroups[groupKey];
+      if (!taskGroup) {
+        throw new Error(`Task group '${groupKey}' not found.`);
+      }
+      const taskKey = taskName.toString();
+      const task = taskGroup.tasks[taskKey];
+      if (!task) {
+        throw new Error(`Task '${taskKey}' not found in group '${groupKey}'.`);
+      }
+      return (await task.runAndWait(payload, { parent: this.job })) as any;
     });
   }
 
