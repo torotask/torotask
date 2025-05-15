@@ -1,18 +1,24 @@
 import ms, { type StringValue } from 'ms';
 import { Logger } from 'pino';
 import { TaskJob } from './job.js';
-import type { StepResult, TaskJobState } from './types/index.js';
+import type { StepResult, TaskGroupDefinitionRegistry, TaskJobState } from './types/index.js';
 import { SleepError, WaitForChildError, WaitForChildrenError } from './step-errors.js';
 import { getDateTime } from './utils/get-datetime.js';
 import { serializeError, deserializeError } from './utils/serialize-error.js';
+import { Task } from './task.js';
 
-export class StepExecutor<JobType extends TaskJob = TaskJob> {
-  private job: JobType;
+export class StepExecutor<
+  JobType extends TaskJob = TaskJob,
+  TAllTaskGroupsDefs extends TaskGroupDefinitionRegistry = TaskGroupDefinitionRegistry,
+  TCurrentTaskGroup extends keyof TAllTaskGroupsDefs = never,
+> {
   private logger: Logger;
   private stepCounts: Map<string, number> = new Map();
 
-  constructor(job: JobType) {
-    this.job = job;
+  constructor(
+    private job: JobType,
+    private parentTask?: Task<any, any, any>
+  ) {
     this.logger = job.logger || (console as unknown as Logger);
 
     if (typeof this.job.state !== 'object' || this.job.state === null) {
@@ -254,30 +260,47 @@ export class StepExecutor<JobType extends TaskJob = TaskJob> {
     );
   }
 
-  async runTask<T = any>(userStepId: string, childWorkflowName: string, input: any): Promise<T> {
-    return this._executeStep<T>(
-      userStepId,
-      'runTask',
-      async (internalStepId: string) => {
-        this.logger.info(
-          { internalStepId, userStepId, childWorkflowName, input },
-          `invoke called for step '${userStepId}' (id: ${internalStepId}) - NOT IMPLEMENTED.`
-        );
-        this.job.state.stepState![internalStepId] = { status: 'waiting_for_child', childIdentifier: childWorkflowName };
-        await this.persistState();
-        throw new WaitForChildError(childWorkflowName, internalStepId);
-      },
-      async (memoizedResult, internalStepId) => {
-        if (memoizedResult.status === 'waiting_for_child') {
-          this.logger.info(
-            { internalStepId, userStepId, child: memoizedResult.childIdentifier },
-            `Handling intermediate 'waiting_for_child' state for 'runTask' - NOT IMPLEMENTED. Assuming child '${memoizedResult.childIdentifier}' is still running.`
-          );
-          throw new WaitForChildError(memoizedResult.childIdentifier!, internalStepId);
-        }
-        return { processed: false };
+  async runGroupTask<
+    ChildTaskName extends keyof TAllTaskGroupsDefs[TCurrentTaskGroup]['tasks'],
+    ChildTask extends TAllTaskGroupsDefs[TCurrentTaskGroup]['tasks'][ChildTaskName],
+    Payload = ChildTask extends Task<infer P, any, any> ? P : unknown,
+    Result = ChildTask extends Task<any, infer R, any> ? R : unknown,
+  >(userStepId: string, childTaskName: ChildTaskName, payload: Payload): Promise<Result> {
+    return this._executeStep<Result>(userStepId, 'runGroupTask', async (_internalStepId: string) => {
+      const childTaskKey = childTaskName.toString();
+      const childTask = this.parentTask?.group.tasks[childTaskKey];
+      if (!childTask) {
+        throw new Error(`Task '${childTaskKey}' not found in this Task group.`);
       }
-    );
+      return await childTask.runAndWait(payload);
+    });
+  }
+
+  async runTask<
+    GroupName extends keyof TAllTaskGroupsDefs,
+    TargetGroup extends TAllTaskGroupsDefs[GroupName],
+    TaskName extends keyof TargetGroup['tasks'],
+    ChildTask extends TargetGroup['tasks'][TaskName],
+    Payload = ChildTask extends Task<infer P, any, any> ? P : unknown,
+    Result = ChildTask extends Task<any, infer R, any> ? R : unknown,
+  >(userStepId: string, groupName: GroupName, taskName: TaskName, payload: Payload): Promise<Result> {
+    return this._executeStep<Result>(userStepId, 'runTask', async (_internalStepId: string) => {
+      if (!this.parentTask) {
+        throw new Error('Cannot run task: parentTask is not available.');
+      }
+      const client = this.parentTask.group.client;
+      const groupKey = groupName.toString();
+      const taskGroup = client.taskGroups[groupKey];
+      if (!taskGroup) {
+        throw new Error(`Task group '${groupKey}' not found.`);
+      }
+      const taskKey = taskName.toString();
+      const task = taskGroup.tasks[taskKey];
+      if (!task) {
+        throw new Error(`Task '${taskKey}' not found in group '${groupKey}'.`);
+      }
+      return (await task.runAndWait(payload)) as any;
+    });
   }
 
   async waitForChildTasks(userStepId: string, childTaskIds: string[]): Promise<any[]> {

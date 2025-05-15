@@ -203,7 +203,7 @@ export class Task<
       payload: validatedPayload,
     };
 
-    const stepExecutor = new StepExecutor<TaskJob<CurrentPayloadType, ResultType>>(job);
+    const stepExecutor = new StepExecutor<TaskJob<CurrentPayloadType, ResultType>>(job, this);
     // TaskHandlerContext's PayloadType will be CurrentPayloadType
     const handlerContext: TaskHandlerContext<CurrentPayloadType, ResultType, ResolvedSchemaType<SchemaInputVal>> = {
       logger: effectiveJobLogger,

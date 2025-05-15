@@ -8,7 +8,10 @@ import type {
   SingleOrArray,
   ResolvedSchemaType,
   TaskDefinitionRegistry,
+  TaskHandlerContext,
 } from './types/index.js';
+import type { StepExecutor } from './step-executor.js';
+import type { TaskJob } from './job.js';
 
 // Helper type to redefine config for defineTask input
 type DefineTaskConfigInput<PayloadType, ResultType, SchemaVal extends SchemaHandler> = Omit<
@@ -79,4 +82,26 @@ export function defineTask<PayloadType = unknown, ResultType = unknown, SchemaVa
  */
 export function createSchema<T extends z.ZodTypeAny>(schemaFn: (zod: typeof z) => T): T {
   return schemaFn(z);
+}
+
+/**
+ * Retrieves the step executor from the task handler context.
+ * This function is useful for accessing the step executor in a strongly typed manner.
+ *
+ * @template TAllTaskGroupsDefs The type of all task group definitions.
+ * @template TActualPayload The actual payload type for the task.
+ * @template TResult The result type for the task.
+ * @param context The task handler context.
+ * @returns The step executor, correctly typed.
+ */
+export function getTypedStep<
+  TAllTaskGroupsDefs extends TaskGroupDefinitionRegistry,
+  TActualPayload,
+  TResult,
+  TCurrentTaskGroup extends keyof TAllTaskGroupsDefs = never,
+>(
+  context: TaskHandlerContext<TActualPayload, TResult>,
+  _currentGroup?: TCurrentTaskGroup
+): StepExecutor<TaskJob<TActualPayload, TResult, any>, TAllTaskGroupsDefs, TCurrentTaskGroup> {
+  return context.step;
 }
