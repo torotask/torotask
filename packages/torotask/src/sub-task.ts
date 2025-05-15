@@ -1,8 +1,13 @@
-import { JobsOptions } from 'bullmq';
 import type { Logger } from 'pino';
 import type { Task } from './task.js';
 // Import types from the types file
-import type { SubTaskHandler, SubTaskHandlerContext, SubTaskHandlerOptions, TaskJobData } from './types/index.js';
+import type {
+  SubTaskHandler,
+  SubTaskHandlerContext,
+  SubTaskHandlerOptions,
+  TaskJobData,
+  TaskJobOptions,
+} from './types/index.js';
 import { TaskJob } from './job.js';
 import { StepExecutor } from './step-executor.js';
 
@@ -52,8 +57,8 @@ export class SubTask<
    * @param overrideOptions Optional JobOptions to override the parent task's defaults.
    * @returns A promise resolving to the enqueued BullMQ Job object.
    */
-  async run(payload: PayloadType, overrideOptions?: JobsOptions) {
-    const finalOptions: JobsOptions = {
+  async run(payload: PayloadType, overrideOptions?: TaskJobOptions) {
+    const finalOptions: TaskJobOptions = {
       ...this.parentTask.jobsOptions,
       ...overrideOptions,
     };
@@ -96,8 +101,8 @@ export class SubTask<
    * @returns A promise resolving to the return value of the completed job.
    * @throws Throws an error if the job fails or cannot be awaited.
    */
-  async runAndWait(data: DataType, overrideOptions?: JobsOptions): Promise<ResultType> {
-    const finalOptions: JobsOptions = {
+  async runAndWait(data: DataType, overrideOptions?: TaskJobOptions): Promise<ResultType> {
+    const finalOptions: TaskJobOptions = {
       ...this.parentTask.jobsOptions,
       ...overrideOptions,
     };

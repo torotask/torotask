@@ -1,8 +1,9 @@
-import { Job, MinimalQueue } from 'bullmq';
+import { Job, JobsOptions, MinimalQueue } from 'bullmq';
 import { Logger } from 'pino';
 import type { TaskJobData, TaskJobOptions, TaskJobState } from './types/index.js';
 import { TaskQueue } from './queue.js';
 import { ToroTask } from './client.js';
+import { convertJobOptions } from './utils/convert-job-options.js';
 
 export class TaskJob<
   PayloadType = any,
@@ -20,8 +21,19 @@ export class TaskJob<
   private batch: (typeof this)[];
   public payload: PayloadType;
   public state: StateType;
+  /*
+   * @deprecated use options instead.
+   */
+  declare opts: JobsOptions;
 
-  constructor(queue: MinimalQueue, name: NameType, data: DataType, opts: TaskJobOptions<DataType> = {}, id?: string) {
+  constructor(
+    queue: MinimalQueue,
+    name: NameType,
+    data: DataType,
+    public options: TaskJobOptions<DataType> = {},
+    id?: string
+  ) {
+    const opts = convertJobOptions(options);
     super(queue, name, data, opts, id);
 
     this.payload = this.data.payload as PayloadType;

@@ -1,5 +1,5 @@
 import slugify from '@sindresorhus/slugify';
-import { Job, JobsOptions, JobSchedulerJson } from 'bullmq';
+import { Job, JobSchedulerJson } from 'bullmq';
 import cronstrue from 'cronstrue';
 import ms from 'ms';
 import type { Logger } from 'pino';
@@ -21,6 +21,7 @@ import type {
 import { TaskWorkerQueue } from './worker-queue.js';
 import EventEmitter from 'node:events';
 import { ToroTask } from './client.js';
+import { convertJobOptions } from './utils/convert-job-options.js';
 
 // Add internalId to TaskTrigger type for tracking purposes within the Task class
 type InternalTaskTrigger<PayloadType> = TaskTrigger<PayloadType> & { internalId: number };
@@ -30,7 +31,7 @@ type InternalTaskTriggerEvent<PayloadType> = TaskTriggerEvent<PayloadType> & {
 
 /**
  * Represents a defined task associated with a TaskGroup.
- * Extends BaseQueue to manage its own underlying BullMQ queue and worker.
+ * Extends EventEmitter to allow for event handling.
  * Implements the `process` method by calling the specific task `handler` or a registered subtask handler.
  * Can define and manage SubTasks.
  *
@@ -45,7 +46,7 @@ export abstract class BaseTask<
   TOptions extends TaskOptions = TaskOptions,
 > extends EventEmitter {
   public taskClient: ToroTask;
-  public jobsOptions: JobsOptions;
+  public jobsOptions: TaskJobOptions;
   public workerOptions: Partial<TaskWorkerOptions> | undefined;
   public queue: TaskWorkerQueue<PayloadType, ResultType>;
   public logger: Logger;
@@ -134,7 +135,7 @@ export abstract class BaseTask<
     };
   }
 
-  async run(payload: PayloadType, overrideOptions?: JobsOptions) {
+  async run(payload: PayloadType, overrideOptions?: TaskJobOptions) {
     const finalOptions: TaskJobOptions = {
       ...this.jobsOptions,
       ...overrideOptions,
@@ -157,8 +158,8 @@ export abstract class BaseTask<
     return this.queue.addBulk(bulkJobs);
   }
 
-  async runAndWait(payload: PayloadType, overrideOptions?: JobsOptions, state?: TaskJobOptions['state']) {
-    const finalOptions: JobsOptions = {
+  async runAndWait(payload: PayloadType, overrideOptions?: TaskJobOptions, state?: TaskJobOptions['state']) {
+    const finalOptions: TaskJobOptions = {
       ...this.jobsOptions,
       ...overrideOptions,
     };
@@ -277,14 +278,14 @@ export abstract class BaseTask<
         const schedulerKey = `trigger:${trigger.internalId}:${trigger.type}-${slug}`;
         desiredSchedulerKeys.add(schedulerKey);
 
-        const jobOptions: Omit<JobsOptions, 'repeat' | 'jobId'> = { ...(this.jobsOptions ?? {}) };
+        const jobOptions: Omit<TaskJobOptions, 'repeat' | 'jobId'> = { ...(this.jobsOptions ?? {}) };
 
         this.logger.debug(`${logPrefix} ${logSuffix} Upserting scheduler '${schedulerKey}'`);
         upsertPromises.push(
           this.queue.upsertJobScheduler(schedulerKey, repeatOpts, {
             name: this.id, // Use task id for the job name within the scheduler
             data: { payload: trigger.payload },
-            opts: jobOptions,
+            opts: convertJobOptions(jobOptions),
           })
         );
       });

@@ -23,6 +23,7 @@ import { getConfigFromEnv } from './utils/get-config-from-env.js';
 import { TaskWorkflow } from './workflow.js';
 import type { Task } from './task.js';
 import { TaskJob } from './job.js';
+import { convertJobOptions } from './utils/convert-job-options.js';
 
 const LOGGER_NAME = 'ToroTask';
 const BASE_PREFIX = 'torotask';
@@ -339,7 +340,7 @@ export class ToroTask<
         payload: run.payload,
         state: run.state,
       },
-      opts: options,
+      opts: convertJobOptions(options),
       children: run.children?.map((child) => this._convertToChildFlow(child)) || undefined,
     };
   }

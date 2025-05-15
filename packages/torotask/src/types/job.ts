@@ -1,6 +1,7 @@
 import type { JobsOptions } from 'bullmq';
 import type { StepResult } from './step.js';
 import type { IfAny, UnpackList } from './utils.js';
+import type { TaskJob } from '../job.js';
 
 /**
  * Defines the structure of the state object used by StepExecutor,
@@ -27,6 +28,10 @@ export type TaskJobDataItem<DataType, Item> = IfAny<
   Item extends keyof DataType ? (UnpackList<DataType[Item]> extends object ? UnpackList<DataType[Item]> : never) : never
 >;
 
-export type TaskJobOptions<Datatype = any, StateType = TaskJobDataItem<Datatype, 'state'>> = JobsOptions & {
+export type TaskJobOptions<Datatype = any, StateType = TaskJobDataItem<Datatype, 'state'>> = Omit<
+  JobsOptions,
+  'parent'
+> & {
   state?: StateType;
+  parent?: Partial<TaskJob>;
 };
