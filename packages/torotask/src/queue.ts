@@ -66,7 +66,7 @@ export class TaskQueue<
       payload,
       state,
     };
-    const job = await super.add(name, data, options);
+    const job = await super.add(name, data, options as JobsOptions); // Cast options to JobsOptions
     // Cast the result from the base Job to the specific TaskJob
     return job as TaskJob<PayloadType, ResultType, NameType>;
   }
