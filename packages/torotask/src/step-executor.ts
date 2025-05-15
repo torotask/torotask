@@ -11,9 +11,10 @@ import { ToroTask } from './client.js';
 export class StepExecutor<
   JobType extends TaskJob = TaskJob,
   TAllTaskGroupsDefs extends TaskGroupDefinitionRegistry = TaskGroupDefinitionRegistry,
-  TCurrentTaskGroup extends keyof TAllTaskGroupsDefs = never,
-  TPayload = JobType extends TaskJob<infer P, any, any> ? P : unknown,
-  TResult = JobType extends TaskJob<any, infer R, any> ? R : unknown,
+  TCurrentJobGroup extends keyof TAllTaskGroupsDefs = never,
+  TGroups extends TaskGroupRegistry<TAllTaskGroupsDefs> = TaskGroupRegistry<TAllTaskGroupsDefs>,
+  TJobPayload = JobType extends TaskJob<infer P, any, any> ? P : unknown,
+  TJobResult = JobType extends TaskJob<any, infer R, any> ? R : unknown,
 > {
   private logger: Logger;
   private stepCounts: Map<string, number> = new Map();
@@ -21,7 +22,7 @@ export class StepExecutor<
 
   constructor(
     private job: JobType,
-    private parentTask: Task<TPayload, TResult, any>
+    private parentTask: Task<TJobPayload, TJobResult, any>
   ) {
     this.logger = job.logger || (console as unknown as Logger);
     this.client = parentTask.group.client;
@@ -348,47 +349,59 @@ export class StepExecutor<
   }
 
   async runGroupTask<
-    ChildTaskName extends keyof TAllTaskGroupsDefs[TCurrentTaskGroup]['tasks'],
-    ChildTask extends TAllTaskGroupsDefs[TCurrentTaskGroup]['tasks'][ChildTaskName],
-    Payload = ChildTask extends Task<infer P, any, any> ? P : unknown,
-    Result = ChildTask extends Task<any, infer R, any> ? R : unknown,
-    TJob extends TaskJob<Payload, Result> = TaskJob<Payload, Result>,
-  >(userStepId: string, childTaskName: ChildTaskName, payload: Payload): Promise<TJob> {
+    TargetGroup extends TGroups[TCurrentJobGroup] = TGroups[TCurrentJobGroup],
+    TaskName extends keyof TargetGroup['tasks'] = keyof TargetGroup['tasks'],
+    ActualTask extends TargetGroup['tasks'][TaskName] = TargetGroup['tasks'][TaskName],
+    Payload = ActualTask extends Task<any, any, any, infer P> ? P : unknown,
+    Result = ActualTask extends Task<any, infer R, any, any> ? R : unknown,
+    ActualPayload extends Payload = Payload,
+    TJob extends TaskJob<ActualPayload, Result> = TaskJob<ActualPayload, Result>,
+  >(userStepId: string, taskName: TaskName, payload: ActualPayload, options?: StepTaskJobOptions): Promise<TJob> {
     return this._executeStep<TJob>(userStepId, 'runGroupTask', async (_internalStepId: string) => {
-      const childTaskKey = childTaskName.toString();
-      const childTask = this.parentTask?.group.tasks[childTaskKey];
-      if (!childTask) {
-        throw new Error(`Task '${childTaskKey}' not found in this Task group.`);
+      const taskKey = taskName.toString();
+      const task = this.parentTask?.group.tasks[taskKey];
+      if (!task) {
+        throw new Error(`Task '${taskKey}' not found in this Task group.`);
       }
-      return (await childTask.run(payload, { parent: this.job })) as TJob;
+      return (await task.run(payload, { ...options, parent: this.job })) as TJob;
     });
   }
 
   async runGroupTaskAndWait<
-    ChildTaskName extends keyof TAllTaskGroupsDefs[TCurrentTaskGroup]['tasks'],
-    ChildTask extends TAllTaskGroupsDefs[TCurrentTaskGroup]['tasks'][ChildTaskName],
-    Payload = ChildTask extends Task<infer P, any, any> ? P : unknown,
-    Result = ChildTask extends Task<any, infer R, any> ? R : unknown,
-  >(userStepId: string, childTaskName: ChildTaskName, payload: Payload): Promise<Result> {
+    TargetGroup extends TGroups[TCurrentJobGroup] = TGroups[TCurrentJobGroup],
+    TaskName extends keyof TargetGroup['tasks'] = keyof TargetGroup['tasks'],
+    ActualTask extends TargetGroup['tasks'][TaskName] = TargetGroup['tasks'][TaskName],
+    Payload = ActualTask extends Task<any, any, any, infer P> ? P : unknown,
+    Result = ActualTask extends Task<any, infer R, any, any> ? R : unknown,
+    ActualPayload extends Payload = Payload,
+  >(userStepId: string, taskName: TaskName, payload: ActualPayload, options?: StepTaskJobOptions): Promise<Result> {
     return this._executeStep<Result>(userStepId, 'runGroupTaskAndWait', async (_internalStepId: string) => {
-      const childTaskKey = childTaskName.toString();
-      const childTask = this.parentTask?.group.tasks[childTaskKey];
-      if (!childTask) {
-        throw new Error(`Task '${childTaskKey}' not found in this Task group.`);
+      const taskKey = taskName.toString();
+      const task = this.parentTask?.group.tasks[taskKey];
+      if (!task) {
+        throw new Error(`Task '${taskKey}' not found in this Task group.`);
       }
-      return await childTask.runAndWait(payload, { parent: this.job });
+
+      return await task.runAndWait(payload, { ...options, parent: this.job });
     });
   }
 
   async runTask<
-    GroupName extends keyof TAllTaskGroupsDefs,
-    TargetGroup extends TAllTaskGroupsDefs[GroupName],
-    TaskName extends keyof TargetGroup['tasks'],
-    ChildTask extends TargetGroup['tasks'][TaskName],
-    Payload = ChildTask extends Task<infer P, any, any> ? P : unknown,
-    Result = ChildTask extends Task<any, infer R, any> ? R : unknown,
-    TJob extends TaskJob<Payload, Result> = TaskJob<Payload, Result>,
-  >(userStepId: string, groupName: GroupName, taskName: TaskName, payload: Payload): Promise<TJob> {
+    GroupName extends keyof TGroups,
+    TargetGroup extends TGroups[GroupName] = TGroups[GroupName],
+    TaskName extends keyof TargetGroup['tasks'] = keyof TargetGroup['tasks'],
+    ActualTask extends TargetGroup['tasks'][TaskName] = TargetGroup['tasks'][TaskName],
+    Payload = ActualTask extends Task<any, any, any, infer P> ? P : unknown,
+    Result = ActualTask extends Task<any, infer R, any, any> ? R : unknown,
+    ActualPayload extends Payload = Payload,
+    TJob extends TaskJob<ActualPayload, Result> = TaskJob<ActualPayload, Result>,
+  >(
+    userStepId: string,
+    groupName: GroupName,
+    taskName: TaskName,
+    payload: ActualPayload,
+    options?: StepTaskJobOptions
+  ): Promise<TJob> {
     return this._executeStep<TJob>(userStepId, 'runTask', async (_internalStepId: string) => {
       if (!this.parentTask) {
         throw new Error('Cannot start task: parentTask is not available.');
@@ -404,20 +417,27 @@ export class StepExecutor<
       if (!task) {
         throw new Error(`Task '${taskKey}' not found in group '${groupKey}'.`);
       }
-      const taskJob = (await task.run(payload, { parent: this.job })) as TJob;
+      const taskJob = (await task.run(payload, { ...options, parent: this.job })) as TJob;
 
       return taskJob;
     });
   }
 
   async runTaskAndWait<
-    GroupName extends keyof TAllTaskGroupsDefs,
-    TargetGroup extends TAllTaskGroupsDefs[GroupName],
-    TaskName extends keyof TargetGroup['tasks'],
-    ChildTask extends TargetGroup['tasks'][TaskName],
-    Payload = ChildTask extends Task<infer P, any, any> ? P : unknown,
-    Result = ChildTask extends Task<any, infer R, any> ? R : unknown,
-  >(userStepId: string, groupName: GroupName, taskName: TaskName, payload: Payload): Promise<Result> {
+    GroupName extends keyof TGroups,
+    TargetGroup extends TGroups[GroupName] = TGroups[GroupName],
+    TaskName extends keyof TargetGroup['tasks'] = keyof TargetGroup['tasks'],
+    ActualTask extends TargetGroup['tasks'][TaskName] = TargetGroup['tasks'][TaskName],
+    Payload = ActualTask extends Task<any, any, any, infer P> ? P : unknown,
+    Result = ActualTask extends Task<any, infer R, any, any> ? R : unknown,
+    ActualPayload extends Payload = Payload,
+  >(
+    userStepId: string,
+    groupName: GroupName,
+    taskName: TaskName,
+    payload: ActualPayload,
+    options?: StepTaskJobOptions
+  ): Promise<Result> {
     return this._executeStep<Result>(userStepId, 'runTaskAndWait', async (_internalStepId: string) => {
       if (!this.parentTask) {
         throw new Error('Cannot run task: parentTask is not available.');
@@ -433,7 +453,7 @@ export class StepExecutor<
       if (!task) {
         throw new Error(`Task '${taskKey}' not found in group '${groupKey}'.`);
       }
-      return (await task.runAndWait(payload, { parent: this.job })) as any;
+      return (await task.runAndWait(payload, { ...options, parent: this.job })) as Result;
     });
   }
 

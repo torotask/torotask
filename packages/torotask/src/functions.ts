@@ -9,6 +9,7 @@ import type {
   ResolvedSchemaType,
   TaskDefinitionRegistry,
   TaskHandlerContext,
+  TaskGroupRegistry,
 } from './types/index.js';
 import type { StepExecutor } from './step-executor.js';
 import type { TaskJob } from './job.js';
@@ -63,7 +64,7 @@ export function defineTaskGroupRegistry<T extends TaskGroupDefinitionRegistry>(g
  * @param config The task definition object.
  * @returns The task definition object, correctly typed.
  */
-export function defineTask<PayloadType = unknown, ResultType = unknown, SchemaVal extends SchemaHandler = undefined>(
+export function defineTask<ResultType = unknown, PayloadType = any, SchemaVal extends SchemaHandler = SchemaHandler>(
   config: DefineTaskConfigInput<PayloadType, ResultType, SchemaVal>
 ): TaskDefinition<PayloadType, ResultType, SchemaVal> {
   // The return type is still the original TaskDefinition.
@@ -96,9 +97,9 @@ export function createSchema<T extends z.ZodTypeAny>(schemaFn: (zod: typeof z) =
  */
 export function getTypedStep<
   TAllTaskGroupsDefs extends TaskGroupDefinitionRegistry,
-  TActualPayload,
-  TResult,
-  TCurrentTaskGroup extends keyof TAllTaskGroupsDefs = never,
+  const TCurrentTaskGroup extends keyof TAllTaskGroupsDefs = never,
+  TActualPayload = any,
+  TResult = any,
 >(
   context: TaskHandlerContext<TActualPayload, TResult>,
   _currentGroup?: TCurrentTaskGroup
