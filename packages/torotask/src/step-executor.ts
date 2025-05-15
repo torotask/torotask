@@ -2,7 +2,7 @@ import ms, { type StringValue } from 'ms';
 import { Logger } from 'pino';
 import { TaskJob } from './job.js';
 import type { StepResult, TaskGroupDefinitionRegistry, TaskJobState } from './types/index.js';
-import { SleepError, WaitForChildError, WaitForChildrenError } from './step-errors.js';
+import { SleepError, WaitForChildrenError } from './step-errors.js';
 import { getDateTime } from './utils/get-datetime.js';
 import { serializeError, deserializeError } from './utils/serialize-error.js';
 import { Task } from './task.js';
@@ -303,32 +303,62 @@ export class StepExecutor<
       if (!task) {
         throw new Error(`Task '${taskKey}' not found in group '${groupKey}'.`);
       }
-      return (await task.runAndWait(payload)) as any;
+      return (await task.runAndWait(payload, { parent: this.job })) as any;
     });
   }
 
-  async waitForChildTasks(userStepId: string, childTaskIds: string[]): Promise<any[]> {
+  async startTask<
+    GroupName extends keyof TAllTaskGroupsDefs,
+    TargetGroup extends TAllTaskGroupsDefs[GroupName],
+    TaskName extends keyof TargetGroup['tasks'],
+    ChildTask extends TargetGroup['tasks'][TaskName],
+    Payload = ChildTask extends Task<infer P, any, any> ? P : unknown,
+    Result = ChildTask extends Task<any, infer R, any> ? R : unknown,
+    TJob extends TaskJob<Payload, Result> = TaskJob<Payload, Result>,
+  >(userStepId: string, groupName: GroupName, taskName: TaskName, payload: Payload): Promise<TJob> {
+    return this._executeStep<TJob>(userStepId, 'startTask', async (_internalStepId: string) => {
+      if (!this.parentTask) {
+        throw new Error('Cannot start task: parentTask is not available.');
+      }
+      const client = this.parentTask.group.client;
+      const groupKey = groupName.toString();
+      const taskGroup = client.taskGroups[groupKey];
+      if (!taskGroup) {
+        throw new Error(`Task group '${groupKey}' not found.`);
+      }
+      const taskKey = taskName.toString();
+      const task = taskGroup.tasks[taskKey];
+      if (!task) {
+        throw new Error(`Task '${taskKey}' not found in group '${groupKey}'.`);
+      }
+      const taskJob = (await task.run(payload, { parent: this.job })) as TJob;
+
+      return taskJob;
+    });
+  }
+
+  async waitForChildTasks(userStepId: string): Promise<any[]> {
     return this._executeStep<any[]>(
       userStepId,
       'waitForChildTasks',
       async (internalStepId: string) => {
         this.logger.info(
-          { internalStepId, userStepId, childTaskIds },
+          { internalStepId, userStepId },
           `waitForChildTasks called for step '${userStepId}' (id: ${internalStepId}).`
         );
-        this.job.state.stepState![internalStepId] = { status: 'waiting_for_children', childTaskIds: childTaskIds };
+        this.job.state.stepState![internalStepId] = { status: 'waiting_for_children' };
         await this.persistState();
         const token = this.job.token || '';
         const shouldWait = await this.job.moveToWaitingChildren(token);
         if (shouldWait) {
           this.logger.debug(
-            { internalStepId, userStepId, childTaskIds },
+            { internalStepId, userStepId },
             `Step '${userStepId}' (id: ${internalStepId}) successfully moved to waiting for children, throwing WaitForChildrenError.`
           );
-          throw new WaitForChildrenError(childTaskIds.length, internalStepId);
+          throw new WaitForChildrenError(internalStepId);
         } else {
           this.logger.debug(
-            { internalStepId, userStepId, childTaskIds },
+            { internalStepId, userStepId },
             `Step '${userStepId}' (id: ${internalStepId}) does not need to wait for children. Completing step.`
           );
           return [];
@@ -349,7 +379,7 @@ export class StepExecutor<
             );
             return {
               processed: true,
-              errorToThrow: new WaitForChildrenError(memoizedResult.childTaskIds?.length || 0, internalStepId),
+              errorToThrow: new WaitForChildrenError(internalStepId),
             };
           } else {
             this.logger.debug(
