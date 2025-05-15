@@ -497,11 +497,6 @@ export class ToroTask<
 }
 
 // --- Exports ---
-export { BaseQueue } from './base-queue.js';
-// Only export SubTask class itself from sub-task.ts
-export { SubTask } from './sub-task.js';
-// Other types (SubTaskHandler etc.) are handled by index.ts exporting from types.ts
-
 // Re-export core BullMQ types users might need
 export { ConnectionOptions, Job, JobsOptions, Queue } from 'bullmq';
 export { EventDispatcher } from './event-dispatcher.js'; // Re-export EventDispatcher
