@@ -47,6 +47,72 @@ export class StepExecutor<
   }
 
   /**
+   * Process step result before storing it in the job state.
+   * This method automatically prpeares TaskJob instances ready for serialization.
+   *
+   * @param result The result from a step's core logic
+   * @param stepKind The kind of step that produced this result
+   * @returns A processed version of the result suitable for storage
+   */
+  protected async memoizeStepResult<T>(result: T, stepKind: string): Promise<any> {
+    // Handle TaskJob instances by calling toJSON
+    if (result instanceof TaskJob) {
+      const complexJob: TaskJob = result;
+      this.logger.debug({ jobId: result.id, stepKind }, `Automatically processing TaskJob instance for serialization`);
+
+      const simpleJob: SimplifiedJob = {
+        jobId: complexJob.id!,
+        queue: complexJob.queueName,
+        timestamp: complexJob.timestamp,
+        _isMemoizedTaskJob: true,
+      };
+
+      return simpleJob;
+    }
+    // For other types, just return as is
+    return result;
+  }
+
+  /**
+   * Checks if the memoized data is a job that needs to be reconstructed.
+   *
+   * @param memoizedData The data from the memoized result
+   * @param userStepId The ID of the step for logging purposes
+   * @returns The original data or a reconstructed job
+   */
+  protected async reconstructJobIfNeeded<T>(memoizedData: any, userStepId: string): Promise<T> {
+    // Check if this is a memoized job by looking for our marker
+    if (memoizedData && memoizedData._isMemoizedTaskJob) {
+      this.logger.debug(
+        { jobId: memoizedData.jobId, userStepId },
+        `Detected memoized job data for step '${userStepId}'`
+      );
+
+      const jobData: SimplifiedJob = memoizedData as SimplifiedJob;
+
+      // Try to reconstruct the job from the queue if possible
+      try {
+        // If we have a parent task and queue info, we could try to get the job from the queue
+        if (this.client && jobData.queue) {
+          const job = await this.client.getJobById(jobData.queue, jobData.jobId);
+          return job as T;
+        } else {
+          throw new Error(`Cannot reconstruct job: client or queue not available.`);
+        }
+      } catch (error: any) {
+        this.logger.error(
+          { error: error?.message, jobId: memoizedData.jobId, userStepId },
+          `Error during job reconstruction attempt`
+        );
+        throw deserializeError(error);
+      }
+    }
+
+    // Not a job, return original data
+    return memoizedData as T;
+  }
+
+  /**
    * Centralized method to execute a step, handling memoization, state persistence, and errors.
    * @param userStepId User-defined ID for the step.
    * @param stepKind A string identifier for the kind of step (e.g., 'do', 'sleep').
@@ -61,6 +127,8 @@ export class StepExecutor<
    *                                     Used for re-evaluating pending states (e.g., checking if sleep duration has passed).
    *                                     If it handles the state, it should return \`{ processed: true, ... }\`.
    *                                     If the step completes, it must update state and persist.
+   * @param memoizeStepResult Optional function to customize how the step result is serialized before storage.
+   *                        If not provided, the default memoizeStepResult method will be used.
    */
   private async _executeStep<T>(
     userStepId: string,
@@ -73,7 +141,8 @@ export class StepExecutor<
       processed: boolean; // True if this handler processed the state
       result?: T; // Result if processed and completed
       errorToThrow?: any; // Error to throw if processed and still pending or errored
-    }>
+    }>,
+    memoizeStepResult?: (result: T, stepKind: string) => Promise<any> // Optional custom memoizer
   ): Promise<T> {
     const currentCount = this.stepCounts.get(userStepId) || 0;
     const internalStepId = `${userStepId}_${currentCount}`;
@@ -89,7 +158,10 @@ export class StepExecutor<
           { internalStepId, data: memoizedResult.data, stepKind },
           `Step '${userStepId}' (id: ${internalStepId}) already completed, returning memoized data.`
         );
-        return memoizedResult.data as T;
+
+        // Check if the memoized result is a job that needs reconstruction
+        const result = await this.reconstructJobIfNeeded(memoizedResult.data, userStepId);
+        return result as T;
       } else if (memoizedResult.status === 'errored') {
         this.logger.warn(
           { internalStepId, error: memoizedResult.error, stepKind },
@@ -122,9 +194,15 @@ export class StepExecutor<
     );
     try {
       const result = await coreLogic(internalStepId);
+
+      // Process the result for storage in the state - use custom serializer if provided, otherwise use default
+      const processedResult = memoizeStepResult
+        ? await memoizeStepResult(result, stepKind)
+        : await this.memoizeStepResult(result, stepKind);
+
       this.job.state.stepState![internalStepId] = {
         status: 'completed',
-        data: result,
+        data: processedResult,
       };
       await this.persistState();
       this.logger.info(
