@@ -24,6 +24,7 @@ export class StepExecutor<
     if (typeof this.job.state !== 'object' || this.job.state === null) {
       this.job.state = {} as TaskJobState;
     }
+
     this.job.state.stepState = this.job.state.stepState || {};
 
     this.logger.debug(

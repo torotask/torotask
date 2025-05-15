@@ -13,6 +13,8 @@ export interface StepResult<T = any> {
     message: string;
     name?: string;
     stack?: string;
+    containedJobReference?: boolean;
+    truncated?: boolean;
   };
   sleepUntil?: number; // Timestamp (ms since epoch)
   // For pending states
