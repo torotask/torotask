@@ -42,20 +42,12 @@ export class StepExecutor<
     }
 
     this.job.state.stepState = this.job.state.stepState || {};
-
-    this.logger.debug(
-      {
-        existingSteps: Object.keys(this.job.state.stepState || {}).length,
-      },
-      'StepExecutor initialized.'
-    );
   }
 
   private async persistState(): Promise<void> {
     const stateToUpdate: Partial<TaskJobState> = {
       stepState: this.job.state.stepState,
     };
-    this.logger.debug({ stateToUpdate }, 'Persisting step state');
     await this.job.updateState(stateToUpdate);
   }
 
@@ -220,8 +212,6 @@ export class StepExecutor<
     const internalStepId = `${userStepId}_${currentCount}`;
     this.stepCounts.set(userStepId, currentCount + 1);
 
-    this.logger.debug({ userStepId, internalStepId, stepKind, currentCount }, `Attempting step: ${stepKind}`);
-
     const memoizedResult = this.job.state.stepState![internalStepId];
 
     if (memoizedResult) {
@@ -260,10 +250,6 @@ export class StepExecutor<
       }
     }
 
-    this.logger.debug(
-      { internalStepId, stepKind },
-      `Executing core logic for step '${userStepId}' (id: ${internalStepId}).`
-    );
     try {
       const result = await coreLogic(internalStepId);
 
@@ -277,20 +263,9 @@ export class StepExecutor<
         data: processedResult,
       };
       await this.persistState();
-      this.logger.debug(
-        { internalStepId, stepKind, result },
-        `Step '${userStepId}' (id: ${internalStepId}) completed successfully by core logic.`
-      );
       return result;
     } catch (error: any) {
-      if (
-        (error instanceof DelayedError || error instanceof WaitingChildrenError) &&
-        error.message.includes(internalStepId)
-      ) {
-        this.logger.debug(
-          { internalStepId, stepKind, errName: error.name, details: error },
-          `Step '${userStepId}' (id: ${internalStepId}) initiated a pending state (${error.name}). State already persisted by step method.`
-        );
+      if (isControlError(error) && error.message.includes(internalStepId)) {
         throw error;
       }
 
@@ -326,28 +301,16 @@ export class StepExecutor<
         };
         await this.persistState();
         await this.job.moveToDelayed(newSleepUntil, this.job.token);
-        this.logger.debug(
-          { internalStepId, durationMs, sleepUntil: newSleepUntil },
-          `Step '${userStepId}' (id: ${internalStepId}) is now sleeping, throwing DelayedError.`
-        );
         throw new DelayedError(`Step "${internalStepId}" is sleeping.`);
       },
       async (memoizedResult, internalStepId) => {
         if (memoizedResult.status === 'sleeping') {
           const sleepUntil = memoizedResult.sleepUntil!;
           if (Date.now() >= sleepUntil) {
-            this.logger.debug(
-              { internalStepId },
-              `Sleep duration for step '${userStepId}' (id: ${internalStepId}) ended, marking as completed.`
-            );
             this.job.state.stepState![internalStepId] = { status: 'completed' };
             await this.persistState();
             return { processed: true, result: undefined };
           } else {
-            this.logger.debug(
-              { internalStepId, sleepUntil },
-              `Step '${userStepId}' (id: ${internalStepId}) still sleeping, re-asserting delay and throwing DelayedError.`
-            );
             await this.job.moveToDelayed(sleepUntil, this.job.token);
             return {
               processed: true,
@@ -383,28 +346,16 @@ export class StepExecutor<
         this.job.state.stepState![internalStepId] = { status: 'sleeping', sleepUntil: timestampMs };
         await this.persistState();
         await this.job.moveToDelayed(timestampMs, this.job.token);
-        this.logger.debug(
-          { internalStepId, userStepId, timestampMs },
-          `Step '${userStepId}' (id: ${internalStepId}) is now sleeping until specific time, throwing DelayedError.`
-        );
         throw new DelayedError(`Step "${internalStepId}" is sleeping until specific time.`);
       },
       async (memoizedResult, internalStepId) => {
         if (memoizedResult.status === 'sleeping') {
           const sleepUntilTime = memoizedResult.sleepUntil!;
           if (Date.now() >= sleepUntilTime) {
-            this.logger.debug(
-              { internalStepId, userStepId },
-              `sleepUntil for step '${userStepId}' (id: ${internalStepId}) completed.`
-            );
             this.job.state.stepState![internalStepId] = { status: 'completed' };
             await this.persistState();
             return { processed: true, result: undefined };
           } else {
-            this.logger.debug(
-              { internalStepId, userStepId, sleepUntilTime },
-              `Step '${userStepId}' (id: ${internalStepId}) still sleeping until specific time, re-asserting delay and throwing DelayedError.`
-            );
             await this.job.moveToDelayed(sleepUntilTime, this.job.token);
             return {
               processed: true,

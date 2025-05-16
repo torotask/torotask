@@ -77,7 +77,7 @@ export class TaskQueue<
    */
   // Assuming BulkJob's options are compatible with BullMQ's BulkJobOptions
   public override async addBulk(jobs: BulkJob<DataType>[]): Promise<TaskJob<PayloadType, ResultType>[]> {
-    this.logger.info({ jobs }, `Bulk adding jobs ${jobs.length} to queue [${this.name}]`);
+    this.logger.debug(`Bulk adding jobs ${jobs.length} to queue [${this.name}]`);
 
     const bulkJobs = jobs.map((job) => {
       const data = {
@@ -93,7 +93,7 @@ export class TaskQueue<
     });
 
     const result = await super.addBulk(bulkJobs as any);
-    this.logger.info({ result }, `${result.length} Jobs bulk added added to queue [${this.name}]`);
+    this.logger.debug(`${result.length} Jobs bulk added added to queue [${this.name}]`);
     return result as TaskJob<PayloadType, ResultType, NameType>[];
   }
 
@@ -109,7 +109,7 @@ export class TaskQueue<
   ): Promise<ResultType> {
     // Use specific JobReturn generic
     const waitLogger = this.logger.child({ jobName: name, action: 'runAndWait' });
-    waitLogger.info({ payload, options }, 'Adding job and waiting for completion');
+    waitLogger.debug({ payload, options }, 'Adding job and waiting for completion');
 
     // Call the corrected _runJob
     const job = await this.add(name, payload, options, state); // Cast data if needed
