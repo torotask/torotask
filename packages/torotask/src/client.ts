@@ -7,11 +7,11 @@ import { EventDispatcher } from './event-dispatcher.js';
 import { TaskQueue } from './queue.js';
 import { TaskGroup } from './task-group.js';
 import type {
-  BulkTaskRun,
-  BulkTaskRunChild,
-  BulkTaskRunNode,
   SchemaHandler,
   TaskDefinitionRegistry,
+  TaskFlowRun,
+  TaskFlowRunChild,
+  TaskFlowRunNode,
   TaskGroupDefinitionRegistry,
   TaskJobOptions,
   TaskRegistry,
@@ -334,48 +334,50 @@ export class ToroTask<
     }
   }
 
-  _convertToFlow(run: BulkTaskRun): FlowJob {
-    const task = this.getTask(run.taskGroup, run.taskId);
+  _convertToFlow(run: TaskFlowRun, options?: Partial<TaskJobOptions>): FlowJob {
+    const task = this.getTaskByKey(run.taskGroup, run.taskName as string);
     if (!task) {
-      throw new Error(`Task ${run.taskGroup}.${run.taskId} not found`);
+      throw new Error(`Task ${run.taskGroup}.${run.taskName as string} not found`);
     }
     const queueName = task.queueName;
-    const options = {
+    const mergedOptions = {
       ...task.jobsOptions,
+      ...options,
       ...run.options,
     };
 
     return {
-      name: run.name,
+      name: (run.name as string) ?? run.taskName,
       queueName: queueName,
       data: {
         payload: run.payload,
         state: run.state,
       },
-      opts: convertJobOptions(options),
-      children: run.children?.map((child) => this._convertToChildFlow(child)) || undefined,
+      opts: convertJobOptions(mergedOptions),
+      children: run.children?.map((child) => this._convertToChildFlow(child, options)) || undefined,
     };
   }
 
-  _convertToChildFlow(run: BulkTaskRunChild): FlowChildJob {
-    const task = this.getTask(run.taskGroup, run.taskId);
+  _convertToChildFlow(run: TaskFlowRunChild, options?: Partial<TaskJobOptions>): FlowChildJob {
+    const task = this.getTaskByKey(run.taskGroup, run.taskName as string);
     if (!task) {
-      throw new Error(`Task ${run.taskGroup}.${run.taskId} not found`);
+      throw new Error(`Task ${run.taskGroup}.${run.taskName} not found`);
     }
     const queueName = task.queueName;
-    const options = {
+    const mergedOptions = {
       ...task.jobsOptions,
+      ...options,
       ...run.options,
     };
 
     return {
-      name: run.name,
+      name: run.name ?? run.taskName,
       queueName: queueName,
       data: {
         payload: run.payload,
         state: run.state,
       },
-      opts: options,
+      opts: convertJobOptions(mergedOptions),
       children: run.children?.map((child) => this._convertToChildFlow(child)) || undefined,
     };
   }
@@ -384,9 +386,9 @@ export class ToroTask<
    * Runs multiple task in the specified groups with the provided data.
    *
    */
-  async runBulkTasks(runs: BulkTaskRun[]): Promise<BulkTaskRunNode[]> {
+  async runFlow(runs: TaskFlowRun[], options?: Partial<TaskJobOptions>): Promise<TaskFlowRunNode[]> {
     const flows: FlowJob[] = runs.map((run) => {
-      return this._convertToFlow(run);
+      return this._convertToFlow(run, options);
     });
 
     return await this.workflow.addBulk(flows);

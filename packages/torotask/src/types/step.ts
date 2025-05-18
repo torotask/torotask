@@ -1,4 +1,4 @@
-import { BulkJob } from './bulk.js';
+import { BulkJob } from './flow.js';
 import type { TaskJobOptions, TaskJobState } from './job.js';
 
 export type StepStatus = 'completed' | 'errored' | 'sleeping' | 'waiting_for_child' | 'waiting_for_children';

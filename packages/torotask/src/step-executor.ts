@@ -10,6 +10,8 @@ import type {
   StepBulkJob,
   StepResult,
   StepTaskJobOptions,
+  TaskFlowRun,
+  TaskFlowRunNode,
   TaskGroupDefinitionRegistry,
   TaskGroupRegistry,
   TaskJobState,
@@ -511,6 +513,16 @@ export class StepExecutor<
       const taskJobs = (await task.runMany(tasks, { ...options, parent: this.job })) as TJob[];
 
       return taskJobs;
+    });
+  }
+
+  async runFlow<
+    TFlowRun extends TaskFlowRun<TAllTaskGroupsDefs> = TaskFlowRun<TAllTaskGroupsDefs>,
+    TFlowRunNodes extends TaskFlowRunNode[] = TaskFlowRunNode[],
+  >(userStepId: string, tasks: TFlowRun[], options?: StepTaskJobOptions): Promise<TFlowRunNodes> {
+    return this._executeStep<TFlowRunNodes>(userStepId, 'runFlow', async (_internalStepId: string) => {
+      const result = this.client.runFlow(tasks as any, { ...options, parent: this.job });
+      return result as any;
     });
   }
 
