@@ -1,17 +1,12 @@
 import type { JobNode } from 'bullmq';
 import type { TaskJobData, TaskJobOptions, TaskJobState } from './job.js';
-import type { Task } from '../task.js';
+import { Task } from '../task.js';
 import type { TaskGroupDefinitionRegistry, TaskGroupRegistry } from './task-group.js';
 
-export type TaskFlowRunOptions = Omit<TaskJobOptions, 'repeat'>;
+export type TaskFlowRunBaseOptions = Omit<TaskJobOptions, 'repeat' | 'parent'>;
 
-export type TaskFlow<PayloadType = any, DataType extends TaskJobData<PayloadType> = TaskJobData<PayloadType>> = {
-  name?: string;
-  payload?: PayloadType;
-  data?: DataType;
-  state?: TaskJobState;
-  options?: TaskFlowRunOptions;
-};
+export type TaskFlowRunOptions = TaskFlowRunBaseOptions & Pick<TaskJobOptions, 'parent'>;
+export type TaskFlowRunChildOptions = TaskFlowRunBaseOptions;
 
 // Helper interface for a single, specific configuration of a task run.
 interface SpecificFlowRunConfig<
@@ -32,12 +27,12 @@ interface SpecificFlowRunConfig<
   payload?: Payload;
   state?: TaskJobState;
   options?: TOptions;
-  children?: TaskFlowRunChild<TAllTaskGroupsDefs>[];
+  children?: TaskFlowRun<TAllTaskGroupsDefs, TaskFlowRunChildOptions>[];
 }
 
 export type TaskFlowRun<
   TAllTaskGroupsDefs extends TaskGroupDefinitionRegistry = TaskGroupDefinitionRegistry,
-  TOptions = TaskFlowRunOptions,
+  TOptions extends TaskFlowRunBaseOptions = TaskFlowRunOptions,
 > = {
   // Iterate over each group name (GKey) from the *processed* schema structure
   [GKey in keyof TaskGroupRegistry<TAllTaskGroupsDefs>]: {
@@ -52,9 +47,6 @@ export type TaskFlowRun<
   }[keyof TaskGroupRegistry<TAllTaskGroupsDefs>[GKey]['tasks']];
   // Create a union of all group configurations
 }[keyof TaskGroupRegistry<TAllTaskGroupsDefs>];
-
-export type TaskFlowRunChild<TAllTaskGroupsDefs extends TaskGroupDefinitionRegistry = TaskGroupDefinitionRegistry> =
-  TaskFlowRun<TAllTaskGroupsDefs, Omit<TaskFlowRunOptions, 'parent'>>;
 
 export type TaskFlowGroupRun = TaskFlowRun<any> & {
   taskGroup?: string;

@@ -516,13 +516,25 @@ export class StepExecutor<
     });
   }
 
-  async runFlow<
-    TFlowRun extends TaskFlowRun<TAllTaskGroupsDefs> = TaskFlowRun<TAllTaskGroupsDefs>,
-    TFlowRunNodes extends TaskFlowRunNode[] = TaskFlowRunNode[],
-  >(userStepId: string, tasks: TFlowRun[], options?: StepTaskJobOptions): Promise<TFlowRunNodes> {
-    return this._executeStep<TFlowRunNodes>(userStepId, 'runFlow', async (_internalStepId: string) => {
-      const result = this.client.runFlow(tasks as any, { ...options, parent: this.job });
-      return result as any;
+  async runFlow<TFlowRun extends TaskFlowRun<TAllTaskGroupsDefs> = TaskFlowRun<TAllTaskGroupsDefs>>(
+    userStepId: string,
+    task: TFlowRun,
+    options?: StepTaskJobOptions
+  ): Promise<TaskFlowRunNode> {
+    return this._executeStep<TaskFlowRunNode>(userStepId, 'runFlow', async (_internalStepId: string) => {
+      const result = this.client.runFlow(task as any, { ...options, parent: this.job });
+      return result;
+    });
+  }
+
+  async runFlows<TFlowRun extends TaskFlowRun<TAllTaskGroupsDefs> = TaskFlowRun<TAllTaskGroupsDefs>>(
+    userStepId: string,
+    tasks: TFlowRun[],
+    options?: StepTaskJobOptions
+  ): Promise<TaskFlowRunNode[]> {
+    return this._executeStep<TaskFlowRunNode[]>(userStepId, 'runFlow', async (_internalStepId: string) => {
+      const result = this.client.runFlows(tasks as any, { ...options, parent: this.job });
+      return result;
     });
   }
 

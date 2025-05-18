@@ -3,11 +3,11 @@ import { Logger } from 'pino';
 import type { ToroTask } from './client.js';
 import { Task } from './task.js';
 import type {
-  BulkTaskGroupRun,
-  BulkTaskRun,
-  BulkTaskRunNode,
   SchemaHandler,
   TaskDefinitionRegistry,
+  TaskFlowRun,
+  TaskFlowRunNode,
+  TaskFlowGroupRun,
   TaskRegistry,
   WorkerFilterTasks,
 } from './types/index.js';
@@ -172,14 +172,14 @@ export class TaskGroup<
    * Runs multiple task in the specified groups with the provided data.
    *
    */
-  async runBulkTasks(runs: BulkTaskGroupRun[]): Promise<BulkTaskRunNode[]> {
-    const processed: BulkTaskRun[] = runs.map((run) => {
+  async runBulkTasks(runs: TaskFlowRun[]): Promise<TaskFlowRunNode[]> {
+    const processed: TaskFlowRun[] = runs.map((run) => {
       return {
         ...run,
         taskGroup: run.taskGroup || this.id,
       };
     });
-    return await this.client.runBulkTasks(processed);
+    return await this.client.runFlows(processed);
   }
 
   // --- Worker Orchestration ---

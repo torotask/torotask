@@ -10,7 +10,6 @@ import type {
   SchemaHandler,
   TaskDefinitionRegistry,
   TaskFlowRun,
-  TaskFlowRunChild,
   TaskFlowRunNode,
   TaskGroupDefinitionRegistry,
   TaskJobOptions,
@@ -334,64 +333,25 @@ export class ToroTask<
     }
   }
 
-  _convertToFlow(run: TaskFlowRun, options?: Partial<TaskJobOptions>): FlowJob {
-    const task = this.getTaskByKey(run.taskGroup, run.taskName as string);
-    if (!task) {
-      throw new Error(`Task ${run.taskGroup}.${run.taskName as string} not found`);
-    }
-    const queueName = task.queueName;
-    const mergedOptions = {
-      ...task.jobsOptions,
-      ...options,
-      ...run.options,
-    };
-
-    return {
-      name: (run.name as string) ?? run.taskName,
-      queueName: queueName,
-      data: {
-        payload: run.payload,
-        state: run.state,
-      },
-      opts: convertJobOptions(mergedOptions),
-      children: run.children?.map((child) => this._convertToChildFlow(child, options)) || undefined,
-    };
-  }
-
-  _convertToChildFlow(run: TaskFlowRunChild, options?: Partial<TaskJobOptions>): FlowChildJob {
-    const task = this.getTaskByKey(run.taskGroup, run.taskName as string);
-    if (!task) {
-      throw new Error(`Task ${run.taskGroup}.${run.taskName} not found`);
-    }
-    const queueName = task.queueName;
-    const mergedOptions = {
-      ...task.jobsOptions,
-      ...options,
-      ...run.options,
-    };
-
-    return {
-      name: run.name ?? run.taskName,
-      queueName: queueName,
-      data: {
-        payload: run.payload,
-        state: run.state,
-      },
-      opts: convertJobOptions(mergedOptions),
-      children: run.children?.map((child) => this._convertToChildFlow(child)) || undefined,
-    };
-  }
-
   /**
    * Runs multiple task in the specified groups with the provided data.
    *
    */
-  async runFlow(runs: TaskFlowRun[], options?: Partial<TaskJobOptions>): Promise<TaskFlowRunNode[]> {
-    const flows: FlowJob[] = runs.map((run) => {
-      return this._convertToFlow(run, options);
-    });
+  async runFlow<TFlowRun extends TaskFlowRun<TAllTaskGroupsDefs> = TaskFlowRun<TAllTaskGroupsDefs>>(
+    run: TFlowRun,
+    options?: Partial<TaskJobOptions>
+  ): Promise<TaskFlowRunNode> {
+    return await this.workflow.runFlow(run as any, options);
+  }
 
-    return await this.workflow.addBulk(flows);
+  /**
+   * Runs multiple task in the specified groups with the provided data.
+   */
+  async runFlows<TFlowRun extends TaskFlowRun<TAllTaskGroupsDefs> = TaskFlowRun<TAllTaskGroupsDefs>>(
+    runs: TFlowRun[],
+    options?: Partial<TaskJobOptions>
+  ): Promise<TaskFlowRunNode[]> {
+    return await this.workflow.runFlows(runs as any, options);
   }
 
   /**
