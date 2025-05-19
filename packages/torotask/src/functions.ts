@@ -9,7 +9,7 @@ import type {
   ResolvedSchemaType,
   TaskDefinitionRegistry,
   TaskHandlerContext,
-  TaskGroupRegistry,
+  EffectivePayloadType,
 } from './types/index.js';
 import type { StepExecutor } from './step-executor.js';
 import type { TaskJob } from './job.js';
@@ -19,11 +19,7 @@ type DefineTaskConfigInput<PayloadType, ResultType, SchemaVal extends SchemaHand
   TaskDefinition<PayloadType, ResultType, SchemaVal>,
   'triggers'
 > & {
-  triggers?: SchemaVal extends undefined // If SchemaVal is not provided (no schema for the task)
-    ? SingleOrArray<TaskTrigger<PayloadType>> // Then triggers can infer/use PayloadType
-    : ResolvedSchemaType<SchemaVal> extends infer ActualSchema extends z.ZodTypeAny // Else (SchemaVal IS provided)
-      ? SingleOrArray<TaskTrigger<z.infer<ActualSchema>>>
-      : SingleOrArray<TaskTrigger<unknown>>; // Fallback for triggers if schema exists but isn't a ZodTypeAny
+  triggers?: SingleOrArray<TaskTrigger<EffectivePayloadType<PayloadType, ResolvedSchemaType<SchemaVal>>>>;
 };
 
 /**
@@ -35,12 +31,14 @@ type DefineTaskConfigInput<PayloadType, ResultType, SchemaVal extends SchemaHand
  * @param definitions The task definitions for this group.
  * @returns The task group definition object, correctly typed.
  */
-export function defineTaskGroup<TDefs extends TaskDefinitionRegistry>(
-  config: TaskGroupDefinition<TDefs>
-): TaskGroupDefinition<TDefs> {
+export function defineTaskGroup<
+  // TTaskMap will be inferred from config.tasks, e.g., typeof { taskA, taskB } as const
+  TTaskMap extends TaskDefinitionRegistry,
+>(
+  config: TaskGroupDefinition<TTaskMap> // config is { id?: 'groupX', tasks: TTaskMap }
+): TaskGroupDefinition<TTaskMap> {
   return config;
 }
-
 /**
  * Defines a task group registry.
  * This function helps with type inference for task group definitions.
@@ -64,12 +62,14 @@ export function defineTaskGroupRegistry<T extends TaskGroupDefinitionRegistry>(g
  * @param config The task definition object.
  * @returns The task definition object, correctly typed.
  */
-export function defineTask<ResultType = unknown, PayloadType = any, SchemaVal extends SchemaHandler = SchemaHandler>(
-  config: DefineTaskConfigInput<PayloadType, ResultType, SchemaVal>
-): TaskDefinition<PayloadType, ResultType, SchemaVal> {
-  // The return type is still the original TaskDefinition.
-  // The input type is just more constrained to guide inference.
-  return config as TaskDefinition<PayloadType, ResultType, SchemaVal>;
+export function defineTask<
+  ResultExplicit = unknown,
+  PayloadExplicit = unknown,
+  SchemaInput extends SchemaHandler | undefined = undefined,
+>(
+  config: DefineTaskConfigInput<PayloadExplicit, ResultExplicit, SchemaInput>
+): TaskDefinition<PayloadExplicit, ResultExplicit, SchemaInput> {
+  return config as TaskDefinition<PayloadExplicit, ResultExplicit, SchemaInput>;
 }
 
 /**

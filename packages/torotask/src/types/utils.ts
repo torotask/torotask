@@ -34,6 +34,8 @@ export type IfNever<T, Y, N = T> = [T] extends [never] ? Y : N;
 
 export type IfAny<T, Y, N> = 0 extends 1 & T ? Y : N;
 export type IsAny<T> = IfAny<T, true, never>;
+export type IsDefault<T, D> = T extends D ? (D extends T ? true : false) : false;
+export type IsUnknown<T> = unknown extends T ? (T extends unknown ? true : false) : false;
 
 export type IsNullable<T, Y = true, N = never> = T | null extends T ? Y : N;
 export type IsDateTime<T, Y, N> = T extends 'datetime' ? Y : N;

@@ -121,7 +121,7 @@ export interface TaskDefinition<
 
 //export type TaskRegistry = Record<string, Task<any, any, SchemaHandler>>;
 export interface TaskDefinitionRegistry {
-  [taskName: string]: TaskDefinition<any, any, SchemaHandler>;
+  [taskName: string]: TaskDefinition<any, any, any>;
 }
 
 export type TaskRegistry<TDefs extends TaskDefinitionRegistry> = {
