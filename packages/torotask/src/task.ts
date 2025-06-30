@@ -41,18 +41,16 @@ export class Task<
     PayloadExplicit,
     ResolvedSchemaType<SchemaInputVal>
   > = EffectivePayloadType<PayloadExplicit, ResolvedSchemaType<SchemaInputVal>>,
-> extends BaseTask<
-  ActualPayloadType,
-  ResultType,
-  string, // NameType for BaseTask
-  TaskJobData<ActualPayloadType>, // DataType for BaseTask
-  TaskOptions // TOptions for BaseTask
-> {
+> extends BaseTask<ActualPayloadType, ResultType, TaskJobData<ActualPayloadType>, TaskOptions> {
   /**
    * A type-only property to help infer the actual payload type of the task.
    * This is equivalent to EffectivePayloadType<PayloadExplicit, ResolvedSchemaType<SchemaInputVal>>.
    */
   public readonly _payloadType!: ActualPayloadType;
+  /**
+   * A type-only property to help infer the result type of the task.
+   */
+  public readonly _resultType!: ResultType;
 
   protected readonly subTasks: Map<string, SubTask<any, any>>; // SubTask payload/result types might need further consideration for inference
   protected readonly allowCatchAll: boolean;
@@ -120,7 +118,7 @@ export class Task<
     return this.subTasks.get(subTaskId);
   }
 
-  async process(job: TaskJob<ActualPayloadType, ResultType>, token?: string): Promise<any> {
+  async process(job: TaskJob<ActualPayloadType, ResultType>, token?: string): Promise<ResultType> {
     const { id, name: jobName } = job;
     const effectiveJobName = jobName === '' || jobName === '__default__' ? this.id : jobName;
     const jobLogger = this.logger.child({ jobId: id, jobName: effectiveJobName });
@@ -173,7 +171,11 @@ export class Task<
     }
   }
 
-  async processJob(job: TaskJob<ActualPayloadType, ResultType>, token?: string, jobLogger?: Logger): Promise<any> {
+  async processJob(
+    job: TaskJob<ActualPayloadType, ResultType>,
+    token?: string,
+    jobLogger?: Logger
+  ): Promise<ResultType> {
     const effectiveJobLogger = jobLogger ?? this.getJobLogger(job);
     // Use CurrentPayloadType which is derived from the local EffectivePayloadType
     type CurrentPayloadType = ActualPayloadType;

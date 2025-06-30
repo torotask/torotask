@@ -10,16 +10,29 @@ import type {
   TaskDefinitionRegistry,
   TaskHandlerContext,
   EffectivePayloadType,
+  TaskOptions, // Added TaskOptions for DefineTaskInputConfig
+  TaskHandler, // Added TaskHandler for DefineTaskInputConfig
 } from './types/index.js';
 import type { StepExecutor } from './step-executor.js';
 import type { TaskJob } from './job.js';
 
-// Helper type to redefine config for defineTask input
-type DefineTaskConfigInput<PayloadType, ResultType, SchemaVal extends SchemaHandler> = Omit<
-  TaskDefinition<PayloadType, ResultType, SchemaVal>,
-  'triggers'
-> & {
-  triggers?: SingleOrArray<TaskTrigger<EffectivePayloadType<PayloadType, ResolvedSchemaType<SchemaVal>>>>;
+// Helper type for the config object passed to defineTask, designed for inference
+type DefineTaskInputConfig<
+  PayloadExplicit,
+  SchemaInput extends SchemaHandler | undefined,
+  // This InferredHandlerResult is the type that the provided handler function actually returns.
+  InferredHandlerResult,
+> = {
+  // The handler's result type is InferredHandlerResult, which TS will infer.
+  handler: TaskHandler<
+    EffectivePayloadType<PayloadExplicit, ResolvedSchemaType<SchemaInput>>,
+    InferredHandlerResult, // Key for inference
+    ResolvedSchemaType<SchemaInput>
+  >;
+  options?: TaskOptions;
+  schema?: SchemaInput;
+  triggers?: SingleOrArray<TaskTrigger<EffectivePayloadType<PayloadExplicit, ResolvedSchemaType<SchemaInput>>>>;
+  id?: string; // From TaskDefinition
 };
 
 /**
@@ -55,21 +68,38 @@ export function defineTaskGroupRegistry<T extends TaskGroupDefinitionRegistry>(g
  * Defines a task configuration.
  * This function helps with type inference for the task definition.
  *
- * @template PayloadType The type of the payload for the task. Defaults to `unknown`.
- *   If a `schema` is provided, this type is typically overridden by the schema's inferred type for the handler.
- * @template ResultType The type of the result returned by the task handler. Defaults to `unknown`.
- * @template SchemaVal The type of the schema or schema function.
+ * @template PayloadExplicit The type of the payload for the task. Defaults to `unknown`.
+ *   If a `schema` is provided, this type is typically overridden by the schema's inferred type.
+ * @template SchemaInput The type of the schema or schema function.
+ * @template ResultExplicit The explicit type of the result returned by the task handler.
+ *   If not provided (or set to `unknown`), the result type will be inferred from the handler.
+ * @template InferredHandlerResult (Internal) The actual inferred result type from the handler.
  * @param config The task definition object.
  * @returns The task definition object, correctly typed.
  */
 export function defineTask<
-  ResultExplicit = unknown,
   PayloadExplicit = unknown,
+  ResultExplicit = unknown,
   SchemaInput extends SchemaHandler | undefined = undefined,
+  // InferredHandlerResult will be inferred from the `handler` in `config`.
+  InferredHandlerResult = unknown,
 >(
-  config: DefineTaskConfigInput<PayloadExplicit, ResultExplicit, SchemaInput>
-): TaskDefinition<PayloadExplicit, ResultExplicit, SchemaInput> {
-  return config as TaskDefinition<PayloadExplicit, ResultExplicit, SchemaInput>;
+  config: DefineTaskInputConfig<PayloadExplicit, SchemaInput, InferredHandlerResult>
+): TaskDefinition<
+  PayloadExplicit,
+  // Conditional type: if ResultExplicit was the default 'unknown' (i.e., not specified), use the inferred type.
+  // Otherwise, respect the user's explicit type.
+  ResultExplicit extends unknown ? InferredHandlerResult : ResultExplicit,
+  SchemaInput
+> {
+  // The config object, as provided, has a handler that returns InferredHandlerResult.
+  // The returned TaskDefinition needs its handler to be typed with the final resolved result type.
+  // The underlying handler function is the same.
+  return config as unknown as TaskDefinition<
+    PayloadExplicit,
+    ResultExplicit extends unknown ? InferredHandlerResult : ResultExplicit,
+    SchemaInput
+  >;
 }
 
 /**

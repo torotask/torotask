@@ -1,5 +1,5 @@
 import slugify from '@sindresorhus/slugify';
-import { Job, JobSchedulerJson } from 'bullmq';
+import { Job, JobSchedulerJson, Processor } from 'bullmq';
 import cronstrue from 'cronstrue';
 import ms from 'ms';
 import type { Logger } from 'pino';
@@ -22,6 +22,7 @@ import { TaskWorkerQueue } from './worker-queue.js';
 import EventEmitter from 'node:events';
 import { ToroTask } from './client.js';
 import { convertJobOptions } from './utils/convert-job-options.js';
+import { TaskJob } from './job.js'; // Import TaskJob
 
 // Add internalId to TaskTrigger type for tracking purposes within the Task class
 type InternalTaskTrigger<PayloadType> = TaskTrigger<PayloadType> & { internalId: number };
@@ -41,7 +42,6 @@ type InternalTaskTriggerEvent<PayloadType> = TaskTriggerEvent<PayloadType> & {
 export abstract class BaseTask<
   PayloadType = any,
   ResultType = any,
-  NameType extends string = string,
   DataType extends TaskJobData<PayloadType> = TaskJobData<PayloadType>,
   TOptions extends TaskOptions = TaskOptions,
 > extends EventEmitter {
@@ -79,7 +79,7 @@ export abstract class BaseTask<
     this.taskClient = group.client;
     const { queueOptions, workerOptions, batch: batchOptions, ...jobsOptions } = options ?? {};
 
-    this.queue = new TaskWorkerQueue<PayloadType, ResultType>(this.taskClient, queueName, {
+    this.queue = new TaskWorkerQueue<PayloadType, ResultType, string>(this.taskClient, queueName, {
       processor: this.process.bind(this),
       ...queueOptions,
     });
@@ -102,11 +102,11 @@ export abstract class BaseTask<
         const eventName = eventNameSymbol; // eventName is now a string
         // Cast eventName to the specific keyof TaskWorkerQueueListener with full generic arguments
         this.queue.on(
-          eventName as keyof TaskWorkerQueueListener<PayloadType, ResultType, NameType, DataType>,
+          eventName as keyof TaskWorkerQueueListener<PayloadType, ResultType, string, DataType>,
           (...args: any[]) => {
             // This will now call the strongly-typed emit below
             this.emit(
-              eventName as keyof TaskWorkerQueueListener<PayloadType, ResultType, NameType, DataType>,
+              eventName as keyof TaskWorkerQueueListener<PayloadType, ResultType, string, DataType>,
               ...(args as any) // Cast args for the strongly-typed emit
             );
           }
@@ -160,7 +160,11 @@ export abstract class BaseTask<
     return this.queue.addBulk(bulkJobs);
   }
 
-  async runAndWait(payload: PayloadType, overrideOptions?: TaskJobOptions, state?: TaskJobOptions['state']) {
+  async runAndWait(
+    payload: PayloadType,
+    overrideOptions?: TaskJobOptions,
+    state?: TaskJobOptions['state']
+  ): Promise<ResultType> {
     const finalOptions: TaskJobOptions = {
       ...this.jobsOptions,
       ...overrideOptions,
@@ -180,12 +184,17 @@ export abstract class BaseTask<
     return this.logger.child({ jobId: job.id, jobName: effectiveJobName, taskId: this.id });
   }
 
-  async process(job: Job, token?: string): Promise<any> {
+  async process(job: TaskJob<PayloadType, ResultType, string>, token?: string): Promise<ResultType> {
     const result = await this.processJob(job, token);
     return result;
   }
 
-  processJob(_job: Job, _token?: string, _jobLogger?: Logger): Promise<any> {
+  // Subclasses implement this. It receives the TaskJob from the `process` method.
+  processJob(
+    _job: TaskJob<PayloadType, ResultType, string>,
+    _token?: string,
+    _jobLogger?: Logger
+  ): Promise<ResultType> {
     throw new Error('processJob method must be implemented in a subclass.');
   }
 
@@ -474,32 +483,32 @@ export abstract class BaseTask<
   // --- Event Emitter Signatures ---
   // Typed to match TaskWorkerQueueListener as BaseTask relays these events.
 
-  emit<U extends keyof TaskWorkerQueueListener<PayloadType, ResultType, NameType, DataType>>(
+  emit<U extends keyof TaskWorkerQueueListener<PayloadType, ResultType, string, DataType>>(
     event: U,
-    ...args: Parameters<TaskWorkerQueueListener<PayloadType, ResultType, NameType, DataType>[U]>
+    ...args: Parameters<TaskWorkerQueueListener<PayloadType, ResultType, string, DataType>[U]>
   ): boolean {
     return super.emit(event, ...args);
   }
 
-  on<U extends keyof TaskWorkerQueueListener<PayloadType, ResultType, NameType, DataType>>(
+  on<U extends keyof TaskWorkerQueueListener<PayloadType, ResultType, string, DataType>>(
     event: U,
-    listener: TaskWorkerQueueListener<PayloadType, ResultType, NameType, DataType>[U]
+    listener: TaskWorkerQueueListener<PayloadType, ResultType, string, DataType>[U]
   ): this {
     super.on(event, listener);
     return this;
   }
 
-  off<U extends keyof TaskWorkerQueueListener<PayloadType, ResultType, NameType, DataType>>(
+  off<U extends keyof TaskWorkerQueueListener<PayloadType, ResultType, string, DataType>>(
     event: U,
-    listener: TaskWorkerQueueListener<PayloadType, ResultType, NameType, DataType>[U]
+    listener: TaskWorkerQueueListener<PayloadType, ResultType, string, DataType>[U]
   ): this {
     super.off(event, listener);
     return this;
   }
 
-  once<U extends keyof TaskWorkerQueueListener<PayloadType, ResultType, NameType, DataType>>(
+  once<U extends keyof TaskWorkerQueueListener<PayloadType, ResultType, string, DataType>>(
     event: U,
-    listener: TaskWorkerQueueListener<PayloadType, ResultType, NameType, DataType>[U]
+    listener: TaskWorkerQueueListener<PayloadType, ResultType, string, DataType>[U]
   ): this {
     super.once(event, listener);
     return this;
