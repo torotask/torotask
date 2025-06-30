@@ -79,8 +79,8 @@ importers:
   apps/tester:
     dependencies:
       bullmq:
-        specifier: ^5.11.0
-        version: 5.46.1
+        specifier: '*'
+        version: 5.56.0
       pino:
         specifier: ^9.6.0
         version: 9.6.0
@@ -90,9 +90,6 @@ importers:
       torotask:
         specifier: workspace:*
         version: link:../../packages/torotask
-      zod:
-        specifier: ^3.24.4
-        version: 3.24.4
     devDependencies:
       '@types/pino':
         specifier: ^7.0.5
@@ -113,8 +110,8 @@ importers:
         specifier: ^7.0.5
         version: 7.0.5
       bullmq:
-        specifier: ^5.11.0
-        version: 5.46.1
+        specifier: ^5.56.0
+        version: 5.56.0
       camelcase:
         specifier: ^8.0.0
         version: 8.0.0
@@ -1442,8 +1439,8 @@ packages:
   buffer@5.7.1:
     resolution: {integrity: sha512-EHcyIPBQ4BSGlvjB16k5KgAJ27CIsHY/2JBmCRReo48y9rQ3MaUzWX3KVlBa4U7MyX02HdVj0K7C3WaB3ju7FQ==}
 
-  bullmq@5.46.1:
-    resolution: {integrity: sha512-P764U7mC2ZJ1Ikdla0kYM7Ln5Cu0wSjL4TOA6Vz7X99kPOxdvfR9NhX9pKzmQmAc8MErHPIgrCurYOeDF4+0cA==}
+  bullmq@5.56.0:
+    resolution: {integrity: sha512-j5ct2tdc9M8PKcjhJw+euO24BsO1wXBAkNGXYI1R1qvh7FvRldZ5wtLixLWqQ4/crafj0Vrwi+y1kXFXMwBJFA==}
 
   bytes@3.1.2:
     resolution: {integrity: sha512-/Nf7TyzTx6S3yRJObOAV7956r8cr2+Oj8AC5dt8wSP3BQAoeX58NoHyCU8P8zGkNXStjTSi6fzO6F0pBdcYbEg==}
@@ -4271,7 +4268,7 @@ snapshots:
       base64-js: 1.5.1
       ieee754: 1.2.1
 
-  bullmq@5.46.1:
+  bullmq@5.56.0:
     dependencies:
       cron-parser: 4.9.0
       ioredis: 5.6.0
