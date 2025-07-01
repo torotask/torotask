@@ -27,17 +27,11 @@ export class TaskGroup<
   public readonly logger: Logger;
 
   /**
-   * Collection of tasks indexed by the task name from definitions.
+   * Collection of tasks indexed by their definition keys.
+   * The key IS the task ID - no separation between key and ID.
    * This provides strict typing based on the definition keys.
    */
   public tasks: TTasks;
-
-  /**
-   * Collection of tasks indexed by their IDs.
-   * Used internally for lookups where the ID might differ from the definition key.
-   * No strict typing is enforced on task IDs.
-   */
-  public tasksById: Record<string, Task<any, any, SchemaHandler>> = {};
 
   constructor(client: ToroTask, id: string, parentLogger: Logger, definitions?: TDefs) {
     if (!client) {
@@ -77,68 +71,37 @@ export class TaskGroup<
     // Generics for Task <P,R,S> are inferred from config (TDefs[TaskId])
     // because Task constructor takes config: TaskDefinition<P,R,S>
 
-    const id = config.id || key;
     const taskDefinitionKey = key as Extract<keyof TDefs, string>;
 
     const task = new Task(
       this as any, // Pass the TaskGroup instance
-      id, // Pass the actualRuntimeId to the Task constructor
+      key, // Use key directly as the task ID
       config, // Pass the original config (typed as TDefs[TaskId])
-      this.logger.child({ task: id }) // Use actualRuntimeId for logger
+      this.logger.child({ task: key }) // Use key for logger
     );
 
-    // TaskId is the camelCase definition key (e.g., "myTask")
-    // 'id' (actualRuntimeId) is the ID for BullMQ (e.g., "my_task" or "explicit_id")
-
     if (this.tasks[taskDefinitionKey]) {
-      // Use TaskId (the definition key) for this.tasks
-      this.logger.warn(
-        { definitionKey: taskDefinitionKey, taskId: id }, // Log with definitionKey and actualRuntimeId
-        'Task with definitionKey already defined in this group. Overwriting.'
-      );
-    }
-    if (this.tasksById[id] && this.tasksById[id] !== task) {
-      this.logger.warn(
-        { currentDefinitionKey: taskDefinitionKey, existingTaskId: id },
-        `Task with actualRuntimeId "${id}" is already registered in tasksById, possibly from a different definition key. Overwriting.`
-      );
+      this.logger.warn({ taskKey: taskDefinitionKey }, 'Task already defined in this group. Overwriting.');
     }
 
     // Register by definition key (TaskId) in the type-safe map
     this.tasks[taskDefinitionKey] = task as TTasks[TaskId];
 
-    // Also register by actual task ID (id parameter) in the ID-indexed collection
-    this.tasksById[id] = task;
-
-    this.logger.debug({ definitionKey: taskDefinitionKey, taskId: id }, 'Task defined');
+    this.logger.debug({ taskKey: taskDefinitionKey }, 'Task defined');
     return task as TTasks[TaskId];
   }
 
   /**
-   * Retrieves a defined Task by its definition name (which is also its ID).
-   * This method expects the `nameOrId` to be a known key of the task definitions for this group.
+   * Retrieves a defined Task by its definition name.
    *
    * @param key The definition name (key from TDefs, e.g., 'myTask'). Must be a key of TTasks.
    * @returns The specifically typed Task instance (TTasks[Key]) if found, otherwise undefined.
    */
-  getTaskByKey<Key extends Extract<keyof TTasks, string>>(key: Key): TTasks[Key] | undefined {
-    // `nameOrId` is a key of TTasks, which are indexed by task ID (definition name).
+  getTask<Key extends Extract<keyof TTasks, string>>(key: Key): TTasks[Key] | undefined {
     if (Object.prototype.hasOwnProperty.call(this.tasks, key)) {
       return this.tasks[key];
     }
     return undefined;
-  }
-
-  /**
-   * Retrieves a defined Task strictly by its ID.
-   * This method expects the `id` to be a known key of the task definitions for this group
-   * to return a specifically typed Task.
-   *
-   * @param id The ID of the task. Must be a key of TTasks.
-   * @returns The specifically typed Task instance (TTasks[Key]) if found, otherwise undefined.
-   */
-  getTask<Payload = any, ResultType = any>(id: string): Task<Payload, ResultType, SchemaHandler> | undefined {
-    return this.tasksById[id];
   }
 
   /**
@@ -157,7 +120,7 @@ export class TaskGroup<
    * @param payload The payload to pass to the task, inferred from the task's definition.
    * @returns A promise that resolves to the TaskJob instance.
    */
-  async runTaskByKey<
+  async runTask<
     TaskName extends Extract<keyof TTasks, string>,
     ActualTask extends TTasks[TaskName] = TTasks[TaskName],
     // Payload is the ActualPayloadType inferred from the Task instance
@@ -165,7 +128,7 @@ export class TaskGroup<
     Result = ActualTask extends Task<any, infer R, any, any> ? R : unknown,
     ActualPayload extends Payload = Payload,
   >(taskName: TaskName, payload: ActualPayload): Promise<TaskJob<ActualPayload, Result>> {
-    return this.client.runTask<ActualPayload, Result>(this.id, taskName, payload);
+    return this.client.runTask(this.id as any, taskName, payload);
   }
 
   /**

@@ -116,7 +116,7 @@ export interface TaskDefinition<
   ResultType = unknown,
   SchemaInputValue extends SchemaHandler = undefined,
 > extends TaskConfig<PayloadExplicit, ResultType, SchemaInputValue> {
-  id?: string;
+  // Removed id field - key is now the ID
 }
 
 //export type TaskRegistry = Record<string, Task<any, any, SchemaHandler>>;

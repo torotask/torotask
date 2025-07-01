@@ -29,7 +29,7 @@ export class TaskWorkflow extends FlowProducer {
     options?: Partial<TaskJobOptions>,
     removeParentOption?: boolean
   ): TResult {
-    const task = this.taskClient.getTaskByKey(run.taskGroup, run.taskName as string);
+    const task = this.taskClient.getTask(run.taskGroup, run.taskName as string);
     if (!task) {
       throw new Error(`Task ${run.taskGroup}.${run.taskName as string} not found`);
     }

@@ -90,8 +90,8 @@ export class ToroTask<
     for (const [groupKey, groupDef] of Object.entries(taskGroupDefinitions)) {
       const typedGroupDef = groupDef as TaskGroupDefinition<any>;
 
-      const groupId = typedGroupDef.id || groupKey;
-      const group = this.createTaskGroup(groupId, typedGroupDef.tasks);
+      // Use groupKey directly as the group ID
+      const group = this.createTaskGroup(groupKey, typedGroupDef.tasks);
       this.taskGroups[groupKey as keyof TAllTaskGroupsDefs] = group as any;
 
       const taskCount = Object.keys(typedGroupDef.tasks).length;
@@ -183,23 +183,22 @@ export class ToroTask<
   }
 
   /**
-   * Retrieves an existing Task instance by group and id.
+   * Retrieves an existing Task instance by group and key (internal method).
+   * Note: This method now uses the task key since we've unified key and ID concepts.
+   * @internal
    */
-  public getTask<PayloadType = any, ResultType = unknown>(
+  private _getTask<PayloadType = any, ResultType = unknown>(
     groupId: string,
-    id: string
-    // The Task class is generic as Task<PayloadExplicit, ResultType, SchemaInputVal extends ActualSchemaInputType = undefined>
-    // We need to ensure the SchemaInputVal part of the return type matches what group.getTask returns.
+    key: string
   ): Task<PayloadType, ResultType, SchemaHandler> | undefined {
     const group = this.getTaskGroup(groupId);
     if (!group) return undefined;
 
-    // group.getTask(id) returns Task<any, any, ActualSchemaInputType> | undefined
-    // We cast to the user-specified PayloadType and ResultType, while maintaining ActualSchemaInputType for the schema part.
-    return group.getTask(id) as Task<PayloadType, ResultType, SchemaHandler> | undefined;
+    // Use getTask since key is now the same as ID
+    return group.getTask(key as any) as Task<PayloadType, ResultType, SchemaHandler> | undefined;
   }
 
-  public getTaskByKey<
+  public getTask<
     G extends keyof TGroups,
     SpecificTaskGroup extends TGroups[G] = TGroups[G],
     TaskName extends keyof SpecificTaskGroup['tasks'] = keyof SpecificTaskGroup['tasks'],
@@ -212,17 +211,16 @@ export class ToroTask<
   }
 
   /**
-   * Gets a task in the specified group with the provided data.
+   * Gets a task in the specified group with the provided path.
    *
-   * @param taskPath The path of the task to run in format group.task.
-   * @param data The data to pass to the task.
-   * @returns A promise that resolves to the Job instance.
+   * @param taskPath The path of the task to get in format group.task.
+   * @returns The Task instance if found, otherwise undefined.
    */
   public getTaskByPath<PayloadType = any, ResultType = unknown>(
     taskKey: `${string}.${string}`
   ): Task<PayloadType, ResultType, SchemaHandler> | undefined {
-    const [groupId, taskId] = taskKey.split('.');
-    return this.getTask<PayloadType, ResultType>(groupId, taskId);
+    const [groupId, taskKey_] = taskKey.split('.');
+    return this._getTask<PayloadType, ResultType>(groupId, taskKey_);
   }
 
   /**
@@ -268,20 +266,21 @@ export class ToroTask<
   }
 
   /**
-   * Runs a task in the specified group with the provided data.
+   * Runs a task in the specified group with the provided data (internal method).
    *
    * @param groupId The id of the task group.
    * @param taskId The id of the task to run.
    * @param data The data to pass to the task.
    * @returns A promise that resolves to the Job instance.
+   * @internal
    */
-  async runTask<PayloadType = any, ResultType = any>(
+  private async _runTask<PayloadType = any, ResultType = any>(
     groupId: string,
     taskId: string,
     payload: PayloadType,
     options?: TaskJobOptions
   ) {
-    const task = this.getTask<PayloadType, ResultType>(groupId, taskId);
+    const task = this._getTask<PayloadType, ResultType>(groupId, taskId);
     if (task) {
       return await task.run(payload);
     }
@@ -303,7 +302,7 @@ export class ToroTask<
    */
   async runTaskByPath<PayloadType = any, ResultType = any>(taskPath: `${string}.${string}`, payload: PayloadType) {
     const [groupId, taskId] = taskPath.split('.');
-    return this.runTask<PayloadType, ResultType>(groupId, taskId, payload);
+    return this._runTask<PayloadType, ResultType>(groupId, taskId, payload);
   }
 
   /**
@@ -314,8 +313,7 @@ export class ToroTask<
    * @param data The data to pass to the task.
    * @returns A promise that resolves to the Job instance.
    */
-
-  async runTaskByKey<
+  async runTask<
     G extends keyof TGroups,
     SpecificTaskGroup extends TGroups[G] = TGroups[G],
     TaskName extends keyof SpecificTaskGroup['tasks'] = keyof SpecificTaskGroup['tasks'],
@@ -326,8 +324,8 @@ export class ToroTask<
     ActualPayload extends Payload = Payload,
   >(groupId: G, taskName: TaskName, payload: ActualPayload): Promise<TaskJob<ActualPayload, Result>> {
     const group = this.taskGroups[groupId];
-    if (group && group.runTaskByKey) {
-      return group.runTaskByKey<string, ActualTask, ActualPayload>(taskName as string, payload);
+    if (group && group.runTask) {
+      return group.runTask<string, ActualTask, ActualPayload>(taskName as string, payload);
     } else {
       throw new Error(`Task group "${groupId as string}" not found.`);
     }

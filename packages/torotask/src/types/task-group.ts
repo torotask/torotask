@@ -8,16 +8,11 @@ export type TaskGroupRegistry<TGroupDefs extends TaskGroupDefinitionRegistry> = 
 };
 
 /**
- * Defines a task group with a name and task definitions
+ * Defines a task group with task definitions
  *
  * @template TDefs The type of task definitions contained in this group
  */
 export interface TaskGroupDefinition<TDefs extends TaskDefinitionRegistry> {
-  /**
-   * The name of the task group
-   */
-  id?: string;
-
   /**
    * The task definitions contained in this group
    */
