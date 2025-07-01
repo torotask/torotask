@@ -1,0 +1,96 @@
+import { createSchema, defineTask } from 'torotask';
+import { server, getStep } from '../../server.js';
+import { taskGroups } from '../index.js';
+import { getTypedStep } from 'torotask';
+
+export const helloTask = defineTask({
+  id: 'hello-task',
+  options: {
+    attempts: 3,
+    backoff: {
+      type: 'exponential',
+      delay: 1000,
+    },
+  },
+  triggers: [
+    {
+      type: 'every',
+      every: '5 minutes',
+      payload: {
+        name: 'Hello World',
+        createdAt: new Date(),
+      },
+    },
+    //{
+    //    type: 'cron',
+    //      cron: '27 */1 * * *',
+    //},
+    { type: 'event', event: 'item.update' },
+    { type: 'event', event: 'item.create' },
+  ],
+  schema: createSchema((z) =>
+    z.object({
+      name: z.string().min(1).max(100),
+      age: z.number().optional(), // Optional field
+      email: z.string().email().optional(), // Optional field
+      isActive: z.boolean().default(true).optional(), // Default value
+      createdAt: z.coerce.date().default(() => new Date()), // Default to current date
+      tags: z.array(z.string()).optional(), // Optional array of strings
+    })
+  ),
+  handler: async (options, context) => {
+    const { payload } = options;
+    const { logger, job } = context;
+    const step = getStep(context, 'exampleGroup');
+
+    console.log('payload', payload);
+    const _result1 = await step.do('first-step', async () => {
+      logger.info(`Running first step with job data: ${JSON.stringify(job.payload)}`);
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      return 'First step completed';
+    });
+
+    const _newItem = await step.runTaskAndWait('rtest', 'exampleGroup', 'newTask', { lastname: 'Hello World' });
+
+    //await step.sleep('sleep-step', 10000);
+    const subTask = await step.runFlows('flow', [
+      {
+        taskGroup: 'exampleGroup',
+        taskName: 'newTask',
+        payload: {
+          lastname: 'Hello World',
+        },
+        children: [
+          {
+            taskGroup: 'exampleGroup',
+            taskName: 'batchTask',
+            payload: {
+              name: 'test',
+            },
+          },
+        ],
+      },
+    ]);
+    await step.waitForChildTasks('subtask');
+
+    console.log('subTask', subTask);
+
+    await step.do('first-step', async () => {
+      const result = 'Second step completed';
+      logger.info(`Subtask result: ${subTask}`);
+      logger.info(`Running second step with job data: ${JSON.stringify(job.payload)}`);
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      return result;
+    });
+
+    logger.info(`Handler received job data: ${JSON.stringify(payload)}`);
+
+    const message = `Hello, ${payload.name}!`;
+    logger.info(`Processed message: ${message}`);
+
+    // Simulate some async work
+    await new Promise((resolve) => setTimeout(resolve, 100));
+
+    return message; // Return a result
+  },
+});

@@ -5,12 +5,7 @@
     "rootDir": "./src",
     "tsBuildInfoFile": ".tsbuildinfo"
   },
-  "include": [
-    "src/**/*.ts",
-    "src/**/*.d.ts",
-    "src/tasks/exampleGroup/sayHello.task.ts2",
-    "src/tasks/exampleGroup/batch.task.ts2"
-  ],
+  "include": ["src/**/*.ts", "src/**/*.d.ts"],
   "exclude": ["node_modules", "dist"],
   "references": [{ "path": "../../packages/torotask" }]
 }

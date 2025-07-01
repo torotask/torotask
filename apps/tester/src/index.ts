@@ -1,14 +1,19 @@
 import { server, logger } from './server.js';
 
 const main = async () => {
-  const tasks = await server.loadTasksFromDirectory('./tasks');
-  logger.debug({ tasks }, 'Loaded tasks');
+  // This would return undefined for unknown groups
+  // server.taskGroups['unknownGroup']?.tasks['batchTask']?.stopWorker(); // Safe - returns undefined
 
   await server.start();
 
-  await server.events.send('item.delete', {});
-  await server.events.send('item.create', {});
-  await server.runTaskByKey('exampleGroup.new-task', {});
+  const _result = await server.taskGroups['exampleGroup'].tasks['batchTask'].runAndWait({
+    name: 'test',
+  });
+
+  // Example invocations (optional, for testing)
+  //  await server.events.send('item.delete', {});
+  //  await server.events.send('item.create', {});
+
   // Start the worker AFTER defining functions
   /*  logger.info({ queueName: queue.name }, 'Worker starting');
 
