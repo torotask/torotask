@@ -11,6 +11,9 @@ export const helloTask = defineTask({
       type: 'exponential',
       delay: 1000,
     },
+    deduplication: {
+      id: 'test',
+    },
   },
   triggers: [
     {
@@ -81,6 +84,17 @@ export const helloTask = defineTask({
       logger.info(`Running second step with job data: ${JSON.stringify(job.payload)}`);
       await new Promise((resolve) => setTimeout(resolve, 100));
       return result;
+    });
+
+    await step.runTask('test', 'exampleGroup', 'helloTask', {
+      age: 30,
+      name: 'Test User',
+      createdAt: new Date(),
+    });
+
+    await step.runGroupTask('test', 'helloTask', {
+      name: 'Test User',
+      createdAt: new Date(),
     });
 
     logger.info(`Handler received job data: ${JSON.stringify(payload)}`);

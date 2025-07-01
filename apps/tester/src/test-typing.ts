@@ -3,6 +3,15 @@ import { server } from './server.js';
 // A valid group should have no errors
 const validGroup = server.taskGroups.exampleGroup;
 
+server.runFlow({
+  taskGroup: 'differentGroup',
+  taskName: 'realTask',
+  payload: {
+    lastname: 'test',
+    createdAt: new Date(),
+  },
+});
+
 const _task2 = server.getTask('differentGroup', 'realTask');
 
 validGroup.getTask('helloTask')?.run({
