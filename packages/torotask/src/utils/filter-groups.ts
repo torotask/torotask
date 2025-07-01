@@ -14,17 +14,17 @@ export function filterGroups<
   const groupsToProcessSet = new Set<TaskGroup<any, any>>();
   const notFoundKeys: Array<Extract<keyof TGroups, string>> = [];
 
-  let requestedByKeyCount = 0;
+  let requestedByIdCount = 0;
 
-  // Process groups by key
-  if (filter?.groupsByKey && filter.groupsByKey.length > 0) {
-    requestedByKeyCount = filter.groupsByKey.length;
-    filter.groupsByKey.forEach((key) => {
-      const group = server.taskGroups[key as keyof TGroupDefs];
+  // Process groups by id
+  if (filter?.groupsById && filter.groupsById.length > 0) {
+    requestedByIdCount = filter.groupsById.length;
+    filter.groupsById.forEach((id) => {
+      const group = server.taskGroups[id as keyof TGroupDefs];
       if (group) {
         groupsToProcessSet.add(group);
       } else {
-        notFoundKeys.push(key);
+        notFoundKeys.push(id);
       }
     });
   }
@@ -32,16 +32,16 @@ export function filterGroups<
   const groupsToProcessArray = Array.from(groupsToProcessSet);
 
   // If no filter is provided, or filter is empty, get all groups
-  if (requestedByKeyCount === 0 && (!filter || (filter.groupsByKey?.length ?? 0) === 0)) {
+  if (requestedByIdCount === 0 && (!filter || (filter.groupsById?.length ?? 0) === 0)) {
     return Object.values(server.taskGroups) as Array<TaskGroup<any, any>>;
   }
 
   // Logging for missing groups
   if (notFoundKeys.length > 0) {
     const missingDetails: any = {};
-    missingDetails.missingKeys = notFoundKeys.map(String);
-    missingDetails.requestedByKey = requestedByKeyCount;
-    missingDetails.foundByKey = requestedByKeyCount - notFoundKeys.length;
+    missingDetails.missingIds = notFoundKeys.map(String);
+    missingDetails.requestedById = requestedByIdCount;
+    missingDetails.foundById = requestedByIdCount - notFoundKeys.length;
 
     server.logger.warn(
       {
@@ -53,16 +53,16 @@ export function filterGroups<
     );
   }
 
-  if (groupsToProcessArray.length === 0 && requestedByKeyCount > 0) {
+  if (groupsToProcessArray.length === 0 && requestedByIdCount > 0) {
     const filterCriteria: string[] = [];
-    if (filter?.groupsByKey?.length) {
-      filterCriteria.push(`keys: ${filter.groupsByKey.map(String).join(', ')}`);
+    if (filter?.groupsById?.length) {
+      filterCriteria.push(`ids: ${filter.groupsById.map(String).join(', ')}`);
     }
     server.logger.info(
       { filter: filterCriteria.length > 0 ? filterCriteria.join('; ') : 'all specified', context: actionContext },
       `No matching groups found to ${actionContext}.`
     );
-  } else if (groupsToProcessArray.length === 0 && requestedByKeyCount === 0) {
+  } else if (groupsToProcessArray.length === 0 && requestedByIdCount === 0) {
     server.logger.info({ context: actionContext }, `No groups available to ${actionContext}.`);
   }
 

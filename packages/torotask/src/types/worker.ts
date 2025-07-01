@@ -29,11 +29,11 @@ export interface WorkerFilterTasks<
   TTasks extends TaskRegistry<TaskDefinitionRegistry>,
   TTaskKeys extends keyof TTasks = keyof TTasks,
 > {
-  tasksByKey?: Array<TTaskKeys extends string ? TTaskKeys : never>;
+  tasksById?: Array<TTaskKeys extends string ? TTaskKeys : never>;
 }
 export interface WorkerFilterGroups<
   TGroups extends TaskGroupRegistry<TaskGroupDefinitionRegistry>,
   TGroupKeys extends string = Extract<keyof TGroups, string>,
 > {
-  groupsByKey?: Array<TGroupKeys extends string ? TGroupKeys : never>;
+  groupsById?: Array<TGroupKeys extends string ? TGroupKeys : never>;
 }

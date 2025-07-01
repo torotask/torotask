@@ -27,9 +27,9 @@ export class TaskGroup<
   public readonly logger: Logger;
 
   /**
-   * Collection of tasks indexed by their definition keys.
-   * The key IS the task ID - no separation between key and ID.
-   * This provides strict typing based on the definition keys.
+   * Collection of tasks indexed by their definition IDs.
+   * The ID IS the task ID - no separation between key and ID.
+   * This provides strict typing based on the definition IDs.
    */
   public tasks: TTasks;
 
@@ -49,10 +49,10 @@ export class TaskGroup<
 
     this.tasks = {} as TTasks; // Initialize tasks
     if (definitions) {
-      for (const key of Object.keys(definitions) as Array<Extract<keyof TDefs, string>>) {
-        const definition = definitions[key]; // definition is TDefs[key]
-        // Add the ID to the config if it doesn't have one (or use the key as the ID)
-        this.createTask(key, definition as TDefs[Extract<keyof TDefs, string>]);
+      for (const id of Object.keys(definitions) as Array<Extract<keyof TDefs, string>>) {
+        const definition = definitions[id]; // definition is TDefs[id]
+        // Add the ID to the config if it doesn't have one (or use the id as the ID)
+        this.createTask(id, definition as TDefs[Extract<keyof TDefs, string>]);
       }
     }
   }
@@ -64,42 +64,42 @@ export class TaskGroup<
    */
   createTask<TaskId extends Extract<keyof TDefs, string>>(
     // Config is the specific definition from TDefs
-    key: string,
+    id: string,
     config: TDefs[TaskId]
   ): TTasks[TaskId] {
     // Return type is the specific task type from TTasks
     // Generics for Task <P,R,S> are inferred from config (TDefs[TaskId])
     // because Task constructor takes config: TaskDefinition<P,R,S>
 
-    const taskDefinitionKey = key as Extract<keyof TDefs, string>;
+    const taskDefinitionId = id as Extract<keyof TDefs, string>;
 
     const task = new Task(
       this as any, // Pass the TaskGroup instance
-      key, // Use key directly as the task ID
+      id, // Use id directly as the task ID
       config, // Pass the original config (typed as TDefs[TaskId])
-      this.logger.child({ task: key }) // Use key for logger
+      this.logger.child({ task: id }) // Use id for logger
     );
 
-    if (this.tasks[taskDefinitionKey]) {
-      this.logger.warn({ taskKey: taskDefinitionKey }, 'Task already defined in this group. Overwriting.');
+    if (this.tasks[taskDefinitionId]) {
+      this.logger.warn({ taskId: taskDefinitionId }, 'Task already defined in this group. Overwriting.');
     }
 
-    // Register by definition key (TaskId) in the type-safe map
-    this.tasks[taskDefinitionKey] = task as TTasks[TaskId];
+    // Register by definition id (TaskId) in the type-safe map
+    this.tasks[taskDefinitionId] = task as TTasks[TaskId];
 
-    this.logger.debug({ taskKey: taskDefinitionKey }, 'Task defined');
+    this.logger.debug({ taskId: taskDefinitionId }, 'Task defined');
     return task as TTasks[TaskId];
   }
 
   /**
    * Retrieves a defined Task by its definition name.
    *
-   * @param key The definition name (key from TDefs, e.g., 'myTask'). Must be a key of TTasks.
-   * @returns The specifically typed Task instance (TTasks[Key]) if found, otherwise undefined.
+   * @param id The definition name (id from TDefs, e.g., 'myTask'). Must be an id of TTasks.
+   * @returns The specifically typed Task instance (TTasks[Id]) if found, otherwise undefined.
    */
-  getTask<Key extends Extract<keyof TTasks, string>>(key: Key): TTasks[Key] | undefined {
-    if (Object.prototype.hasOwnProperty.call(this.tasks, key)) {
-      return this.tasks[key];
+  getTask<Id extends Extract<keyof TTasks, string>>(id: Id): TTasks[Id] | undefined {
+    if (Object.prototype.hasOwnProperty.call(this.tasks, id)) {
+      return this.tasks[id];
     }
     return undefined;
   }
@@ -155,13 +155,13 @@ export class TaskGroup<
    */
   async startWorkers(filter?: WorkerFilterTasks<TTasks>, workerOptions?: WorkerOptions): Promise<void> {
     const actionContext = 'starting';
-    this.logger.debug({ filter: filter?.tasksByKey?.join(', ') ?? 'all' }, `${actionContext} workers for task group`);
+    this.logger.debug({ filter: filter?.tasksById?.join(', ') ?? 'all' }, `${actionContext} workers for task group`);
 
     // Use the helper method to get tasks
     const tasksToStart = filterGroupTasks<TDefs, TTasks>(this, filter, actionContext);
 
     if (tasksToStart.length === 0) {
-      this.logger.info({ filter: filter?.tasksByKey?.join(', ') ?? 'all' }, 'No tasks found to start workers for.');
+      this.logger.info({ filter: filter?.tasksById?.join(', ') ?? 'all' }, 'No tasks found to start workers for.');
       return;
     }
 
@@ -200,13 +200,13 @@ export class TaskGroup<
     filter?: WorkerFilterTasks<TTasks>
   ): Promise<void> {
     const actionContext = 'stopping';
-    this.logger.info({ filter: filter?.tasksByKey?.join(', ') ?? 'all' }, `${actionContext} workers for task group`);
+    this.logger.info({ filter: filter?.tasksById?.join(', ') ?? 'all' }, `${actionContext} workers for task group`);
 
     // Use the helper method to get tasks
     const tasksToStop = filterGroupTasks<TDefs, TTasks>(this, filter, actionContext);
 
     if (tasksToStop.length === 0) {
-      this.logger.info({ filter: filter?.tasksByKey?.join(', ') ?? 'all' }, 'No tasks found to stop workers for.');
+      this.logger.info({ filter: filter?.tasksById?.join(', ') ?? 'all' }, 'No tasks found to stop workers for.');
       return;
     }
 
@@ -245,7 +245,7 @@ export class TaskGroup<
   ): Promise<void> {
     const actionContext = 'closing';
     this.logger.info(
-      { group: this.id, filter: filter?.tasksByKey?.join(', ') ?? 'all' },
+      { group: this.id, filter: filter?.tasksById?.join(', ') ?? 'all' },
       `Attempting to ${actionContext} task(s)`
     );
 

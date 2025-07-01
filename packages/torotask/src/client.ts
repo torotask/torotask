@@ -85,17 +85,17 @@ export class ToroTask<
     const groupCount = Object.keys(taskGroupDefinitions).length;
     this.logger.debug({ groupCount }, 'Initializing task groups from definitions');
 
-    for (const [groupKey, groupDef] of Object.entries(taskGroupDefinitions)) {
+    for (const [groupId, groupDef] of Object.entries(taskGroupDefinitions)) {
       const typedGroupDef = groupDef as TaskGroupDefinition<any>;
 
-      // Use groupKey directly as the group ID
-      const group = this.createTaskGroup(groupKey, typedGroupDef.tasks);
-      this.taskGroups[groupKey as keyof TAllTaskGroupsDefs] = group as any;
+      // Use groupId directly as the group ID
+      const group = this.createTaskGroup(groupId, typedGroupDef.tasks);
+      this.taskGroups[groupId as keyof TAllTaskGroupsDefs] = group as any;
 
       const taskCount = Object.keys(typedGroupDef.tasks).length;
       this.logger.debug(
         {
-          groupId: groupKey,
+          groupId: groupId,
           taskCount,
         },
         'Task group initialized'
@@ -152,51 +152,51 @@ export class ToroTask<
    * Creates or retrieves a TaskGroup instance.
    */
   public createTaskGroup<TDefs extends TaskDefinitionRegistry>(
-    key: string,
+    id: string,
     definitions?: TDefs
   ): TaskGroup<TDefs, TaskRegistry<TDefs>> {
-    if (this.taskGroups[key as keyof TGroups]) {
-      return this.taskGroups[key as keyof TGroups] as TaskGroup<TDefs, TaskRegistry<TDefs>>;
+    if (this.taskGroups[id as keyof TGroups]) {
+      return this.taskGroups[id as keyof TGroups] as TaskGroup<TDefs, TaskRegistry<TDefs>>;
     }
-    this.logger.debug({ taskGroupKey: key }, 'Creating new TaskGroup');
-    const newTaskGroup = new TaskGroup<TDefs, TaskRegistry<TDefs>>(this, key, this.logger, definitions);
-    this.taskGroups[key as keyof TGroups] = newTaskGroup as any;
+    this.logger.debug({ taskGroupId: id }, 'Creating new TaskGroup');
+    const newTaskGroup = new TaskGroup<TDefs, TaskRegistry<TDefs>>(this, id, this.logger, definitions);
+    this.taskGroups[id as keyof TGroups] = newTaskGroup as any;
     return newTaskGroup;
   }
 
   /**
-   * Retrieves an existing TaskGroup instance by key.
+   * Retrieves an existing TaskGroup instance by id.
    */
   public getTaskGroup<G extends keyof TGroups, SpecificTaskGroup extends TGroups[G] = TGroups[G]>(
-    key: G
+    id: G
   ): SpecificTaskGroup | undefined {
-    return this.taskGroups[key] as SpecificTaskGroup;
+    return this.taskGroups[id] as SpecificTaskGroup;
   }
 
   /**
-   * Retrieves an existing Task instance by group and key (internal method).
-   * Note: This method now uses the task key since we've unified key and ID concepts.
+   * Retrieves an existing Task instance by group and id (internal method).
+   * Note: This method now uses the task id since we've unified key and ID concepts.
    * @internal
    */
   private _getTask<PayloadType = any, ResultType = unknown>(
-    groupKey: string,
-    taskKey: string
+    groupId: string,
+    taskId: string
   ): Task<PayloadType, ResultType, SchemaHandler> | undefined {
-    const group = this.getTaskGroup(groupKey as any);
+    const group = this.getTaskGroup(groupId as any);
     if (!group) return undefined;
 
-    // Use getTask since key is now the same as ID
-    return group.getTask(taskKey as any) as Task<PayloadType, ResultType, SchemaHandler> | undefined;
+    // Use getTask since id is now the same as ID
+    return group.getTask(taskId as any) as Task<PayloadType, ResultType, SchemaHandler> | undefined;
   }
 
   public getTask<
     G extends keyof TGroups,
     SpecificTaskGroup extends TGroups[G] = TGroups[G],
     TaskName extends keyof SpecificTaskGroup['tasks'] = keyof SpecificTaskGroup['tasks'],
-  >(groupKey: G, taskKey: TaskName): SpecificTaskGroup['tasks'][TaskName] | undefined {
-    const group = this.taskGroups[groupKey];
-    if (group && group.tasks && Object.prototype.hasOwnProperty.call(group.tasks, taskKey)) {
-      return group.tasks[taskKey as any] as any;
+  >(groupId: G, taskId: TaskName): SpecificTaskGroup['tasks'][TaskName] | undefined {
+    const group = this.taskGroups[groupId];
+    if (group && group.tasks && Object.prototype.hasOwnProperty.call(group.tasks, taskId)) {
+      return group.tasks[taskId as any] as any;
     }
     return undefined;
   }
@@ -210,8 +210,8 @@ export class ToroTask<
   public getTaskByPath<PayloadType = any, ResultType = unknown>(
     taskPath: `${string}.${string}`
   ): Task<PayloadType, ResultType, SchemaHandler> | undefined {
-    const [groupKey, taskKey] = taskPath.split('.');
-    return this._getTask<PayloadType, ResultType>(groupKey, taskKey);
+    const [groupId, taskId] = taskPath.split('.');
+    return this._getTask<PayloadType, ResultType>(groupId, taskId);
   }
 
   /**
@@ -287,7 +287,7 @@ export class ToroTask<
   /**
    * Runs a task in the specified group with the provided data.
    *
-   * @param taskPath The key of the task to run in format group.task.
+   * @param taskPath The id of the task to run in format group.task.
    * @param data The data to pass to the task.
    * @returns A promise that resolves to the Job instance.
    */
@@ -299,7 +299,7 @@ export class ToroTask<
   /**
    * Runs a task in the specified group with the provided data.
    *
-   * @param groupKey The key of the task group.
+   * @param groupId The id of the task group.
    * @param taskName The name of the task to run.
    * @param data The data to pass to the task.
    * @returns A promise that resolves to the Job instance.
