@@ -1,3 +1,58 @@
+## 0.7.0 (2025-07-01)
+
+### 🚀 Features
+
+- allow payload type to be inferred from schema ([5ba1072](https://github.com/torotask/torotask/commit/5ba1072))
+- add typing to step.runTask via helper function ([e87dc7a](https://github.com/torotask/torotask/commit/e87dc7a))
+- add jobById method for client ([22cb2d2](https://github.com/torotask/torotask/commit/22cb2d2))
+- add client property to step executor ([744ad31](https://github.com/torotask/torotask/commit/744ad31))
+- **client:** adjust all classes to use TaskJob’s payload and state ([df3aa08](https://github.com/torotask/torotask/commit/df3aa08))
+- **client:** add new stepExecutor class ([7024c94](https://github.com/torotask/torotask/commit/7024c94))
+- **client:** add datetime and duration helpers for tasks and steps ([7b6fa15](https://github.com/torotask/torotask/commit/7b6fa15))
+- **client:** set taskClient and task on job if possible ([68d8762](https://github.com/torotask/torotask/commit/68d8762))
+- **flow:** add typing for Flows ([613ae22](https://github.com/torotask/torotask/commit/613ae22))
+- **schema:** add helper function for creating schema ([b151132](https://github.com/torotask/torotask/commit/b151132))
+- **server:** adjust all classes to use TaskJob’s payload and state ([ff08d20](https://github.com/torotask/torotask/commit/ff08d20))
+- **step:** add startGroupTask method ([beb0c2c](https://github.com/torotask/torotask/commit/beb0c2c))
+- **steps:** ensure job instances are memoized safely and  are compact ([4bc3866](https://github.com/torotask/torotask/commit/4bc3866))
+- **steps:** add runTasks (bulk) support ([b7dd0a2](https://github.com/torotask/torotask/commit/b7dd0a2))
+- **task:** relay worker queue events on base task ([4a78afb](https://github.com/torotask/torotask/commit/4a78afb))
+- **task:** get payload type inferral working ([7618036](https://github.com/torotask/torotask/commit/7618036))
+- **task:** add option to skip schema validation ([d35f9e3](https://github.com/torotask/torotask/commit/d35f9e3))
+- **task-group:** allow task creation in constructor ([7e7acde](https://github.com/torotask/torotask/commit/7e7acde))
+- **task-group:** add typed runTask ([3227aca](https://github.com/torotask/torotask/commit/3227aca))
+- **task-groups:** add task group registry ([a8c7b75](https://github.com/torotask/torotask/commit/a8c7b75))
+- **task-groups:** add typing for tasks in task groups ([11a920d](https://github.com/torotask/torotask/commit/11a920d))
+- **task-run:** create task-run class, a proxy around job ([b46d80b](https://github.com/torotask/torotask/commit/b46d80b))
+- **tasks:** add/improve helper methods for task groups ([96a9bd9](https://github.com/torotask/torotask/commit/96a9bd9))
+
+### 🩹 Fixes
+
+- resolve type issues around job and worker process ([0685230](https://github.com/torotask/torotask/commit/0685230))
+- make sure job date (payload, state) is getting added correctly ([a9ead78](https://github.com/torotask/torotask/commit/a9ead78))
+- better error handling for step execution ([c058d07](https://github.com/torotask/torotask/commit/c058d07))
+- simplify WaitForChildren error ([60ebe8b](https://github.com/torotask/torotask/commit/60ebe8b))
+- simplify error handling in steps, use native BullMQ errors ([6271a84](https://github.com/torotask/torotask/commit/6271a84))
+- swap logger.info for logger.debug, make it less verbose ([a7f0dca](https://github.com/torotask/torotask/commit/a7f0dca))
+- **client:** resolve uncompleted batch child jobs due to not passing back promise ([480c947](https://github.com/torotask/torotask/commit/480c947))
+- **client:** don’t use task.name for job name as that is the queue ([790a8a3](https://github.com/torotask/torotask/commit/790a8a3))
+- **client:** get step executor to mostly working state ([695197e](https://github.com/torotask/torotask/commit/695197e))
+- **client:** remove waiting for event status ([f2cbfe8](https://github.com/torotask/torotask/commit/f2cbfe8))
+- **queue:** cast JobOptions, since they are converted later. ([07bed34](https://github.com/torotask/torotask/commit/07bed34))
+- **server:** make sure schema gets passed in during creation ([1602102](https://github.com/torotask/torotask/commit/1602102))
+- **server:** make sure unhandledExceptions are caught by server. ([f695cea](https://github.com/torotask/torotask/commit/f695cea))
+- **steps:** resolve issues with step run task function typing ([de7f8c7](https://github.com/torotask/torotask/commit/de7f8c7))
+- **task:** update defineTask to work with new schema inferred payload ([549f282](https://github.com/torotask/torotask/commit/549f282))
+- **task:** make sure trigger payloads don’t affect handler payload. ([4486604](https://github.com/torotask/torotask/commit/4486604))
+- **task:** remove partial from trigger payload ([d6f7ccb](https://github.com/torotask/torotask/commit/d6f7ccb))
+- **task:** prevent task from failing for allowed control errors. ([98cea17](https://github.com/torotask/torotask/commit/98cea17))
+- **task-groups:** store the tasks by key and id correctly ([6154839](https://github.com/torotask/torotask/commit/6154839))
+- **tasks:** fix type checking on taskGroup.tasks ([0631990](https://github.com/torotask/torotask/commit/0631990))
+
+### ❤️ Thank You
+
+- Ben Osman @benosman
+
 ## 0.6.0 (2025-05-02)
 
 ### 🚀 Features
