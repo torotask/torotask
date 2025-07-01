@@ -36,5 +36,4 @@ export interface WorkerFilterGroups<
   TGroupKeys extends string = Extract<keyof TGroups, string>,
 > {
   groupsByKey?: Array<TGroupKeys extends string ? TGroupKeys : never>;
-  groupsById?: Array<string>;
 }
