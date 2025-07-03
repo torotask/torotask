@@ -492,7 +492,7 @@ export class StepExecutor<
     userStepId: string,
     groupName: GroupName,
     taskName: TaskName,
-    tasks: StepBulkJob<ActualPayload>[],
+    tasks: Array<{ name?: string; payload?: ActualPayload; options?: StepTaskJobOptions }>,
     options?: StepTaskJobOptions
   ): Promise<TJob[]> {
     return this._executeStep<TJob[]>(userStepId, 'runTasks', async (_internalStepId: string) => {
