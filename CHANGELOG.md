@@ -1,3 +1,13 @@
+## 0.7.1 (2025-07-03)
+
+### 🩹 Fixes
+
+- **steps:** ensure typing works with runTasks ([8c00f4c](https://github.com/torotask/torotask/commit/8c00f4c))
+
+### ❤️ Thank You
+
+- Ben Osman @benosman
+
 ## 0.7.0 (2025-07-01)
 
 ### 🚀 Features
