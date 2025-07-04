@@ -1,3 +1,17 @@
+## 0.7.2 (2025-07-04)
+
+### 🚀 Features
+
+- enable clients to subscribe to active events ([d9311ab](https://github.com/torotask/torotask/commit/d9311ab))
+
+### 🩹 Fixes
+
+- store payload rather than data for events ([ff8695e](https://github.com/torotask/torotask/commit/ff8695e))
+
+### ❤️ Thank You
+
+- Ben Osman @benosman
+
 ## 0.7.1 (2025-07-03)
 
 ### 🩹 Fixes
