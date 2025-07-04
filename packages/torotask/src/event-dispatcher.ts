@@ -22,6 +22,8 @@ type ReturnType = any;
 export class EventDispatcher extends TaskWorkerQueue<PayloadType, ReturnType> {
   public manager: EventManager;
   public activeEvents: Set<string> = new Set(); // Use Set for efficient lookups
+  public subscribedToActiveEvents = false; // Track if we are subscribed to active events
+  public disableSubscription = false; // Flag to disable subscription to active events
   private setActiveEventsDebounced: () => void;
   private setActiveEventsTimeout: NodeJS.Timeout | null = null;
 
@@ -43,11 +45,11 @@ export class EventDispatcher extends TaskWorkerQueue<PayloadType, ReturnType> {
     };
   }
 
-  /**
-   * Starts the event manager before the event dispatcher
-   */
-  async startWorker(options?: WorkerOptions) {
-    await this.manager.startWorker();
+  async subscribeToActiveEvents() {
+    if (this.subscribedToActiveEvents) {
+      return;
+    }
+
     await this.setActiveEvents();
 
     this.manager.queueEvents.on('completed', ({ jobId, returnvalue }) => {
@@ -71,6 +73,17 @@ export class EventDispatcher extends TaskWorkerQueue<PayloadType, ReturnType> {
       }
     });
 
+    this.subscribedToActiveEvents = true;
+  }
+
+  /**
+   * Starts the event manager before the event dispatcher
+   */
+  async startWorker(options?: WorkerOptions) {
+    await this.manager.startWorker();
+    if (!this.disableSubscription) {
+      await this.subscribeToActiveEvents();
+    }
     // Now start the actual worker for this dispatcher's queue
     return super.startWorker(options);
   }
@@ -151,6 +164,12 @@ export class EventDispatcher extends TaskWorkerQueue<PayloadType, ReturnType> {
       throw new Error('Event name cannot be empty.');
     }
     const jobName = eventName.trim(); // Use event name as job name
+
+    if (this.disableSubscription) {
+      await this.setActiveEvents(); // Ensure we have the latest active events
+    } else {
+      await this.subscribeToActiveEvents(); // Ensure we are subscribed to active events
+    }
 
     // --- Check local cache for active subscribers before adding job ---
     if (!this.activeEvents.has(jobName)) {
