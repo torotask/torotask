@@ -339,18 +339,12 @@ export abstract class BaseTask<
     this.currentEventTriggers.forEach((trigger) => {
       // Ensure event field exists before pushing
       if (trigger.event) {
-        const data = trigger.payload
-          ? {
-              payload: trigger.payload,
-            }
-          : undefined;
-
         desiredSubscriptions.push({
           taskGroup: this.group.id,
           taskId: this.id,
           triggerId: trigger.internalId,
           eventId: trigger.event,
-          data,
+          payload: trigger.payload,
         });
       } else {
         this.logger.warn(

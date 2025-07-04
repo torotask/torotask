@@ -176,11 +176,11 @@ export class EventDispatcher extends TaskWorkerQueue<PayloadType, ReturnType> {
    */
   public async process(job: TaskJob): Promise<void> {
     const eventName = job.name;
-    const eventData = job.data;
+    const eventPayload = job.payload;
     const jobLogger = this.logger.child({ jobId: job.id, eventName });
 
     jobLogger.debug(
-      { hasData: eventData !== undefined },
+      { hasPayload: eventPayload !== undefined },
       'Processing event job, querying Redis Hash for subscribers via EventManager...'
     );
 
@@ -225,12 +225,12 @@ export class EventDispatcher extends TaskWorkerQueue<PayloadType, ReturnType> {
           );
           continue; // Skip this subscription if queue cannot be obtained
         }
-        const mergedData = {
-          ...eventData,
-          ...subInfo.data,
+        const mergedPayload = {
+          ...eventPayload,
+          ...subInfo.payload,
         };
         if (taskInstance) {
-          dispatchPromises.push(taskInstance.run(mergedData));
+          dispatchPromises.push(taskInstance.run(mergedPayload));
         } else {
           jobLogger.error(
             { taskGroup: subInfo.taskGroup, taskId: subInfo.taskId },

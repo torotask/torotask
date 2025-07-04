@@ -6,7 +6,7 @@ export interface EventSubscriptionInfo {
   taskId: string;
   triggerId?: number;
   eventId?: string;
-  data?: Record<string, any>;
+  payload?: any;
 }
 
 export type RepeatOptionsWithoutKey = Omit<RepeatOptions, 'key'>;
