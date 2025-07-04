@@ -3,6 +3,7 @@ import type { TaskJob } from '../job.js'; // Your specific Job type
 import type { TaskJobData } from './job.js';
 import type { TaskQueueOptions } from './queue.js';
 import type { TaskProcessor } from './worker.js';
+import type { TaskWorkerOptions } from './worker.js';
 
 export type TaskWorkerQueueOptions<
   PayloadType = any,
@@ -10,6 +11,7 @@ export type TaskWorkerQueueOptions<
   NameType extends string = string,
 > = TaskQueueOptions & {
   processor?: string | URL | null | TaskProcessor<PayloadType, ResultType, NameType>;
+  workerOptions?: Partial<TaskWorkerOptions>;
 };
 // Combine Queue and Worker listeners with prefixing for worker events
 export interface TaskWorkerQueueListener<

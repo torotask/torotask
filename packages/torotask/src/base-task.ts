@@ -79,18 +79,19 @@ export abstract class BaseTask<
     this.taskClient = group.client;
     const { queueOptions, workerOptions, batch: batchOptions, ...jobsOptions } = options ?? {};
 
-    this.queue = new TaskWorkerQueue<PayloadType, ResultType, string>(this.taskClient, queueName, {
-      processor: this.process.bind(this),
-      ...queueOptions,
-    });
-
-    this.logger = logger;
-
     this.jobsOptions = jobsOptions;
     this.workerOptions = {
       batch: batchOptions,
       ...workerOptions,
     };
+
+    this.queue = new TaskWorkerQueue<PayloadType, ResultType, string>(this.taskClient, queueName, {
+      processor: this.process.bind(this),
+      workerOptions: this.workerOptions,
+      ...queueOptions,
+    });
+
+    this.logger = logger;
 
     // Initialize triggers and internal maps
     this._initializeTriggers(triggers);

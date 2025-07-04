@@ -17,6 +17,7 @@ export class TaskWorkerQueue<PayloadType = any, ResultType = any, NameType exten
   NameType
 > {
   public readonly queueEvents: TaskQueueEvents;
+  public workerOptions: Partial<TaskWorkerOptions> | undefined;
   protected worker?: TaskWorker<PayloadType, ResultType, NameType> | undefined;
   // Store listeners to remove them later
   private workerEventHandlers: Partial<WorkerEventHandlers<PayloadType, ResultType, NameType>> = {};
@@ -26,10 +27,11 @@ export class TaskWorkerQueue<PayloadType = any, ResultType = any, NameType exten
     name: string,
     public options?: Partial<TaskWorkerQueueOptions<PayloadType, ResultType, NameType>>
   ) {
-    const { processor, ...queueOptions } = options ?? {};
+    const { processor, workerOptions, ...queueOptions } = options ?? {};
     super(taskClient, name, queueOptions);
 
     this.queueEvents = new TaskQueueEvents(taskClient, this.name);
+    this.workerOptions = workerOptions;
   }
 
   /**
@@ -45,7 +47,7 @@ export class TaskWorkerQueue<PayloadType = any, ResultType = any, NameType exten
   }
 
   getWorkerOptions(): Partial<TaskWorkerOptions> {
-    return {};
+    return this.workerOptions ?? {};
   }
 
   /**
