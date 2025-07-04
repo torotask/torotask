@@ -1,3 +1,13 @@
+## 0.7.3 (2025-07-04)
+
+### 🩹 Fixes
+
+- **task:** ensure task worker options get passed to worker ([21151cb](https://github.com/torotask/torotask/commit/21151cb))
+
+### ❤️ Thank You
+
+- Ben Osman @benosman
+
 ## 0.7.2 (2025-07-04)
 
 ### 🚀 Features
