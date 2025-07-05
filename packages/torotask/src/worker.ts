@@ -2,7 +2,7 @@ import type { Job, WorkerOptions } from 'bullmq';
 import { Worker } from 'bullmq'; // Keep Worker import for extends
 import type { Logger } from 'pino';
 import type { ToroTask } from './client.js';
-import type { TaskWorkerOptions, TaskProcessor, TaskJobData } from './types/index.js';
+import type { TaskWorkerOptions, TaskProcessor, TaskValidator, TaskJobData } from './types/index.js';
 import { TaskJob } from './job.js';
 
 const BatchMaxStalledCount = 5;
@@ -29,6 +29,7 @@ export class TaskWorker<
     public readonly taskClient: ToroTask,
     name: string,
     processor?: string | URL | null | TaskProcessor<PayloadType, ResultType, NameType>,
+    protected validator?: null | TaskValidator<PayloadType, ResultType, NameType>,
     options?: Partial<TaskWorkerOptions>
   ) {
     if (!taskClient) {
@@ -96,6 +97,15 @@ export class TaskWorker<
     return options;
   }
 
+  protected async callValidateJob(job: TaskJob<PayloadType, ResultType, NameType>): Promise<PayloadType | undefined> {
+    // Don't validate batch job containers
+    if (this.validator && !job.isBatch) {
+      const validatedPayload = await this.validator(job);
+      job.payload = validatedPayload;
+      return validatedPayload;
+    }
+  }
+
   /**
    * If batching is enabled, this method is called to process a job.
    * Adds the job to the current batch, manages the timeout timer, triggers
@@ -106,12 +116,14 @@ export class TaskWorker<
    * @returns A promise that resolves/rejects when the batch containing this job completes/fails.
    */
 
-  protected callProcessJob(job: TaskJob<any, ResultType, NameType>, token: string): Promise<ResultType> {
+  protected async callProcessJob(job: TaskJob<any, ResultType, NameType>, token: string): Promise<ResultType> {
     const batchOptions = this.options.batch;
+    await this.callValidateJob(job);
     if (!this.isBatchingEnabled || !batchOptions || job.isBatch) {
       return super.callProcessJob(job, token);
+    } else {
+      return this.batchJobCollector(job as any, token) as any;
     }
-    return this.batchJobCollector(job as any, token) as any;
   }
 
   /**
@@ -127,6 +139,8 @@ export class TaskWorker<
       jobLogger.error('Critical internal error: batchJobCollector called but batchOptions are missing.');
       throw new Error('Batch options not configured.');
     }
+
+    //if (this.options.)
 
     this.jobBatch.push(job);
     try {

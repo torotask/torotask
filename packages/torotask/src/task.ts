@@ -1,4 +1,4 @@
-import { DelayedError, WaitingChildrenError } from 'bullmq';
+import { UnrecoverableError } from 'bullmq';
 import type { Logger } from 'pino';
 import * as z from 'zod';
 import { BaseTask } from './base-task.js';
@@ -171,6 +171,44 @@ export class Task<
     }
   }
 
+  async validateJob(job: TaskJob<ActualPayloadType, ResultType>, jobLogger?: Logger): Promise<ActualPayloadType> {
+    const effectiveJobLogger = jobLogger ?? this.getJobLogger(job);
+    effectiveJobLogger.debug('Validating job payload');
+
+    // Use CurrentPayloadType which is derived from the local EffectivePayloadType
+    type CurrentPayloadType = ActualPayloadType;
+
+    let result: CurrentPayloadType = job.payload;
+
+    // For non-batch jobs, no schema is defined or validation is skipped, return the payload as is
+    if (job.isBatch || !this.schema || this.options.skipSchemaValidation) {
+      return result;
+    }
+
+    try {
+      // Type assertion needed because this.schema is Schema (ZodSchema | undefined)
+      // and parse expects `this` to be ZodSchema<CurrentPayloadType>
+      result = (this.schema as z.ZodSchema<CurrentPayloadType>).parse(job.payload);
+      effectiveJobLogger.debug('Payload validated successfully.');
+    } catch (error) {
+      effectiveJobLogger.error(
+        {
+          err: error instanceof z.ZodError ? error.format() : error,
+          originalPayload: job.payload,
+        },
+        `Payload validation failed for job "${job.name}" (id: ${job.id})`
+      );
+      if (error instanceof z.ZodError) {
+        const messages = error.errors.map((e) => `${e.path.join('.') || 'payload'}: ${e.message}`);
+        throw new UnrecoverableError(`Payload validation failed: ${messages.join('; ')}`);
+      }
+      throw error;
+    }
+
+    job.payload = result;
+    return result;
+  }
+
   async processJob(
     job: TaskJob<ActualPayloadType, ResultType>,
     token?: string,
@@ -178,42 +216,18 @@ export class Task<
   ): Promise<ResultType> {
     const effectiveJobLogger = jobLogger ?? this.getJobLogger(job);
     // Use CurrentPayloadType which is derived from the local EffectivePayloadType
-    type CurrentPayloadType = ActualPayloadType;
 
-    let validatedPayload: CurrentPayloadType = job.payload;
+    const validatedPayload = await this.validateJob(job, effectiveJobLogger);
 
-    if (this.schema && !this.options.skipSchemaValidation) {
-      try {
-        // Type assertion needed because this.schema is Schema (ZodSchema | undefined)
-        // and parse expects `this` to be ZodSchema<CurrentPayloadType>
-        validatedPayload = (this.schema as z.ZodSchema<CurrentPayloadType>).parse(job.payload);
-        effectiveJobLogger.debug('Payload validated successfully.');
-      } catch (error) {
-        effectiveJobLogger.error(
-          {
-            err: error instanceof z.ZodError ? error.format() : error,
-            originalPayload: job.payload,
-          },
-          `Payload validation failed for job "${job.name}" (id: ${job.id})`
-        );
-        if (error instanceof z.ZodError) {
-          const messages = error.errors.map((e) => `${e.path.join('.') || 'payload'}: ${e.message}`);
-          // TODO should be an unrecoverable error?
-          throw new Error(`Payload validation failed: ${messages.join('; ')}`);
-        }
-        throw error;
-      }
-    }
-
-    const handlerOptions: TaskHandlerOptions<CurrentPayloadType> = {
+    const handlerOptions: TaskHandlerOptions<ActualPayloadType> = {
       id: job.id,
       name: this.id,
       payload: validatedPayload,
     };
 
-    const stepExecutor = new StepExecutor<TaskJob<CurrentPayloadType, ResultType>>(job, this);
+    const stepExecutor = new StepExecutor<TaskJob<ActualPayloadType, ResultType>>(job, this);
     // TaskHandlerContext's PayloadType will be CurrentPayloadType
-    const handlerContext: TaskHandlerContext<CurrentPayloadType, ResultType, ResolvedSchemaType<SchemaInputVal>> = {
+    const handlerContext: TaskHandlerContext<ActualPayloadType, ResultType, ResolvedSchemaType<SchemaInputVal>> = {
       logger: effectiveJobLogger,
       client: this.taskClient,
       group: this.group,

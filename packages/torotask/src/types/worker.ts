@@ -24,6 +24,10 @@ export type TaskProcessor<PayloadType = any, ResultType = any, NameType extends 
   token?: string
 ) => Promise<ResultType>;
 
+export type TaskValidator<PayloadType = any, ResultType = any, NameType extends string = string> = (
+  job: TaskJob<PayloadType, ResultType, NameType>
+) => Promise<PayloadType>;
+
 /** Worker Filter defined here */
 export interface WorkerFilterTasks<
   TTasks extends TaskRegistry<TaskDefinitionRegistry>,

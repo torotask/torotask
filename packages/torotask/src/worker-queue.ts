@@ -27,7 +27,7 @@ export class TaskWorkerQueue<PayloadType = any, ResultType = any, NameType exten
     name: string,
     public options?: Partial<TaskWorkerQueueOptions<PayloadType, ResultType, NameType>>
   ) {
-    const { processor, workerOptions, ...queueOptions } = options ?? {};
+    const { processor, validator, workerOptions, ...queueOptions } = options ?? {};
     super(taskClient, name, queueOptions);
 
     this.queueEvents = new TaskQueueEvents(taskClient, this.name);
@@ -73,6 +73,7 @@ export class TaskWorkerQueue<PayloadType = any, ResultType = any, NameType exten
       this.taskClient,
       this.name,
       this.options?.processor ?? this.process.bind(this),
+      this.options?.validator,
       mergedOptions
     );
 

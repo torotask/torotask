@@ -87,6 +87,7 @@ export abstract class BaseTask<
 
     this.queue = new TaskWorkerQueue<PayloadType, ResultType, string>(this.taskClient, queueName, {
       processor: this.process.bind(this),
+      validator: this.validate.bind(this),
       workerOptions: this.workerOptions,
       ...queueOptions,
     });
@@ -190,6 +191,11 @@ export abstract class BaseTask<
     return result;
   }
 
+  async validate(job: TaskJob<PayloadType, ResultType, string>): Promise<PayloadType> {
+    const result = await this.validateJob(job);
+    return result;
+  }
+
   // Subclasses implement this. It receives the TaskJob from the `process` method.
   processJob(
     _job: TaskJob<PayloadType, ResultType, string>,
@@ -197,6 +203,11 @@ export abstract class BaseTask<
     _jobLogger?: Logger
   ): Promise<ResultType> {
     throw new Error('processJob method must be implemented in a subclass.');
+  }
+
+  // Subclasses implement this. It receives the TaskJob from the `validate` method.
+  validateJob(_job: TaskJob<PayloadType, ResultType, string>, _jobLogger?: Logger): Promise<PayloadType> {
+    throw new Error('validateJob method must be implemented in a subclass.');
   }
 
   /**
