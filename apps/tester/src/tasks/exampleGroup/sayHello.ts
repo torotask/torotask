@@ -92,6 +92,14 @@ export const helloTask = defineTask({
       createdAt: new Date(),
     });
 
+    await step.runTasks('test-run', 'differentGroup', 'realTask', [
+      {
+        payload: {
+          firstname: 'John',
+          lastname: 'Doe',
+        },
+      },
+    ]);
     await step.runGroupTask('test', 'helloTask', {
       name: 'Test User',
       createdAt: new Date(),

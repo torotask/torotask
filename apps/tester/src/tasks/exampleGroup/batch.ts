@@ -8,7 +8,7 @@ export const batchTask = defineTask({
   schema: batchTaskPayloadSchema, // Use the schema
   options: {
     batch: {
-      size: 10,
+      size: 5,
       timeout: 50000,
     },
     attempts: 3,
@@ -17,22 +17,30 @@ export const batchTask = defineTask({
       delay: 1000,
     },
   },
-  /*triggers: {
+  triggers: {
     type: 'every',
     every: 10000,
-  },*/
-  handler: async (options, context) => {
-    const { payload } = options; // Payload is now typed thanks to the schema
-    const { logger } = context;
+    payload: {
+      name: 'Batch Task Trigger',
+    },
+  },
+  handler: async (_options, context) => {
+    const { job, logger } = context;
 
-    logger.debug(`Handler batch received job data: ${JSON.stringify(payload)}`);
+    const messages: string[] = [];
 
-    const message = `Hello, ${payload.name}!`; // No more 'as any'
-    logger.debug(`Processed batch message: ${message}`);
+    if (job.isBatch) {
+      for (const item of job.getBatch()) {
+        const itemPayload = item.payload;
+        logger.debug(`Job ID: ${item.id}`);
+        logger.debug(`Handler batch received job data: ${JSON.stringify(itemPayload)}`);
+        const message = `Hello, ${itemPayload.name}!`; // No more 'as any'
+        logger.debug(`Processed batch message: ${message}`);
+        messages.push(message);
+      }
+    }
 
     // Simulate some async work
     await new Promise((resolve) => setTimeout(resolve, 100));
-
-    return message; // Return a result
   },
 });
