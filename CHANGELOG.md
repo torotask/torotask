@@ -1,3 +1,17 @@
+## 0.7.4 (2025-07-05)
+
+### 🚀 Features
+
+- add validator handler and run before process ([5a43b15](https://github.com/torotask/torotask/commit/5a43b15))
+
+### 🩹 Fixes
+
+- **tester:** update tester app with correct batch handling ([694d6c3](https://github.com/torotask/torotask/commit/694d6c3))
+
+### ❤️ Thank You
+
+- Ben Osman @benosman
+
 ## 0.7.3 (2025-07-04)
 
 ### 🩹 Fixes

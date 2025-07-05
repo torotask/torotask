@@ -1,6 +1,6 @@
 {
   "name": "@torotask/tester",
-  "version": "0.1.3",
+  "version": "0.1.4",
   "private": "true",
   "keywords": [],
   "description": "Testing application for Toro Task packages",
