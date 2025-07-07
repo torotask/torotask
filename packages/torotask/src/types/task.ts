@@ -13,6 +13,9 @@ import type { EffectivePayloadType, ResolvedSchemaType, SchemaHandler } from './
 import type { Prettify, SingleOrArray } from './utils.js';
 import type { TaskWorkerOptions } from './worker.js';
 
+export type TaskTriggerCronValue = string;
+export type TaskTriggerEveryValue = StringValue | number;
+
 /**
  * Options for defining a Task, extending BullMQ's JobsOptions.
  */
@@ -82,13 +85,13 @@ export interface TaskTriggerEvent<PayloadType = unknown> extends TaskTriggerBase
 export interface TaskTriggerCron<PayloadType = unknown> extends TaskTriggerBase<PayloadType> {
   type: 'cron';
   name?: string;
-  cron?: string;
+  cron?: TaskTriggerCronValue;
 }
 
 export interface TaskTriggerEvery<PayloadType = unknown> extends TaskTriggerBase<PayloadType> {
   type: 'every';
   name?: string;
-  every?: number | StringValue;
+  every?: TaskTriggerEveryValue;
 }
 
 export type TaskTrigger<PayloadType = unknown> =
