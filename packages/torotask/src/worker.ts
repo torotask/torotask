@@ -142,6 +142,11 @@ export class TaskWorker<
       throw new Error('Batch options not configured.');
     }
 
+    // Log current batch state for debugging
+    jobLogger.debug(
+      `Batch state before adding job: size=${this.jobBatch.length}, timerActive=${!!this.batchTimeoutTimer}, processing=${this.batchProcessingRunning}`
+    );
+
     // Wait for any ongoing batch processing lock to be released
     let waitAttempts = 0;
     while (this.batchLock && waitAttempts < 50) {
@@ -171,7 +176,9 @@ export class TaskWorker<
       throw new Error('Internal error: Batch processing promise not initialized.');
     }
 
-    if (this.jobBatch.length === 1) {
+    // Start the timeout timer if this is a new batch or if we don't have a timer running
+    // This ensures the timer is started even if multiple jobs arrive simultaneously
+    if (this.jobBatch.length > 0 && !this.batchTimeoutTimer) {
       this.startBatchTimeoutTimerIfNeeded();
     }
 
@@ -226,11 +233,18 @@ export class TaskWorker<
   private startBatchTimeoutTimerIfNeeded(): void {
     if (!this.options.batch) return;
 
+    // Clear any existing timer first to avoid multiple timers
+    this.clearBatchTimeoutTimer();
+
     const minSize = this.options.batch.minSize ?? 1;
-    if (this.options.batch.timeout && minSize > 0 && !this.batchTimeoutTimer) {
-      this.logger.debug(`Starting batch timeout timer (${this.options.batch.timeout}ms) for worker "${this.name}".`);
+    if (this.options.batch.timeout) {
+      const timeout = this.options.batch.timeout;
+      this.logger.debug(
+        `Starting batch timeout timer (${timeout}ms) for worker "${this.name}" with ${this.jobBatch.length} jobs in batch.`
+      );
+
       this.batchTimeoutTimer = setTimeout(() => {
-        this.logger.info(`Batch timeout reached for worker "${this.name}".`);
+        this.logger.info(`Batch timeout reached for worker "${this.name}" after ${timeout}ms.`);
         this.batchTimeoutTimer = null;
         if (this.jobBatch.length > 0) {
           if (this.batchProcessingRunning || this.batchProcessingScheduled) {
@@ -265,6 +279,12 @@ export class TaskWorker<
 
     // Reset the scheduled flag since we're now attempting to process
     this.batchProcessingScheduled = false;
+
+    // Check and clear any existing timer
+    if (this.batchTimeoutTimer) {
+      this.logger.debug(`Clearing batch timeout timer during processing for worker "${this.name}".`);
+      this.clearBatchTimeoutTimer();
+    }
 
     if (this.batchProcessingRunning) {
       // This is an expected condition when multiple jobs arrive quickly
@@ -347,6 +367,12 @@ export class TaskWorker<
 
       // Initialize the next batch here instead of before promise handling
       this.initializeJobBatch(); // Prepare for the *next* batch
+
+      // Start the timer immediately if there are already jobs waiting in the new batch
+      if (this.jobBatch.length > 0) {
+        this.logger.debug(`Restarting batch timer since there are ${this.jobBatch.length} jobs already waiting`);
+        this.startBatchTimeoutTimerIfNeeded();
+      }
     }
   }
 
