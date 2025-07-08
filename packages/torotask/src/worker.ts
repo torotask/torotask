@@ -25,6 +25,7 @@ export class TaskWorker<
   private batchProcessingRunning = false;
   private batchTimeoutTimer: NodeJS.Timeout | null = null;
   private batchLock = false; // Add a flag to prevent concurrent batch operations
+  private batchProcessingScheduled = false; // Flag to track if a batch is scheduled for processing
 
   constructor(
     public readonly taskClient: ToroTask,
@@ -175,11 +176,18 @@ export class TaskWorker<
     }
 
     if (this.jobBatch.length >= this.options.batch.size) {
-      jobLogger.debug(
-        `Batch size limit (${this.options.batch.size}) reached for worker "${this.name}". Triggering batch processing.`
-      );
-      this.clearBatchTimeoutTimer();
-      void this.processBatchWrapper();
+      if (this.batchProcessingRunning || this.batchProcessingScheduled) {
+        jobLogger.debug(
+          `Batch size limit reached but processing is ${this.batchProcessingRunning ? 'running' : 'scheduled'} for worker "${this.name}". Will be processed in the next cycle.`
+        );
+      } else {
+        jobLogger.debug(
+          `Batch size limit (${this.options.batch.size}) reached for worker "${this.name}". Triggering batch processing.`
+        );
+        this.clearBatchTimeoutTimer();
+        this.batchProcessingScheduled = true; // Mark as scheduled
+        void this.processBatchWrapper();
+      }
     }
 
     jobLogger.debug(`Job ${job.id} waiting for its batch (size ${this.jobBatch.length}) to complete...`);
@@ -224,9 +232,14 @@ export class TaskWorker<
       this.batchTimeoutTimer = setTimeout(() => {
         this.logger.info(`Batch timeout reached for worker "${this.name}".`);
         this.batchTimeoutTimer = null;
-        if (this.jobBatch.length > 0 && !this.batchProcessingRunning) {
-          if (this.jobBatch.length >= minSize) {
+        if (this.jobBatch.length > 0) {
+          if (this.batchProcessingRunning || this.batchProcessingScheduled) {
+            this.logger.debug(
+              `Batch timeout reached for worker "${this.name}", but processing is ${this.batchProcessingRunning ? 'running' : 'scheduled'}. Jobs will be processed in the next cycle.`
+            );
+          } else if (this.jobBatch.length >= minSize) {
             this.logger.debug(`Timeout triggered batch processing (met minSize ${minSize}) for worker "${this.name}".`);
+            this.batchProcessingScheduled = true; // Mark as scheduled
             void this.processBatchWrapper();
           } else {
             this.logger.debug(
@@ -249,9 +262,15 @@ export class TaskWorker<
       this.logger.error('processBatchWrapper called but batching is not enabled.');
       return;
     }
+
+    // Reset the scheduled flag since we're now attempting to process
+    this.batchProcessingScheduled = false;
+
     if (this.batchProcessingRunning) {
-      this.logger.warn(
-        `Attempted to process batch for worker "${this.name}" while another batch was running. Skipping.`
+      // This is an expected condition when multiple jobs arrive quickly
+      // Just log at debug level and return
+      this.logger.debug(
+        `Batch processing already running for worker "${this.name}". Current jobs will be processed in the next batch.`
       );
       return;
     }
