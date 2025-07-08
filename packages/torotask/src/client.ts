@@ -257,6 +257,50 @@ export class ToroTask<
   }
 
   /**
+   * Gets all child jobs for a specific parent job from a given queue.
+   * Used primarily for optimized reconstruction of bulk job references.
+   *
+   * @param queueName The name of the queue to search in
+   * @param parentId The ID of the parent job
+   * @param afterTimestamp Optional timestamp to filter jobs created after this time
+   * @returns Array of child jobs
+   */
+  public async getChildJobs<PayloadType = any, ResultType = any>(
+    queueName: string,
+    parentId: string,
+    afterTimestamp?: number
+  ): Promise<TaskJob<PayloadType, ResultType>[]> {
+    const queue = this._consumerQueues.get(queueName);
+    if (!queue) {
+      this.logger.debug({ queueName, parentId }, 'Queue not found for getChildJobs');
+      return [];
+    }
+
+    // Get all jobs from the queue - this could be expensive for large queues
+    // In a production environment, you might want to implement a more efficient
+    // approach using Redis directly to query by parent ID
+    const jobs = await queue.getJobs(['completed', 'waiting', 'active', 'delayed', 'failed']);
+
+    const childJobs = jobs.filter((job) => {
+      // Check if this job has the specified parent
+      const isChild = job.opts?.parent?.id === parentId;
+
+      // Apply timestamp filter if provided
+      if (afterTimestamp && isChild) {
+        return job.timestamp >= afterTimestamp;
+      }
+      return isChild;
+    });
+
+    this.logger.debug(
+      { queueName, parentId, foundCount: childJobs.length },
+      `Found ${childJobs.length} child jobs for parent ${parentId}`
+    );
+
+    return childJobs as TaskJob<PayloadType, ResultType>[];
+  }
+
+  /**
    * Runs a task in the specified group with the provided data (internal method).
    *
    * @param groupId The id of the task group.

@@ -34,6 +34,15 @@ export interface SimplifiedJob {
   _isMemoizedTaskJob: boolean;
 }
 
+export interface BulkJobsReference {
+  _isBulkJobsReference: true;
+  count: number;
+  queueName: string;
+  timestamp: number;
+  // Optional sample of first few job IDs for debugging
+  sampleJobIds?: string[];
+}
+
 export type StepTaskJobOptions = Omit<TaskJobOptions, 'parent'>;
 
 export type StepBulkJob<Payload> = Omit<BulkJob<Payload>, 'data' | 'state'>;

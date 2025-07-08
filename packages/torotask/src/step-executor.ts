@@ -6,6 +6,7 @@ import { TaskJob } from './job.js';
 import { DelayedError, WaitingChildrenError } from './step-errors.js';
 import { Task } from './task.js';
 import type {
+  BulkJobsReference,
   SimplifiedJob,
   StepBulkJob,
   StepResult,
@@ -68,6 +69,38 @@ export class StepExecutor<
       return result;
     }
 
+    // Handle arrays of TaskJob instances (bulk operations) differently
+    if (isArray(result) && result.length > 0 && result[0] instanceof TaskJob) {
+      const jobs = result as unknown as TaskJob[];
+
+      // If array is large (e.g., more than 10 elements), use compact representation
+      if (jobs.length > 10) {
+        this.logger.debug(
+          { jobCount: jobs.length, stepKind },
+          `Using compact bulk job reference for ${jobs.length} jobs`
+        );
+
+        // Extract common queue name (assuming all jobs are in the same queue)
+        const queueName = jobs[0].queueName;
+
+        // Create compact reference
+        const bulkRef: BulkJobsReference = {
+          _isBulkJobsReference: true,
+          count: jobs.length,
+          queueName,
+          timestamp: Date.now(),
+          // Store only first few job IDs as a sample
+          sampleJobIds: jobs.slice(0, 3).map((j) => j.id!),
+        };
+
+        return bulkRef;
+      }
+
+      // For smaller arrays, continue with normal serialization
+      this.logger.debug({ stepKind, arrayLength: result.length }, `Processing array of TaskJob instances`);
+      return Promise.all(result.map((item) => this.memoizeStepResult(item, stepKind)));
+    }
+
     // Handle TaskJob instances by simplifying them
     if (result instanceof TaskJob) {
       const complexJob: TaskJob = result;
@@ -120,6 +153,51 @@ export class StepExecutor<
     // Base case: null or undefined
     if (memoizedData === null || memoizedData === undefined) {
       return memoizedData as T;
+    }
+
+    // Handle bulk job references
+    if (memoizedData && memoizedData._isBulkJobsReference) {
+      this.logger.debug(
+        { count: memoizedData.count, queue: memoizedData.queueName, userStepId },
+        `Detected bulk job reference for step '${userStepId}' with ${memoizedData.count} jobs`
+      );
+
+      const bulkRef = memoizedData as BulkJobsReference;
+
+      // Try to find child jobs by parent relationship instead of reconstructing each one
+      try {
+        if (this.client && this.job.id) {
+          // Get all child jobs from the queue that have this job as parent
+          const childJobs = await this.client.getChildJobs(
+            bulkRef.queueName,
+            this.job.id,
+            // Optionally use timestamp for filtering if needed
+            bulkRef.timestamp
+          );
+
+          if (childJobs.length === bulkRef.count) {
+            this.logger.debug(
+              { count: childJobs.length, userStepId },
+              `Successfully retrieved all ${childJobs.length} child jobs`
+            );
+            return childJobs as unknown as T;
+          } else {
+            this.logger.warn(
+              { expectedCount: bulkRef.count, actualCount: childJobs.length, userStepId },
+              `Found different number of child jobs than expected for step '${userStepId}'`
+            );
+            return childJobs as unknown as T;
+          }
+        } else {
+          throw new Error(`Cannot retrieve bulk jobs: client or job ID not available`);
+        }
+      } catch (error: any) {
+        this.logger.error(
+          { error: error?.message, count: bulkRef.count, userStepId },
+          `Error retrieving bulk jobs for step '${userStepId}'`
+        );
+        throw deserializeError(error);
+      }
     }
 
     // Check if this is a memoized job by looking for our marker
