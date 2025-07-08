@@ -33,5 +33,11 @@
   },
   "simple-git-hooks": {
     "pre-commit": "pnpm lint-staged"
+  },
+  "pnpm": {
+    "overrides": {
+      "brace-expansion@>=1.0.0 <=1.1.11": ">=1.1.12",
+      "brace-expansion@>=2.0.0 <=2.0.1": ">=2.0.2"
+    }
   }
 }
