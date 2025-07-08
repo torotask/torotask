@@ -1,3 +1,13 @@
+## 0.8.2 (2025-07-08)
+
+### 🩹 Fixes
+
+- resolve issues with batch timer ([14e4770](https://github.com/torotask/torotask/commit/14e4770))
+
+### ❤️ Thank You
+
+- Ben Osman @benosman
+
 ## 0.8.1 (2025-07-08)
 
 ### 🔥 Performance
