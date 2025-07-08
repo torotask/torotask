@@ -1,3 +1,13 @@
+## 0.8.1 (2025-07-08)
+
+### 🔥 Performance
+
+- don’t serialize all jobs when running large numbers ([b6429b6](https://github.com/torotask/torotask/commit/b6429b6))
+
+### ❤️ Thank You
+
+- Ben Osman @benosman
+
 ## 0.8.0 (2025-07-08)
 
 This was a version bump only, there were no code changes.
