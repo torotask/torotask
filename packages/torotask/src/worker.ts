@@ -24,6 +24,7 @@ export class TaskWorker<
   private rejectJobBatchProcessPromise: ((error: Error) => void) | null = null;
   private batchProcessingRunning = false;
   private batchTimeoutTimer: NodeJS.Timeout | null = null;
+  private batchLock = false; // Add a flag to prevent concurrent batch operations
 
   constructor(
     public readonly taskClient: ToroTask,
@@ -140,6 +141,18 @@ export class TaskWorker<
       throw new Error('Batch options not configured.');
     }
 
+    // Wait for any ongoing batch processing lock to be released
+    let waitAttempts = 0;
+    while (this.batchLock && waitAttempts < 50) {
+      // Prevent infinite waiting
+      await new Promise((resolve) => setTimeout(resolve, 10));
+      waitAttempts++;
+    }
+
+    if (this.batchLock) {
+      jobLogger.warn(`Batch lock still held after ${waitAttempts} attempts. Proceeding with caution.`);
+    }
+
     //if (this.options.)
 
     this.jobBatch.push(job);
@@ -217,9 +230,8 @@ export class TaskWorker<
             void this.processBatchWrapper();
           } else {
             this.logger.debug(
-              `Timeout reached for worker "${this.name}", but minSize (${minSize}) not met. Batch size: ${this.jobBatch.length}. Resetting timer.`
+              `Timeout reached for worker "${this.name}", but minSize (${minSize}) not met. Batch size: ${this.jobBatch.length}. Timer will restart when new jobs arrive.`
             );
-            this.startBatchTimeoutTimerIfNeeded();
           }
         } else if (this.batchProcessingRunning) {
           this.logger.warn(
@@ -243,6 +255,9 @@ export class TaskWorker<
       );
       return;
     }
+
+    // Set batch lock to prevent concurrent modifications during batch processing
+    this.batchLock = true;
     if (this.jobBatch.length === 0) {
       this.logger.warn(`processBatchWrapper called for worker "${this.name}" with empty batch. Skipping.`);
       if (this.resolveJobBatchProcessPromise) this.resolveJobBatchProcessPromise();
@@ -258,8 +273,7 @@ export class TaskWorker<
     const batchPromiseRejector = this.rejectJobBatchProcessPromise;
     this.clearBatchTimeoutTimer();
 
-    this.initializeJobBatch(); // Prepare for the *next* batch
-
+    // Check before resetting the promise handlers
     if (!batchPromiseResolver || !batchPromiseRejector) {
       this.logger.error(
         `Critical error: Batch promise resolver/rejector missing for batch created at ${batchCreationTime.toISOString()}. Cannot process.`
@@ -282,16 +296,19 @@ export class TaskWorker<
     }
 
     const batchInfo = `Batch created at ${batchCreationTime.toISOString()} with ${batchToProcess.length} jobs`;
-    this.logger.info(`Processing ${batchInfo} for worker "${this.name}".`);
     const batchLogger = this.logger.child({ batchId: batchCreationTime.getTime() });
-
     this.logger.info(`Processing ${batchInfo} for task "${this.name}".`);
 
     try {
+      // Create a batch job with a guaranteed token
       const batchJob = new this.TaskJob(this, this.name as any, {} as any, {});
       batchJob.setBatch(batchToProcess);
+
+      // Generate a deterministic token for this batch if not already set
+      const batchToken = batchJob.token || `batch-${batchCreationTime.getTime()}-${batchToProcess.length}`;
+
       // --- Execute actual batch processing logic ---
-      await this.callProcessJob(batchJob, batchJob.token ?? '');
+      await this.callProcessJob(batchJob, batchToken);
       // --- Success ---
       batchLogger.info(`Successfully processed ${batchInfo} for task "${this.name}".`);
       batchPromiseResolver(); // Resolve promise for all waiting jobs in this batch.
@@ -306,7 +323,11 @@ export class TaskWorker<
     } finally {
       // --- Cleanup ---
       this.batchProcessingRunning = false;
+      this.batchLock = false; // Release the lock
       batchLogger.debug(`Finished processing wrapper for ${batchInfo}.`);
+
+      // Initialize the next batch here instead of before promise handling
+      this.initializeJobBatch(); // Prepare for the *next* batch
     }
   }
 
@@ -358,6 +379,16 @@ export class TaskWorker<
         this.logger.warn(
           `Force closing worker "${this.name}". Any pending or active batch processing will be interrupted.`
         );
+
+        // Handle any batch that might be in progress
+        if (this.batchProcessingRunning) {
+          this.logger.warn(`Force shutdown during active batch processing for worker "${this.name}".`);
+          // Mark the batch as no longer running to avoid lingering state
+          this.batchProcessingRunning = false;
+          this.batchLock = false;
+        }
+
+        // Reject the current batch promise to unblock any waiting jobs
         if (this.rejectJobBatchProcessPromise) {
           try {
             this.rejectJobBatchProcessPromise(new Error('Worker force closed'));
