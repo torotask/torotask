@@ -13,4 +13,5 @@ export type ToroTaskOptions = Partial<BullMQConnectionOptions> & {
   prefix?: string;
   queuePrefix?: string;
   queueTTL?: number;
+  allowNonExistingQueues?: boolean;
 };

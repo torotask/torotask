@@ -47,11 +47,13 @@ export class ToroTask<
     100, // Max number of cached queues
     5 * 60_000 // TTL in ms (default: 5 minutes)
   );
-
   public readonly taskGroups: TGroups;
+  private readonly _isTyped: boolean;
+  private readonly _allowNonExistingQueues: boolean;
 
   constructor(options?: ToroTaskOptions, taskGroupDefs?: TAllTaskGroupsDefs) {
-    const { env, logger, loggerName, prefix, queuePrefix, queueTTL, ...connectionOpts } = options || {};
+    const { env, logger, loggerName, prefix, queuePrefix, queueTTL, allowNonExistingQueues, ...connectionOpts } =
+      options || {};
 
     const toroTaskEnvConfig = getConfigFromEnv('TOROTASK_REDIS_', env);
     const redisEnvConfig = getConfigFromEnv('REDIS_', env);
@@ -69,12 +71,18 @@ export class ToroTask<
     this.queuePrefix = [this.prefix, queuePrefix || QUEUE_PREFIX].join(':');
 
     this.taskGroups = {} as TGroups;
+    this._isTyped = !!taskGroupDefs;
+    this._allowNonExistingQueues = allowNonExistingQueues ?? false;
+
     // Initialize task groups from definitions if provided
     if (taskGroupDefs) {
       this.initializeTaskGroups(taskGroupDefs);
     }
 
-    this.logger.debug('ToroTask initialized');
+    this.logger.debug(
+      { isTyped: this._isTyped, allowNonExistingQueues: this._allowNonExistingQueues },
+      'ToroTask initialized'
+    );
   }
 
   /**
@@ -237,7 +245,9 @@ export class ToroTask<
     if (cached) return cached;
 
     const exists = await this.queueExists(key);
-    if (!exists) return null;
+    if (!exists && !this._allowNonExistingQueues) {
+      return null;
+    }
 
     const queue = new TaskQueue<PayloadType, ResultType>(this, key);
     this._consumerQueues.set(key, queue as any);
@@ -342,27 +352,44 @@ export class ToroTask<
 
   /**
    * Runs a task in the specified group with the provided data.
+   * In typed mode, provides full type safety and uses local task instances when available.
+   * In generic mode, allows any group/task combination and always uses queue-based execution.
    *
    * @param groupId The id of the task group.
    * @param taskName The name of the task to run.
-   * @param data The data to pass to the task.
+   * @param payload The data to pass to the task.
+   * @param options Optional job options for queue-based execution.
    * @returns A promise that resolves to the Job instance.
    */
   async runTask<
-    G extends keyof TGroups,
-    SpecificTaskGroup extends TGroups[G] = TGroups[G],
-    TaskName extends keyof SpecificTaskGroup['tasks'] = keyof SpecificTaskGroup['tasks'],
-    ActualTask extends SpecificTaskGroup['tasks'][TaskName] = SpecificTaskGroup['tasks'][TaskName],
-    // Payload is the ActualPayloadType inferred from the Task instance
-    Payload = ActualTask extends Task<any, any, any, infer P> ? P : unknown,
-    Result = ActualTask extends Task<any, infer R, any, any> ? R : unknown,
+    G extends TAllTaskGroupsDefs extends undefined ? string : keyof TGroups,
+    SpecificTaskGroup extends TAllTaskGroupsDefs extends undefined ? any : TGroups[G],
+    TaskName extends TAllTaskGroupsDefs extends undefined ? string : keyof SpecificTaskGroup['tasks'],
+    ActualTask extends TAllTaskGroupsDefs extends undefined ? any : SpecificTaskGroup['tasks'][TaskName],
+    Payload = TAllTaskGroupsDefs extends undefined
+      ? any
+      : ActualTask extends Task<any, any, any, infer P>
+        ? P
+        : unknown,
+    Result = TAllTaskGroupsDefs extends undefined ? any : ActualTask extends Task<any, infer R, any, any> ? R : unknown,
     ActualPayload extends Payload = Payload,
-  >(groupId: G, taskName: TaskName, payload: ActualPayload): Promise<TaskJob<ActualPayload, Result>> {
-    const group = this.taskGroups[groupId];
-    if (group && group.runTask) {
-      return group.runTask<string, ActualTask, ActualPayload>(taskName as string, payload);
+  >(
+    groupId: G,
+    taskName: TaskName,
+    payload: ActualPayload,
+    options?: TaskJobOptions
+  ): Promise<TaskJob<ActualPayload, Result>> {
+    if (this._isTyped) {
+      // Typed mode - use existing logic with local task groups
+      const group = this.taskGroups[groupId as keyof TGroups];
+      if (group && group.runTask) {
+        return group.runTask<string, ActualTask, ActualPayload>(taskName as string, payload);
+      } else {
+        throw new Error(`Task group "${groupId as string}" not found.`);
+      }
     } else {
-      throw new Error(`Task group "${groupId as string}" not found.`);
+      // Generic mode - use _runTask directly for queue-based execution
+      return this._runTask<ActualPayload, Result>(groupId as string, taskName as string, payload, options);
     }
   }
 
