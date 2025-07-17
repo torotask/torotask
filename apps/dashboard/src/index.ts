@@ -4,8 +4,6 @@ import { createBullBoard } from '@bull-board/api';
 import { BullMQAdapter } from '@bull-board/api/bullMQAdapter.js';
 import { ExpressAdapter } from '@bull-board/express';
 import { pino } from 'pino';
-// How often to refresh the list of queues (in milliseconds)
-const REFRESH_INTERVAL_MS = 30000; // 30 seconds
 
 export const logger = pino({
   transport: {
@@ -19,7 +17,11 @@ export const logger = pino({
 });
 
 async function main() {
-  const client = new ToroTask({ logger });
+  // Enable queue discovery in ToroTask client
+  const client = new ToroTask({
+    logger,
+    enableQueueDiscovery: true,
+  });
 
   const serverAdapter = new ExpressAdapter();
   serverAdapter.setBasePath('/admin/queues');
@@ -47,6 +49,29 @@ async function main() {
     }
   };
 
+  // Listen for queue discovery events
+  client.on('queueCreated', (queueName: string) => {
+    logger.info({ queueName }, 'New queue detected, updating dashboard...');
+    updateQueues().catch((error) => {
+      logger.error({ error, queueName }, 'Failed to update dashboard after queue creation');
+    });
+  });
+
+  client.on('queueRemoved', (queueName: string) => {
+    logger.info({ queueName }, 'Queue removed, updating dashboard...');
+    updateQueues().catch((error) => {
+      logger.error({ error, queueName }, 'Failed to update dashboard after queue removal');
+    });
+  });
+
+  client.on('queueDiscoveryStarted', () => {
+    logger.info('Queue discovery started - will monitor for new queues in real-time');
+  });
+
+  client.on('queueDiscoveryError', (error: Error) => {
+    logger.error({ error }, 'Queue discovery error occurred');
+  });
+
   // Initial Bull Board setup with the server adapter
   // Queues will be populated by the first call to updateQueues
   const _bullBoard = createBullBoard({
@@ -61,8 +86,8 @@ async function main() {
   // Run the initial update
   await updateQueues();
 
-  // Set interval to refresh queues periodically
-  setInterval(updateQueues, REFRESH_INTERVAL_MS);
+  // Wait a moment for queue discovery to start
+  await new Promise((resolve) => setTimeout(resolve, 1000));
 
   // other configurations of your server
 
@@ -70,11 +95,22 @@ async function main() {
     logger.info('Running on 3000...');
     logger.info('For the UI, open http://localhost:3000/admin/queues');
     logger.info('Make sure Redis is running on port 6379 by default');
-    logger.info(`Queue list will refresh every ${REFRESH_INTERVAL_MS / 1000} seconds.`);
+    logger.info('Queue discovery is active - new queues will be detected automatically');
   });
 }
 
 main().catch((err) => {
   logger.error('Failed to start dashboard:', err);
   process.exit(1);
+});
+
+// Graceful shutdown
+process.on('SIGTERM', async () => {
+  logger.info('SIGTERM received, shutting down gracefully...');
+  process.exit(0);
+});
+
+process.on('SIGINT', async () => {
+  logger.info('SIGINT received, shutting down gracefully...');
+  process.exit(0);
 });

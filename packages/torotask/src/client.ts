@@ -1,5 +1,6 @@
 import type { FlowChildJob, FlowJob, Job } from 'bullmq';
 import { ConnectionOptions } from 'bullmq';
+import { EventEmitter } from 'events';
 import { Redis, RedisOptions } from 'ioredis';
 import { type Logger, P, pino } from 'pino';
 import { LRU } from 'tiny-lru';
@@ -36,7 +37,7 @@ const QUEUE_PREFIX = 'tasks';
 export class ToroTask<
   TAllTaskGroupsDefs extends TaskGroupDefinitionRegistry = TaskGroupDefinitionRegistry,
   TGroups extends TaskGroupRegistry<TAllTaskGroupsDefs> = TaskGroupRegistry<TAllTaskGroupsDefs>,
-> {
+> extends EventEmitter {
   public readonly connectionOptions: ConnectionOptions;
   public readonly logger: Logger;
   public readonly prefix: string;
@@ -59,7 +60,14 @@ export class ToroTask<
   private _sharedSubscriberConnection: Redis | null = null;
   private _createdConnections: Set<Redis> = new Set(); // Track all created connections for cleanup
 
+  // Queue discovery properties
+  private _queueDiscoverySubscriber: Redis | null = null;
+  private _isQueueDiscoveryActive: boolean = false;
+  private _knownQueues: Set<string> = new Set();
+
   constructor(options?: ToroTaskOptions, taskGroupDefs?: TAllTaskGroupsDefs) {
+    super(); // Call EventEmitter constructor
+
     const {
       env,
       logger,
@@ -69,6 +77,7 @@ export class ToroTask<
       queueTTL,
       allowNonExistingQueues,
       reuseConnections,
+      enableQueueDiscovery,
       ...connectionOpts
     } = options || {};
 
@@ -102,9 +111,17 @@ export class ToroTask<
         isTyped: this._isTyped,
         allowNonExistingQueues: this._allowNonExistingQueues,
         reuseConnections: this._reuseConnections,
+        queueDiscoveryEnabled: enableQueueDiscovery ?? false,
       },
       'ToroTask initialized'
     );
+
+    // Start queue discovery if enabled
+    if (enableQueueDiscovery) {
+      this.startQueueDiscovery().catch((error) => {
+        this.logger.error({ error }, 'Failed to start queue discovery during initialization');
+      });
+    }
   }
 
   /**
@@ -596,8 +613,14 @@ export class ToroTask<
    * Closes all managed TaskGroups, their Tasks, the EventDispatcher, Queues and redis gracefully.
    */
   async close(): Promise<void> {
-    this.logger.info('Closing ToroTask resources (Tasks, TaskGroups, EventDispatcher)...');
+    this.logger.info('Closing ToroTask resources (Tasks, TaskGroups, EventDispatcher, Queue Discovery)...');
     const closePromises: Promise<void>[] = [];
+
+    // Stop queue discovery if active
+    if (this._isQueueDiscoveryActive) {
+      this.logger.debug('Stopping queue discovery...');
+      closePromises.push(this.stopQueueDiscovery());
+    }
 
     // Close all task resources (worker, queue, events) via task.close()
     const taskClosePromises = Object.values(this.taskGroups).flatMap((group) => group.close());
@@ -668,6 +691,125 @@ export class ToroTask<
       this.logger.error({ err: error }, 'Error during ToroTask resource closure.');
       // Potentially re-throw or handle aggregate error
     }
+  }
+
+  /**
+   * Starts Redis keyspace notifications to listen for new queue creation.
+   * Emits 'queueCreated' and 'queueRemoved' events when queues are detected.
+   */
+  async startQueueDiscovery(): Promise<void> {
+    if (this._isQueueDiscoveryActive) {
+      this.logger.debug('Queue discovery is already active');
+      return;
+    }
+
+    try {
+      // Create a dedicated subscriber connection for keyspace notifications
+      this._queueDiscoverySubscriber = new Redis(this.connectionOptions as RedisOptions);
+      this._createdConnections.add(this._queueDiscoverySubscriber);
+
+      // Enable keyspace notifications for expired and new keys if not already enabled
+      await this._queueDiscoverySubscriber.config('SET', 'notify-keyspace-events', 'KEAg');
+
+      // Pattern to match queue metadata keys: ${queuePrefix}:*:meta
+      const keyPattern = `__keyspace@*__:${this.queuePrefix}:*:meta`;
+
+      this.logger.info({ keyPattern }, 'Starting queue discovery with Redis keyspace notifications');
+
+      // Subscribe to keyspace notifications for queue metadata keys
+      await this._queueDiscoverySubscriber.psubscribe(keyPattern);
+
+      // Initialize known queues
+      const existingQueues = await this.getAllQueueNames();
+      existingQueues.forEach((queueName) => this._knownQueues.add(queueName));
+      this.logger.debug({ count: existingQueues.length }, 'Initialized known queues');
+
+      this._queueDiscoverySubscriber.on('pmessage', async (pattern, channel, message) => {
+        try {
+          // Extract queue name from the keyspace notification
+          // Channel format: __keyspace@0__:torotask:tasks:queueName:meta
+          const keyMatch = channel.match(
+            new RegExp(`__keyspace@\\d+__:${this.queuePrefix.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&')}:(.+):meta$`)
+          );
+
+          if (keyMatch && keyMatch[1]) {
+            const queueName = keyMatch[1];
+
+            if (message === 'set' || message === 'hset') {
+              // Queue was created or updated
+              if (!this._knownQueues.has(queueName)) {
+                this._knownQueues.add(queueName);
+                this.logger.info({ queueName }, 'New queue detected');
+                this.emit('queueCreated', queueName);
+              }
+            } else if (message === 'del' || message === 'expired') {
+              // Queue was deleted or expired
+              if (this._knownQueues.has(queueName)) {
+                this._knownQueues.delete(queueName);
+                this.logger.info({ queueName }, 'Queue removed');
+                this.emit('queueRemoved', queueName);
+              }
+            }
+          }
+        } catch (error) {
+          this.logger.error({ error, pattern, channel, message }, 'Error processing keyspace notification');
+        }
+      });
+
+      this._queueDiscoverySubscriber.on('error', (error) => {
+        this.logger.error({ error }, 'Queue discovery subscriber error');
+        this.emit('queueDiscoveryError', error);
+      });
+
+      this._isQueueDiscoveryActive = true;
+      this.logger.info('Queue discovery started successfully');
+      this.emit('queueDiscoveryStarted');
+    } catch (error) {
+      this.logger.error({ error }, 'Failed to start queue discovery');
+      throw error;
+    }
+  }
+
+  /**
+   * Stops Redis keyspace notifications for queue discovery.
+   */
+  async stopQueueDiscovery(): Promise<void> {
+    if (!this._isQueueDiscoveryActive) {
+      this.logger.debug('Queue discovery is not active');
+      return;
+    }
+
+    try {
+      if (this._queueDiscoverySubscriber) {
+        await this._queueDiscoverySubscriber.punsubscribe();
+        await this._queueDiscoverySubscriber.quit();
+        this._createdConnections.delete(this._queueDiscoverySubscriber);
+        this._queueDiscoverySubscriber = null;
+      }
+
+      this._isQueueDiscoveryActive = false;
+      this._knownQueues.clear();
+
+      this.logger.info('Queue discovery stopped');
+      this.emit('queueDiscoveryStopped');
+    } catch (error) {
+      this.logger.error({ error }, 'Error stopping queue discovery');
+      throw error;
+    }
+  }
+
+  /**
+   * Gets the list of currently known queue names from the discovery system.
+   */
+  getKnownQueueNames(): string[] {
+    return Array.from(this._knownQueues).sort();
+  }
+
+  /**
+   * Checks if queue discovery is currently active.
+   */
+  isQueueDiscoveryActive(): boolean {
+    return this._isQueueDiscoveryActive;
   }
 }
 

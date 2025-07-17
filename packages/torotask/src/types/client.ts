@@ -33,6 +33,27 @@ export type ToroTaskOptions = Partial<BullMQConnectionOptions> & {
    * @default false
    */
   reuseConnections?: boolean;
+
+  /**
+   * Enable automatic queue discovery using Redis keyspace notifications.
+   * When enabled, the client will emit events when new queues are created or removed.
+   *
+   * **Events emitted:**
+   * - 'queueCreated' - when a new queue is detected
+   * - 'queueRemoved' - when a queue is deleted/expired
+   * - 'queueDiscoveryStarted' - when discovery is started
+   * - 'queueDiscoveryStopped' - when discovery is stopped
+   * - 'queueDiscoveryError' - when an error occurs during discovery
+   *
+   * **Important notes:**
+   * - Requires Redis keyspace notifications to be enabled (notify-keyspace-events)
+   * - Uses an additional Redis subscriber connection
+   * - Automatically configures keyspace notifications if Redis has CONFIG permissions
+   * - Call `client.startQueueDiscovery()` to begin monitoring
+   *
+   * @default false
+   */
+  enableQueueDiscovery?: boolean;
 };
 
 /**
@@ -47,3 +68,14 @@ export type RedisConnectionType = 'client' | 'subscriber' | 'bclient';
  * @returns Redis instance
  */
 export type CreateClientFunction = (type: RedisConnectionType, redisOpts?: any) => Redis;
+
+/**
+ * Queue discovery events emitted by ToroTask client
+ */
+export interface QueueDiscoveryEvents {
+  queueCreated: (queueName: string) => void;
+  queueRemoved: (queueName: string) => void;
+  queueDiscoveryStarted: () => void;
+  queueDiscoveryStopped: () => void;
+  queueDiscoveryError: (error: Error) => void;
+}
