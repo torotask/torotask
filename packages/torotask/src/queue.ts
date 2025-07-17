@@ -27,6 +27,12 @@ export class TaskQueue<
     options.prefix = options.prefix || taskClient.queuePrefix;
     options.connection = options.connection = taskClient.connectionOptions;
 
+    // Add createClient function for connection reusing if enabled
+    const createClientFn = taskClient.getCreateClientFunction();
+    if (createClientFn) {
+      options.createClient = createClientFn;
+    }
+
     super(name, options as QueueOptions);
     this.logger = options.logger || taskClient.logger.child({ taskQueue: name });
   }
