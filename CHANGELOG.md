@@ -1,3 +1,15 @@
+## 0.8.3 (2025-07-17)
+
+### 🚀 Features
+
+- allow generic tasks to be run if no tasks set ([9b1e280](https://github.com/torotask/torotask/commit/9b1e280))
+- add connection reuse functionality ([7882cb4](https://github.com/torotask/torotask/commit/7882cb4))
+- add queue discovery monitoring ([e78f48b](https://github.com/torotask/torotask/commit/e78f48b))
+
+### ❤️ Thank You
+
+- Ben Osman @benosman
+
 ## 0.8.2 (2025-07-08)
 
 ### 🩹 Fixes
