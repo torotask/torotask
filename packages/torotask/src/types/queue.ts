@@ -11,4 +11,10 @@ export type TaskQueueOptions = QueueOptions & {
   createClient?: CreateClientFunction;
 };
 
-export type TaskQueueEventsOptions = QueueEventsOptions;
+export type TaskQueueEventsOptions = QueueEventsOptions & {
+  /**
+   * Function to create Redis connections for queue events.
+   * Used for connection reusing when enabled in ToroTask client.
+   */
+  createClient?: CreateClientFunction;
+};

@@ -44,8 +44,15 @@ export class TaskWorker<
     let mergedOptions: Partial<TaskWorkerOptions> = {
       ...options,
       prefix: options?.prefix || taskClient.queuePrefix,
-      connection: taskClient.connectionOptions,
+      connection: taskClient.getWorkerConnectionOptions(), // Use worker-optimized connection options
     };
+
+    // Use shared Redis instance for worker connection reusing if enabled
+    // Workers need maxRetriesPerRequest: null for persistent connections
+    const sharedWorkerRedisInstance = taskClient.getSharedWorkerRedisInstance();
+    if (sharedWorkerRedisInstance) {
+      mergedOptions.connection = sharedWorkerRedisInstance;
+    }
 
     const logger = mergedOptions.logger || taskClient.logger.child({ taskQueue: name });
 

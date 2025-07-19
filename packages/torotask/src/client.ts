@@ -18,8 +18,6 @@ import type {
   TaskGroupRegistry,
   TaskGroupDefinition,
   ToroTaskOptions,
-  RedisConnectionType,
-  CreateClientFunction,
 } from './types/index.js';
 import { getConfigFromEnv } from './utils/get-config-from-env.js';
 import { TaskWorkflow } from './workflow.js';
@@ -56,8 +54,8 @@ export class ToroTask<
 
   // Redis connection reusing properties
   private readonly _reuseConnections: boolean;
-  private _sharedClientConnection: Redis | null = null;
-  private _sharedSubscriberConnection: Redis | null = null;
+  private _sharedQueueRedisInstance: Redis | null = null; // Shared Redis instance for Queues (maxRetriesPerRequest: default)
+  private _sharedWorkerRedisInstance: Redis | null = null; // Shared Redis instance for Workers (maxRetriesPerRequest: null)
   private _createdConnections: Set<Redis> = new Set(); // Track all created connections for cleanup
 
   // Queue discovery properties
@@ -186,13 +184,18 @@ export class ToroTask<
 
   /**
    * Gets the Redis client instance, transparently handling connection reusing.
-   * When connection reusing is enabled, returns the shared client connection.
+   * When connection reusing is enabled, returns the shared Redis instance for queues.
    * When disabled, returns the dedicated main Redis client.
    */
   public get redis(): Redis {
     if (this._reuseConnections) {
-      // Use shared client connection when reusing is enabled
-      return this.createClient('client');
+      // Use shared Redis instance for queues when reusing is enabled
+      if (!this._sharedQueueRedisInstance) {
+        this._sharedQueueRedisInstance = new Redis(this.connectionOptions as RedisOptions);
+        this._createdConnections.add(this._sharedQueueRedisInstance);
+        this.logger.info('Created shared Redis instance for queue connection reusing');
+      }
+      return this._sharedQueueRedisInstance;
     } else {
       // Use dedicated main Redis client when reusing is disabled
       if (!this._redis) {
@@ -203,76 +206,35 @@ export class ToroTask<
   }
 
   /**
-   * Creates Redis connections for BullMQ queues with connection reusing support.
-   * This method is used by queues when connection reusing is enabled.
-   *
-   * @param type - The type of connection needed ('client', 'subscriber', or 'bclient')
-   * @param redisOpts - Redis options including connectionName for queue identification
-   * @returns Redis instance
-   */
-  public createClient: CreateClientFunction = (type: RedisConnectionType, redisOpts?: any): Redis => {
-    this.logger.info(
-      {
-        type,
-        connectionName: redisOpts?.connectionName,
-        totalTrackedConnections: this._createdConnections.size,
-        reuseConnections: this._reuseConnections,
-      },
-      'CreateClient called - creating Redis connection'
-    );
-
-    switch (type) {
-      case 'client': {
-        if (!this._sharedClientConnection) {
-          this.logger.info('Creating shared client connection');
-          this._sharedClientConnection = new Redis(this.connectionOptions as RedisOptions);
-          this._createdConnections.add(this._sharedClientConnection);
-        } else {
-          this.logger.info('Reusing existing shared client connection');
-        }
-        return this._sharedClientConnection;
-      }
-      case 'subscriber': {
-        if (!this._sharedSubscriberConnection) {
-          this.logger.info('Creating shared subscriber connection');
-          this._sharedSubscriberConnection = new Redis(this.connectionOptions as RedisOptions);
-          this._createdConnections.add(this._sharedSubscriberConnection);
-        } else {
-          this.logger.info('Reusing existing shared subscriber connection');
-        }
-        return this._sharedSubscriberConnection;
-      }
-      case 'bclient': {
-        // bclient connections cannot be reused, always create new ones
-        this.logger.info(
-          {
-            connectionName: redisOpts?.connectionName,
-            totalTrackedBefore: this._createdConnections.size,
-          },
-          'Creating new bclient connection (cannot be reused)'
-        );
-        const mergedOpts = { ...this.connectionOptions, ...redisOpts };
-        const bclientConnection = new Redis(mergedOpts as RedisOptions);
-        this._createdConnections.add(bclientConnection);
-        this.logger.info(
-          {
-            totalTrackedAfter: this._createdConnections.size,
-          },
-          'Added bclient connection to tracked connections'
-        );
-        return bclientConnection;
-      }
-      default:
-        throw new Error(`Unexpected Redis connection type: ${type}`);
-    }
-  };
-
-  /**
-   * Gets the createClient function for queues when connection reusing is enabled.
+   * Gets the shared Redis instance for BullMQ Queue connection reusing.
    * Returns undefined when connection reusing is disabled.
    */
-  public getCreateClientFunction(): CreateClientFunction | undefined {
-    return this._reuseConnections ? this.createClient : undefined;
+  public getSharedQueueRedisInstance(): Redis | undefined {
+    return this._reuseConnections ? this.redis : undefined;
+  }
+
+  /**
+   * Gets the shared Redis instance for BullMQ Worker connection reusing.
+   * Workers need maxRetriesPerRequest: null for persistent connections.
+   * Returns undefined when connection reusing is disabled.
+   */
+  public getSharedWorkerRedisInstance(): Redis | undefined {
+    if (!this._reuseConnections) {
+      return undefined;
+    }
+
+    if (!this._sharedWorkerRedisInstance) {
+      const workerConnectionOptions = {
+        ...this.connectionOptions,
+        maxRetriesPerRequest: null, // Workers should retry forever for persistent connections
+      } as RedisOptions;
+
+      this._sharedWorkerRedisInstance = new Redis(workerConnectionOptions);
+      this._createdConnections.add(this._sharedWorkerRedisInstance);
+      this.logger.info('Created shared Redis instance for worker connection reusing with maxRetriesPerRequest: null');
+    }
+
+    return this._sharedWorkerRedisInstance;
   }
 
   /**
@@ -653,11 +615,11 @@ export class ToroTask<
         this.logger.debug('No main Redis client to close (connection reusing may be enabled)');
       }
 
-      // Close shared connections if connection reusing is enabled
+      // Close shared Redis instance and tracked connections if connection reusing is enabled
       if (this._reuseConnections) {
         this.logger.debug(`Closing ${this._createdConnections.size} tracked Redis connections...`);
 
-        // Close all tracked connections (including shared ones and bclient connections)
+        // Close all tracked connections
         const connectionClosePromises = Array.from(this._createdConnections).map(async (connection, index) => {
           try {
             this.logger.debug(
@@ -677,8 +639,8 @@ export class ToroTask<
         await Promise.all(connectionClosePromises);
 
         // Clear references
-        this._sharedClientConnection = null;
-        this._sharedSubscriberConnection = null;
+        this._sharedQueueRedisInstance = null;
+        this._sharedWorkerRedisInstance = null;
         this._createdConnections.clear();
 
         this.logger.debug('All tracked Redis connections closed and cleared');
@@ -810,6 +772,25 @@ export class ToroTask<
    */
   isQueueDiscoveryActive(): boolean {
     return this._isQueueDiscoveryActive;
+  }
+
+  /**
+   * Gets connection options optimized for BullMQ Queue usage.
+   * Uses default maxRetriesPerRequest for quick failures in request-response scenarios.
+   */
+  public getQueueConnectionOptions(): ConnectionOptions {
+    return this.connectionOptions;
+  }
+
+  /**
+   * Gets connection options optimized for BullMQ Worker usage.
+   * Uses maxRetriesPerRequest: null for persistent connections that retry forever.
+   */
+  public getWorkerConnectionOptions(): ConnectionOptions {
+    return {
+      ...this.connectionOptions,
+      maxRetriesPerRequest: null, // Workers should retry forever for persistent connections
+    } as ConnectionOptions;
   }
 }
 

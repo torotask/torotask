@@ -16,7 +16,9 @@ export class TaskQueueEvents extends QueueEvents {
     }
     options = options || {};
     options.prefix = options.prefix || taskClient.queuePrefix;
-    options.connection = options.connection || taskClient.connectionOptions;
+    options.connection = options.connection || taskClient.getQueueConnectionOptions();
+
+    // Note: QueueEvents cannot reuse connections because they require blocking connections
 
     super(name, options as QueueEventsOptions);
   }

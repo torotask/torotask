@@ -25,12 +25,12 @@ export class TaskQueue<
     }
     options = options || {};
     options.prefix = options.prefix || taskClient.queuePrefix;
-    options.connection = options.connection = taskClient.connectionOptions;
+    options.connection = options.connection = taskClient.getQueueConnectionOptions();
 
-    // Add createClient function for connection reusing if enabled
-    const createClientFn = taskClient.getCreateClientFunction();
-    if (createClientFn) {
-      options.createClient = createClientFn;
+    // Use shared Redis instance for queue connection reusing if enabled
+    const sharedQueueRedisInstance = taskClient.getSharedQueueRedisInstance();
+    if (sharedQueueRedisInstance) {
+      options.connection = sharedQueueRedisInstance;
     }
 
     super(name, options as QueueOptions);
