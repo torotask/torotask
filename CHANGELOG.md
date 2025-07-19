@@ -1,3 +1,13 @@
+## 0.8.4 (2025-07-19)
+
+### 🚀 Features
+
+- add reusable connections managed by client ([ddbeb2d](https://github.com/torotask/torotask/commit/ddbeb2d))
+
+### ❤️ Thank You
+
+- Ben Osman @benosman
+
 ## 0.8.3 (2025-07-17)
 
 ### 🚀 Features
