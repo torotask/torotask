@@ -24,15 +24,12 @@
     "nx": "^21.6.8",
     "simple-git-hooks": "^2.12.1",
     "syncpack": "^13.0.3",
-    "tsx": "^4.16.0",
-    "typescript": "^5.5.3"
+    "tsx": "catalog:",
+    "typescript": "catalog:"
   },
   "lint-staged": {
     "**/*.{ts,tsx,js,jsx}": ["biome lint --fix", "biome format --write"],
     "**/*.{json,md}": ["biome format --write"]
-  },
-  "simple-git-hooks": {
-    "pre-commit": "pnpm lint-staged"
   },
   "pnpm": {
     "overrides": {
@@ -40,5 +37,8 @@
       "brace-expansion@>=2.0.0 <=2.0.1": ">=2.0.2",
       "tmp@<=0.2.3": ">=0.2.4"
     }
+  },
+  "simple-git-hooks": {
+    "pre-commit": "pnpm lint-staged"
   }
 }
