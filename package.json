@@ -15,13 +15,13 @@
   },
   "devDependencies": {
     "@biomejs/biome": "1.9.4",
-    "@nx/js": "^20.8.0",
+    "@nx/js": "^21.6.8 ",
     "@swc-node/register": "^1.10.10",
     "@swc/core": "^1.11.21",
     "@types/node": "^22.14.0",
     "dotenv": "^16.4.7",
     "lint-staged": "^15.5.0",
-    "nx": "^20.8.0",
+    "nx": "^21.6.8",
     "simple-git-hooks": "^2.12.1",
     "syncpack": "^13.0.3",
     "tsx": "^4.16.0",
@@ -37,7 +37,8 @@
   "pnpm": {
     "overrides": {
       "brace-expansion@>=1.0.0 <=1.1.11": ">=1.1.12",
-      "brace-expansion@>=2.0.0 <=2.0.1": ">=2.0.2"
+      "brace-expansion@>=2.0.0 <=2.0.1": ">=2.0.2",
+      "tmp@<=0.2.3": ">=0.2.4"
     }
   }
 }

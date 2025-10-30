@@ -17,7 +17,7 @@
   "main": "dist/index.js",
   "dependencies": {
     "bullmq": "*",
-    "pino": "^9.6.0",
+    "pino": "^9.14.0",
     "pino-pretty": "^13.0.0",
     "torotask": "workspace:*"
   },
