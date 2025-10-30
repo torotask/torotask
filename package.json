@@ -2,42 +2,44 @@
   "name": "torotask-monorepo",
   "version": "0.1.0",
   "private": true,
+  "packageManager": "pnpm@10.20.0",
   "description": "Monorepo for ToroTask related packages and apps",
   "license": "MIT",
   "scripts": {
-    "build": "nx run-many -t build",
-    "clean": "nx run-many -t clean",
+    "build": "turbo run build",
+    "clean": "turbo run clean",
+    "dev": "turbo run dev",
+    "test": "turbo run test",
     "format": "biome format --write",
     "lint": "biome lint",
     "prepare": "simple-git-hooks",
-    "syncpack:fix": "syncpack format && syncpack fix-mismatches",
-    "watch": "nx watch --all --includeDependentProjects -- nx run-many -t build:dev -p $NX_PROJECT_NAME"
+    "syncpack:fix": "syncpack format && syncpack fix-mismatches"
   },
   "devDependencies": {
     "@biomejs/biome": "1.9.4",
-    "@nx/js": "^20.8.0",
     "@swc-node/register": "^1.10.10",
     "@swc/core": "^1.11.21",
     "@types/node": "^22.14.0",
     "dotenv": "^16.4.7",
     "lint-staged": "^15.5.0",
-    "nx": "^20.8.0",
     "simple-git-hooks": "^2.12.1",
     "syncpack": "^13.0.3",
     "tsx": "^4.16.0",
+    "turbo": "^2.5.8",
     "typescript": "^5.5.3"
   },
   "lint-staged": {
     "**/*.{ts,tsx,js,jsx}": ["biome lint --fix", "biome format --write"],
     "**/*.{json,md}": ["biome format --write"]
   },
-  "simple-git-hooks": {
-    "pre-commit": "pnpm lint-staged"
-  },
   "pnpm": {
     "overrides": {
       "brace-expansion@>=1.0.0 <=1.1.11": ">=1.1.12",
-      "brace-expansion@>=2.0.0 <=2.0.1": ">=2.0.2"
+      "brace-expansion@>=2.0.0 <=2.0.1": ">=2.0.2",
+      "tmp@<=0.2.3": ">=0.2.4"
     }
+  },
+  "simple-git-hooks": {
+    "pre-commit": "pnpm lint-staged"
   }
 }
