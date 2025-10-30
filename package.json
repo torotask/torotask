@@ -5,26 +5,26 @@
   "description": "Monorepo for ToroTask related packages and apps",
   "license": "MIT",
   "scripts": {
-    "build": "nx run-many -t build",
-    "clean": "nx run-many -t clean",
+    "build": "turbo run build",
+    "clean": "turbo run clean",
+    "dev": "turbo run dev",
+    "test": "turbo run test",
     "format": "biome format --write",
     "lint": "biome lint",
     "prepare": "simple-git-hooks",
-    "syncpack:fix": "syncpack format && syncpack fix-mismatches",
-    "watch": "nx watch --all --includeDependentProjects -- nx run-many -t build:dev -p $NX_PROJECT_NAME"
+    "syncpack:fix": "syncpack format && syncpack fix-mismatches"
   },
   "devDependencies": {
     "@biomejs/biome": "1.9.4",
-    "@nx/js": "^21.6.8 ",
     "@swc-node/register": "^1.10.10",
     "@swc/core": "^1.11.21",
     "@types/node": "^22.14.0",
     "dotenv": "^16.4.7",
     "lint-staged": "^15.5.0",
-    "nx": "^21.6.8",
     "simple-git-hooks": "^2.12.1",
     "syncpack": "^13.0.3",
     "tsx": "catalog:",
+    "turbo": "^2.5.8",
     "typescript": "catalog:"
   },
   "lint-staged": {
@@ -40,5 +40,6 @@
   },
   "simple-git-hooks": {
     "pre-commit": "pnpm lint-staged"
-  }
+  },
+  "packageManager": "pnpm@10.20.0+sha512.cf9998222162dd85864d0a8102e7892e7ba4ceadebbf5a31f9c2fce48dfce317a9c53b9f6464d1ef9042cba2e02ae02a9f7c143a2b438cd93c91840f0192b9dd"
 }
