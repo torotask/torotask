@@ -16,15 +16,15 @@
   "type": "module",
   "main": "dist/index.js",
   "dependencies": {
-    "bullmq": "*",
-    "pino": "^9.14.0",
-    "pino-pretty": "^13.0.0",
+    "bullmq": "catalog:",
+    "pino": "catalog:",
+    "pino-pretty": "catalog:",
     "torotask": "workspace:*"
   },
   "devDependencies": {
-    "@types/pino": "^7.0.5",
-    "tsx": "^4.16.0",
-    "typescript": "^5.5.3"
+    "@types/pino": "catalog:",
+    "tsx": "catalog:",
+    "typescript": "catalog:"
   },
   "types": "dist/index.d.ts"
 }

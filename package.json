@@ -31,9 +31,9 @@
     "lint-staged": "^15.5.0",
     "simple-git-hooks": "^2.12.1",
     "syncpack": "^13.0.3",
-    "tsx": "^4.16.0",
+    "tsx": "catalog:",
     "turbo": "^2.5.8",
-    "typescript": "^5.5.3"
+    "typescript": "catalog:"
   },
   "lint-staged": {
     "**/*.{ts,tsx,js,jsx}": ["biome lint --fix", "biome format --write"],
