@@ -1,6 +1,6 @@
 import type { StringValue } from 'ms';
 import type { Logger } from 'pino';
-import { type ZodSchema, z } from 'zod';
+import type { ZodSchema } from 'zod';
 import type { ToroTask } from '../client.js';
 import type { TaskJob } from '../job.js';
 import type { TaskQueue } from '../queue.js';
@@ -50,7 +50,7 @@ export interface BaseHandlerContext<PayloadType = unknown, ResultType = unknown>
 export interface TaskHandlerContext<
   PayloadType = unknown,
   ResultType = unknown,
-  _CurrentResolvedSchema extends ZodSchema | undefined = undefined, // This generic represents the RESOLVED schema
+  _CurrentResolvedSchema extends ZodSchema | undefined = undefined,
 > extends BaseHandlerContext<PayloadType, ResultType> {
   // The Task type itself is generic over PayloadExplicit, ResultType, SchemaInputVal.
   // So, the 'task' field needs to reflect that if it's to be specific.
@@ -69,7 +69,7 @@ export type TaskHandler<
   CurrentResolvedSchema extends ZodSchema | undefined = undefined,
 > = (
   options: TaskHandlerOptions<PayloadType>,
-  context: TaskHandlerContext<PayloadType, ResultType, CurrentResolvedSchema>
+  context: TaskHandlerContext<PayloadType, ResultType, CurrentResolvedSchema>,
 ) => Promise<ResultType>;
 
 export interface TaskTriggerBase<PayloadType = unknown> {
@@ -94,10 +94,10 @@ export interface TaskTriggerEvery<PayloadType = unknown> extends TaskTriggerBase
   every?: TaskTriggerEveryValue;
 }
 
-export type TaskTrigger<PayloadType = unknown> =
-  | TaskTriggerEvent<PayloadType>
-  | TaskTriggerCron<PayloadType>
-  | TaskTriggerEvery<PayloadType>;
+export type TaskTrigger<PayloadType = unknown>
+  = | TaskTriggerEvent<PayloadType>
+    | TaskTriggerCron<PayloadType>
+    | TaskTriggerEvery<PayloadType>;
 
 export interface TaskConfig<
   PayloadExplicit = unknown,
@@ -122,7 +122,7 @@ export interface TaskDefinition<
   // Removed id field - key is now the ID
 }
 
-//export type TaskRegistry = Record<string, Task<any, any, SchemaHandler>>;
+// export type TaskRegistry = Record<string, Task<any, any, SchemaHandler>>;
 export interface TaskDefinitionRegistry {
   [taskName: string]: TaskDefinition<any, any, any>;
 }

@@ -1,4 +1,4 @@
-import type { ZodSchema, z } from 'zod';
+import type { z, ZodSchema } from 'zod';
 import type { IsStrictlyUnknown } from './utils.js';
 
 // ZodNamespace is no longer needed as we are not using a schema builder function.

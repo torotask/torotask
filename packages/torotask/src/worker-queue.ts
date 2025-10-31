@@ -1,14 +1,14 @@
-import { JobProgress, QueueBase } from 'bullmq';
-import { ToroTask } from './client.js';
-import { TaskJob } from './job.js';
-import { TaskQueueEvents } from './queue-events.js';
-import { TaskQueue } from './queue.js';
+import type { JobProgress } from 'bullmq';
+import type { ToroTask } from './client.js';
+import type { TaskJob } from './job.js';
 import type {
+  TaskWorkerOptions,
   TaskWorkerQueueListener,
   TaskWorkerQueueOptions,
-  TaskWorkerOptions,
   WorkerEventHandlers,
 } from './types/index.js';
+import { TaskQueueEvents } from './queue-events.js';
+import { TaskQueue } from './queue.js';
 import { TaskWorker } from './worker.js';
 
 export class TaskWorkerQueue<PayloadType = any, ResultType = any, NameType extends string = string> extends TaskQueue<
@@ -25,7 +25,7 @@ export class TaskWorkerQueue<PayloadType = any, ResultType = any, NameType exten
   constructor(
     taskClient: ToroTask,
     name: string,
-    public options?: Partial<TaskWorkerQueueOptions<PayloadType, ResultType, NameType>>
+    public options?: Partial<TaskWorkerQueueOptions<PayloadType, ResultType, NameType>>,
   ) {
     const { processor, validator, workerOptions, ...queueOptions } = options ?? {};
     super(taskClient, name, queueOptions);
@@ -38,8 +38,8 @@ export class TaskWorkerQueue<PayloadType = any, ResultType = any, NameType exten
    * Method to process a job.
    * Subclasses must implement this method to define the job handling logic.
    *
-   * @param job The BullMQ job object.
-   * @returns A promise that resolves with the result of the job.
+   * @param _job The BullMQ job object.
+   * @param _token An optional token for the job.
    */
   process(_job: TaskJob<PayloadType, ResultType, NameType>, _token?: string): Promise<ResultType> {
     // This method should be implemented by subclasses
@@ -74,7 +74,7 @@ export class TaskWorkerQueue<PayloadType = any, ResultType = any, NameType exten
       this.name,
       this.options?.processor ?? this.process.bind(this),
       this.options?.validator,
-      mergedOptions
+      mergedOptions,
     );
 
     // --- Event Forwarding (with prefixing) ---
@@ -116,22 +116,18 @@ export class TaskWorkerQueue<PayloadType = any, ResultType = any, NameType exten
         this.logger.debug('Worker event: ready');
         this.emit('worker:ready');
       },
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       resumed: () => {
         this.logger.debug('Worker event: resumed');
         this.emit('worker:resumed');
       },
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       stalled: (jobId: string, prev: string) => {
         this.logger.warn({ jobId, prev }, 'Worker event: stalled');
         this.emit('worker:stalled', jobId, prev);
       },
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       closed: () => {
         this.logger.debug('Worker event: closed');
         this.emit('worker:closed');
       },
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       closing: (msg: string) => {
         this.logger.debug({ msg }, 'Worker event: closing');
         this.emit('worker:closing', msg);
@@ -180,9 +176,11 @@ export class TaskWorkerQueue<PayloadType = any, ResultType = any, NameType exten
       try {
         await this.worker.close();
         this.logger.info('Worker stopped successfully.');
-      } catch (error) {
+      }
+      catch (error) {
         this.logger.error({ err: error instanceof Error ? error : new Error(String(error)) }, 'Error stopping worker');
-      } finally {
+      }
+      finally {
         this.worker = undefined;
       }
     }
@@ -209,10 +207,11 @@ export class TaskWorkerQueue<PayloadType = any, ResultType = any, NameType exten
     try {
       await Promise.all(closePromises);
       this.logger.debug('WorkerQueue resources closed successfully');
-    } catch (error) {
+    }
+    catch (error) {
       this.logger.error(
         { err: error instanceof Error ? error : new Error(String(error)) },
-        'Error closing WorkerQueue resources'
+        'Error closing WorkerQueue resources',
       );
       // Note: Instance was already removed from registry
     }
@@ -222,21 +221,21 @@ export class TaskWorkerQueue<PayloadType = any, ResultType = any, NameType exten
 
   // Override emit, on, off, once to use the new combined listener interface
   emit<U extends keyof TaskWorkerQueueListener>(event: U, ...args: Parameters<TaskWorkerQueueListener[U]>): boolean {
-    return QueueBase.prototype.emit.call(this, event, ...args);
+    return (this as any).emit(event, ...args);
   }
 
   off<U extends keyof TaskWorkerQueueListener>(eventName: U, listener: TaskWorkerQueueListener[U]): this {
-    QueueBase.prototype.off.call(this, eventName, listener);
+    (this as any).off(eventName, listener);
     return this;
   }
 
   on<U extends keyof TaskWorkerQueueListener>(event: U, listener: TaskWorkerQueueListener[U]): this {
-    QueueBase.prototype.on.call(this, event, listener);
+    (this as any).on(event, listener);
     return this;
   }
 
   once<U extends keyof TaskWorkerQueueListener>(event: U, listener: TaskWorkerQueueListener[U]): this {
-    QueueBase.prototype.once.call(this, event, listener);
+    (this as any).once(event, listener);
     return this;
   }
 }

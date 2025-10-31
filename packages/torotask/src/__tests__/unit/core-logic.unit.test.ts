@@ -15,7 +15,7 @@ interface StepState {
   };
 }
 
-describe('StepExecutor Core Logic', () => {
+describe('stepExecutor Core Logic', () => {
   describe('basic functionality', () => {
     it('should handle basic step execution logic', () => {
       // Test basic step state management logic
@@ -67,7 +67,7 @@ describe('StepExecutor Core Logic', () => {
       });
 
       expect(Object.keys(stepState)).toHaveLength(3);
-      expect(stepState['step2'].result).toBe('result-2');
+      expect(stepState.step2.result).toBe('result-2');
     });
   });
 
@@ -90,14 +90,14 @@ describe('StepExecutor Core Logic', () => {
 
         // Simple ms parsing for common cases
         if (timeout.endsWith('s')) {
-          return parseInt(timeout) * 1000;
+          return Number.parseInt(timeout) * 1000;
         }
 
         if (timeout.endsWith('m')) {
-          return parseInt(timeout) * 60 * 1000;
+          return Number.parseInt(timeout) * 60 * 1000;
         }
 
-        return parseInt(timeout);
+        return Number.parseInt(timeout);
       };
 
       expect(parseTimeoutValue(5000)).toBe(5000);

@@ -1,6 +1,6 @@
 import type { ConnectionOptions as BullMQConnectionOptions } from 'bullmq';
-import type { Logger } from 'pino';
 import type { Redis } from 'ioredis';
+import type { Logger } from 'pino';
 
 /** BullMQ Client Options using intersection */
 export type ToroTaskOptions = Partial<BullMQConnectionOptions> & {

@@ -1,5 +1,4 @@
 import { createSchema, defineTask } from 'torotask';
-import { exampleGroup } from './index.js';
 
 export const newTask = defineTask({
   id: 'new-task',
@@ -15,17 +14,17 @@ export const newTask = defineTask({
       timeout: 20000,
     },
   },
-  /*triggers: {
+  /* triggers: {
     type: 'every',
     every: 3000,
     payload: {
       lastname: 'World',
     },
-  },*/
-  schema: createSchema((z) =>
+  }, */
+  schema: createSchema(z =>
     z.object({
       lastname: z.string().min(1).max(100),
-    })
+    }),
   ),
   handler: async (options, context) => {
     const { payload } = options;
@@ -38,7 +37,7 @@ export const newTask = defineTask({
 
     await step.sleep('sleep-step', '1 minute');
     // Simulate some async work
-    await new Promise((resolve) => setTimeout(resolve, 100));
+    await new Promise(resolve => setTimeout(resolve, 100));
 
     return message; // Return a result
   },

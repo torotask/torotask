@@ -1,5 +1,5 @@
-import { TaskServer, TaskHandlerContext, getTypedStep } from 'torotask';
 import { pino } from 'pino';
+import { getTypedStep, TaskServer } from 'torotask';
 import { taskGroups } from './tasks/index.js';
 
 // Configure Pino with pretty printing
@@ -14,15 +14,15 @@ export const logger = pino({
   },
 });
 
-//type TDefs = typeof taskGroups.exampleGroup.tasks;;
-//type TTasks = TaskRegistry<TDefs>;
-//type group = TTasks['newTask']['id'];
+// type TDefs = typeof taskGroups.exampleGroup.tasks;;
+// type TTasks = TaskRegistry<TDefs>;
+// type group = TTasks['newTask']['id'];
 // Create the server with our task group definitions
 export const server = new TaskServer(
   {
     logger,
   },
-  taskGroups
+  taskGroups,
 );
 
 /* * This function is used to get a step executor for a specific task group and task.
@@ -34,7 +34,7 @@ export const server = new TaskServer(
  */
 export function getStep<TCurrentTaskGroup extends keyof typeof taskGroups = never>(
   context: any,
-  currentGroup?: TCurrentTaskGroup
+  currentGroup?: TCurrentTaskGroup,
 ) {
   // Use the getTypedStep function to retrieve the step executor
   return getTypedStep<typeof taskGroups, TCurrentTaskGroup>(context, currentGroup);

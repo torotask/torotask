@@ -1,5 +1,5 @@
-import { TaskGroup } from '../task-group.js';
-import { TaskDefinitionRegistry, TaskRegistry } from './task.js';
+import type { TaskGroup } from '../task-group.js';
+import type { TaskDefinitionRegistry } from './task.js';
 
 export type TaskGroupRegistry<TGroupDefs extends TaskGroupDefinitionRegistry> = {
   [K in keyof TGroupDefs]: TGroupDefs[K] extends TaskGroupDefinition<infer T> // Infer the Payload (P) and Result (R) types from the definition

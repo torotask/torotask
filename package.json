@@ -9,12 +9,12 @@
     "build": "turbo run build",
     "clean": "turbo run clean",
     "dev": "turbo run dev",
-    "test": "turbo run test",
     "format": "prettier --write .",
     "lint": "eslint --cache .",
     "lint:fix": "eslint --cache --fix .",
     "prepare": "simple-git-hooks",
-    "syncpack:fix": "syncpack format && syncpack fix-mismatches"
+    "syncpack:fix": "syncpack format && syncpack fix-mismatches",
+    "test": "turbo run test"
   },
   "devDependencies": {
     "@antfu/eslint-config": "^6.1.0",

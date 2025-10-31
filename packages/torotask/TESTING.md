@@ -59,7 +59,7 @@ it('should handle basic step execution logic', () => {
   stepState[stepId] = {
     status: 'completed',
     result: 'test-result',
-    executedAt: new Date().toISOString(),
+    executedAt: new Date().toISOString()
   };
 
   expect(stepState[stepId].status).toBe('completed');
@@ -75,7 +75,8 @@ it('should connect to Redis if available', async () => {
     await redis.set('test-key', 'test-value');
     const value = await redis.get('test-key');
     expect(value).toBe('test-value');
-  } catch (_error) {
+  }
+  catch (_error) {
     console.log('Redis not available, skipping integration test');
     expect(true).toBe(true); // Pass the test
   }

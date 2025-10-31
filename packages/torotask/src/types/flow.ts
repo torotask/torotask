@@ -1,6 +1,6 @@
 import type { JobNode } from 'bullmq';
-import type { TaskJobData, TaskJobOptions, TaskJobState } from './job.js';
-import { Task } from '../task.js';
+import type { Task } from '../task.js';
+import type { TaskJobOptions, TaskJobState } from './job.js';
 import type { TaskGroupDefinitionRegistry, TaskGroupRegistry } from './task-group.js';
 
 export type TaskFlowRunBaseOptions = Omit<TaskJobOptions, 'repeat' | 'parent'>;
@@ -10,11 +10,9 @@ export type TaskFlowRunChildOptions = TaskFlowRunBaseOptions;
 
 // Helper interface for a single, specific configuration of a task run.
 interface SpecificFlowRunConfig<
-  TAllTaskGroupsDefs extends TaskGroupDefinitionRegistry, // Original raw schema
-  // ProcessedSchema is TaskGroupRegistry<TAllTaskGroupsDefs>
-  // We access it directly via TaskGroupRegistry<TAllTaskGroupsDefs> where needed.
-  GName extends keyof TaskGroupRegistry<TAllTaskGroupsDefs>, // A specific group name
-  TName extends keyof TaskGroupRegistry<TAllTaskGroupsDefs>[GName]['tasks'], // A specific task name
+  TAllTaskGroupsDefs extends TaskGroupDefinitionRegistry,
+  GName extends keyof TaskGroupRegistry<TAllTaskGroupsDefs>,
+  TName extends keyof TaskGroupRegistry<TAllTaskGroupsDefs>[GName]['tasks'],
   TOptions = TaskFlowRunOptions,
   // Payload inferred using your logic from the "processed" task definition
   Payload = TaskGroupRegistry<TAllTaskGroupsDefs>[GName]['tasks'][TName] extends Task<any, any, any, infer P>

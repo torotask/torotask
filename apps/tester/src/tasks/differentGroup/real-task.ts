@@ -1,5 +1,4 @@
 import { createSchema, defineTask } from 'torotask';
-import { getStep } from '../../server.js';
 
 export const realTask = defineTask({
   id: 'new-task',
@@ -15,10 +14,10 @@ export const realTask = defineTask({
       timeout: 20000,
     },
   },
-  schema: createSchema((z) =>
+  schema: createSchema(z =>
     z.object({
       lastname: z.string().min(1).max(100),
-    })
+    }),
   ),
   handler: async (options, context) => {
     const { payload } = options;
@@ -30,7 +29,7 @@ export const realTask = defineTask({
     logger.debug(`Processed batch message: ${message}`);
 
     // Simulate some async work
-    await new Promise((resolve) => setTimeout(resolve, 100));
+    await new Promise(resolve => setTimeout(resolve, 100));
 
     return message; // Return a result
   },

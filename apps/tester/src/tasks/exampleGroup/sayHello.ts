@@ -1,7 +1,5 @@
 import { createSchema, defineTask } from 'torotask';
-import { server, getStep } from '../../server.js';
-import { taskGroups } from '../index.js';
-import { getTypedStep } from 'torotask';
+import { getStep } from '../../server.js';
 
 export const helloTask = defineTask({
   id: 'hello-task',
@@ -24,14 +22,14 @@ export const helloTask = defineTask({
         createdAt: new Date(),
       },
     },
-    //{
+    // {
     //    type: 'cron',
     //      cron: '27 */1 * * *',
-    //},
+    // },
     { type: 'event', event: 'item.update' },
     { type: 'event', event: 'item.create' },
   ],
-  schema: createSchema((z) =>
+  schema: createSchema(z =>
     z.object({
       name: z.string().min(1).max(100),
       age: z.number().optional(), // Optional field
@@ -39,7 +37,7 @@ export const helloTask = defineTask({
       isActive: z.boolean().default(true).optional(), // Default value
       createdAt: z.coerce.date().default(() => new Date()), // Default to current date
       tags: z.array(z.string()).optional(), // Optional array of strings
-    })
+    }),
   ),
   handler: async (options, context) => {
     const { payload } = options;
@@ -49,13 +47,13 @@ export const helloTask = defineTask({
     console.log('payload', payload);
     const _result1 = await step.do('first-step', async () => {
       logger.info(`Running first step with job data: ${JSON.stringify(job.payload)}`);
-      await new Promise((resolve) => setTimeout(resolve, 100));
+      await new Promise(resolve => setTimeout(resolve, 100));
       return 'First step completed';
     });
 
     const _newItem = await step.runTaskAndWait('rtest', 'exampleGroup', 'newTask', { lastname: 'Hello World' });
 
-    //await step.sleep('sleep-step', 10000);
+    // await step.sleep('sleep-step', 10000);
     const subTask = await step.runFlows('flow', [
       {
         taskGroup: 'exampleGroup',
@@ -82,7 +80,7 @@ export const helloTask = defineTask({
       const result = 'Second step completed';
       logger.info(`Subtask result: ${subTask}`);
       logger.info(`Running second step with job data: ${JSON.stringify(job.payload)}`);
-      await new Promise((resolve) => setTimeout(resolve, 100));
+      await new Promise(resolve => setTimeout(resolve, 100));
       return result;
     });
 
@@ -111,7 +109,7 @@ export const helloTask = defineTask({
     logger.info(`Processed message: ${message}`);
 
     // Simulate some async work
-    await new Promise((resolve) => setTimeout(resolve, 100));
+    await new Promise(resolve => setTimeout(resolve, 100));
 
     return message; // Return a result
   },

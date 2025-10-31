@@ -8,7 +8,7 @@
 export async function waitFor(
   condition: () => boolean | Promise<boolean>,
   timeoutMs: number = 5000,
-  intervalMs: number = 100
+  intervalMs: number = 100,
 ): Promise<void> {
   const startTime = Date.now();
 
@@ -16,7 +16,7 @@ export async function waitFor(
     if (await condition()) {
       return;
     }
-    await new Promise((resolve) => setTimeout(resolve, intervalMs));
+    await new Promise(resolve => setTimeout(resolve, intervalMs));
   }
 
   throw new Error(`Condition not met within ${timeoutMs}ms`);
@@ -26,7 +26,7 @@ export async function waitFor(
  * Creates a delay promise
  */
 export function delay(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
+  return new Promise(resolve => setTimeout(resolve, ms));
 }
 
 /**

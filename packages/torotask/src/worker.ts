@@ -1,8 +1,8 @@
 import type { Job, WorkerOptions } from 'bullmq';
-import { Worker } from 'bullmq'; // Keep Worker import for extends
 import type { Logger } from 'pino';
 import type { ToroTask } from './client.js';
-import type { TaskWorkerOptions, TaskProcessor, TaskValidator, TaskJobData } from './types/index.js';
+import type { TaskJobData, TaskProcessor, TaskValidator, TaskWorkerOptions } from './types/index.js';
+import { Worker } from 'bullmq'; // Keep Worker import for extends
 import { TaskJob } from './job.js';
 
 const BatchMaxStalledCount = 5;
@@ -24,7 +24,7 @@ export class TaskWorker<
   private rejectJobBatchProcessPromise: ((error: Error) => void) | null = null;
   private batchProcessingRunning = false;
   private batchTimeoutTimer: NodeJS.Timeout | null = null;
-  private batchLock = false; // Add a flag to prevent concurrent batch operations
+  private batchLock = false; //  Add a flag to prevent concurrent batch operations
   private batchProcessingScheduled = false; // Flag to track if a batch is scheduled for processing
 
   constructor(
@@ -32,7 +32,7 @@ export class TaskWorker<
     name: string,
     processor?: string | URL | null | TaskProcessor<PayloadType, ResultType, NameType>,
     protected validator?: null | TaskValidator<PayloadType, ResultType, NameType>,
-    options?: Partial<TaskWorkerOptions>
+    options?: Partial<TaskWorkerOptions>,
   ) {
     if (!taskClient) {
       throw new Error('ToroTask instance is required.');
@@ -73,7 +73,7 @@ export class TaskWorker<
   static validateBatchOptions(
     name: string,
     options: Partial<TaskWorkerOptions>,
-    logger?: Logger
+    logger?: Logger,
   ): Partial<TaskWorkerOptions> {
     if (!options.batch) {
       return options;
@@ -89,7 +89,8 @@ export class TaskWorker<
         logger?.warn(`TaskWorker for "${name}" has invalid batchMinSize. Defaulting to 1.`);
         options.batch.minSize = 1;
       }
-    } else {
+    }
+    else {
       options.batch.minSize = 1;
     }
 
@@ -130,7 +131,8 @@ export class TaskWorker<
     await this.callValidateJob(job);
     if (!this.isBatchingEnabled || !batchOptions || job.isBatch) {
       return super.callProcessJob(job, token);
-    } else {
+    }
+    else {
       return this.batchJobCollector(job as any, token) as any;
     }
   }
@@ -151,14 +153,14 @@ export class TaskWorker<
 
     // Log current batch state for debugging
     jobLogger.debug(
-      `Batch state before adding job: size=${this.jobBatch.length}, timerActive=${!!this.batchTimeoutTimer}, processing=${this.batchProcessingRunning}`
+      `Batch state before adding job: size=${this.jobBatch.length}, timerActive=${!!this.batchTimeoutTimer}, processing=${this.batchProcessingRunning}`,
     );
 
     // Wait for any ongoing batch processing lock to be released
     let waitAttempts = 0;
     while (this.batchLock && waitAttempts < 50) {
       // Prevent infinite waiting
-      await new Promise((resolve) => setTimeout(resolve, 10));
+      await new Promise(resolve => setTimeout(resolve, 10));
       waitAttempts++;
     }
 
@@ -166,14 +168,15 @@ export class TaskWorker<
       jobLogger.warn(`Batch lock still held after ${waitAttempts} attempts. Proceeding with caution.`);
     }
 
-    //if (this.options.)
+    // if (this.options.)
 
     this.jobBatch.push(job);
     try {
       await job.log(
-        `Adding to batch queue for worker "${this.name}". Item ${this.jobBatch.length} of ${this.options.batch.size}`
+        `Adding to batch queue for worker "${this.name}". Item ${this.jobBatch.length} of ${this.options.batch.size}`,
       );
-    } catch (logError) {
+    }
+    catch (logError) {
       jobLogger.error({ err: logError }, `Failed to add log to job ${job.id}`);
     }
 
@@ -192,11 +195,12 @@ export class TaskWorker<
     if (this.jobBatch.length >= this.options.batch.size) {
       if (this.batchProcessingRunning || this.batchProcessingScheduled) {
         jobLogger.debug(
-          `Batch size limit reached but processing is ${this.batchProcessingRunning ? 'running' : 'scheduled'} for worker "${this.name}". Will be processed in the next cycle.`
+          `Batch size limit reached but processing is ${this.batchProcessingRunning ? 'running' : 'scheduled'} for worker "${this.name}". Will be processed in the next cycle.`,
         );
-      } else {
+      }
+      else {
         jobLogger.debug(
-          `Batch size limit (${this.options.batch.size}) reached for worker "${this.name}". Triggering batch processing.`
+          `Batch size limit (${this.options.batch.size}) reached for worker "${this.name}". Triggering batch processing.`,
         );
         this.clearBatchTimeoutTimer();
         this.batchProcessingScheduled = true; // Mark as scheduled
@@ -208,7 +212,8 @@ export class TaskWorker<
     try {
       await currentBatchPromise;
       jobLogger.info(`Batch containing job ${job.id} completed successfully.`);
-    } catch (batchError) {
+    }
+    catch (batchError) {
       jobLogger.warn({ err: batchError }, `Batch containing job ${job.id} failed.`);
       throw batchError;
     }
@@ -225,20 +230,22 @@ export class TaskWorker<
     });
     this.clearBatchTimeoutTimer();
     this.logger.debug(
-      `Initialized new batch buffer for worker "${this.name}" at ${this.jobBatchCreationTime.toISOString()}`
+      `Initialized new batch buffer for worker "${this.name}" at ${this.jobBatchCreationTime.toISOString()}`,
     );
   }
 
   private clearBatchTimeoutTimer(): void {
     if (this.batchTimeoutTimer) {
-      clearTimeout(this.batchTimeoutTimer);
+      globalThis.clearTimeout(this.batchTimeoutTimer);
       this.batchTimeoutTimer = null;
       this.logger.trace(`Cleared batch timeout timer for worker "${this.name}".`);
     }
   }
 
   private startBatchTimeoutTimerIfNeeded(): void {
-    if (!this.options.batch) return;
+    if (!this.options.batch) {
+      return;
+    }
 
     // Clear any existing timer first to avoid multiple timers
     this.clearBatchTimeoutTimer();
@@ -247,31 +254,35 @@ export class TaskWorker<
     if (this.options.batch.timeout) {
       const timeout = this.options.batch.timeout;
       this.logger.debug(
-        `Starting batch timeout timer (${timeout}ms) for worker "${this.name}" with ${this.jobBatch.length} jobs in batch.`
+        `Starting batch timeout timer (${timeout}ms) for worker "${this.name}" with ${this.jobBatch.length} jobs in batch.`,
       );
 
-      this.batchTimeoutTimer = setTimeout(() => {
+      this.batchTimeoutTimer = globalThis.setTimeout(() => {
         this.logger.info(`Batch timeout reached for worker "${this.name}" after ${timeout}ms.`);
         this.batchTimeoutTimer = null;
         if (this.jobBatch.length > 0) {
           if (this.batchProcessingRunning || this.batchProcessingScheduled) {
             this.logger.debug(
-              `Batch timeout reached for worker "${this.name}", but processing is ${this.batchProcessingRunning ? 'running' : 'scheduled'}. Jobs will be processed in the next cycle.`
+              `Batch timeout reached for worker "${this.name}", but processing is ${this.batchProcessingRunning ? 'running' : 'scheduled'}. Jobs will be processed in the next cycle.`,
             );
-          } else if (this.jobBatch.length >= minSize) {
+          }
+          else if (this.jobBatch.length >= minSize) {
             this.logger.debug(`Timeout triggered batch processing (met minSize ${minSize}) for worker "${this.name}".`);
             this.batchProcessingScheduled = true; // Mark as scheduled
             void this.processBatchWrapper();
-          } else {
+          }
+          else {
             this.logger.debug(
-              `Timeout reached for worker "${this.name}", but minSize (${minSize}) not met. Batch size: ${this.jobBatch.length}. Timer will restart when new jobs arrive.`
+              `Timeout reached for worker "${this.name}", but minSize (${minSize}) not met. Batch size: ${this.jobBatch.length}. Timer will restart when new jobs arrive.`,
             );
           }
-        } else if (this.batchProcessingRunning) {
+        }
+        else if (this.batchProcessingRunning) {
           this.logger.warn(
-            `Batch timeout reached for worker "${this.name}", but a batch is already processing. Ignoring timeout trigger.`
+            `Batch timeout reached for worker "${this.name}", but a batch is already processing. Ignoring timeout trigger.`,
           );
-        } else {
+        }
+        else {
           this.logger.debug(`Batch timeout reached for worker "${this.name}", but batch is empty. Ignoring.`);
         }
       }, this.options.batch.timeout);
@@ -297,7 +308,7 @@ export class TaskWorker<
       // This is an expected condition when multiple jobs arrive quickly
       // Just log at debug level and return
       this.logger.debug(
-        `Batch processing already running for worker "${this.name}". Current jobs will be processed in the next batch.`
+        `Batch processing already running for worker "${this.name}". Current jobs will be processed in the next batch.`,
       );
       return;
     }
@@ -306,7 +317,9 @@ export class TaskWorker<
     this.batchLock = true;
     if (this.jobBatch.length === 0) {
       this.logger.warn(`processBatchWrapper called for worker "${this.name}" with empty batch. Skipping.`);
-      if (this.resolveJobBatchProcessPromise) this.resolveJobBatchProcessPromise();
+      if (this.resolveJobBatchProcessPromise) {
+        this.resolveJobBatchProcessPromise();
+      }
       return;
     }
 
@@ -322,14 +335,15 @@ export class TaskWorker<
     // Check before resetting the promise handlers
     if (!batchPromiseResolver || !batchPromiseRejector) {
       this.logger.error(
-        `Critical error: Batch promise resolver/rejector missing for batch created at ${batchCreationTime.toISOString()}. Cannot process.`
+        `Critical error: Batch promise resolver/rejector missing for batch created at ${batchCreationTime.toISOString()}. Cannot process.`,
       );
       this.batchProcessingRunning = false;
       const error = new Error('Internal error: Batch promise state lost.');
       if (batchPromiseRejector) {
         try {
           batchPromiseRejector(error);
-        } catch (rejectError) {
+        }
+        catch (rejectError) {
           this.logger.error({ err: rejectError }, 'Error rejecting lost batch promise');
         }
       }
@@ -358,15 +372,17 @@ export class TaskWorker<
       // --- Success ---
       batchLogger.info(`Successfully processed ${batchInfo} for task "${this.name}".`);
       batchPromiseResolver(); // Resolve promise for all waiting jobs in this batch.
-    } catch (error) {
+    }
+    catch (error) {
       // --- Failure (emulating default Pro behavior) ---
       const processingError = error instanceof Error ? error : new Error(String(error));
       batchLogger.error(
         { err: processingError },
-        `Error processing ${batchInfo} for task "${this.name}". Failing entire batch.`
+        `Error processing ${batchInfo} for task "${this.name}". Failing entire batch.`,
       );
       batchPromiseRejector(processingError); // Reject promise for all waiting jobs.
-    } finally {
+    }
+    finally {
       // --- Cleanup ---
       this.batchProcessingRunning = false;
       this.batchLock = false; // Release the lock
@@ -399,37 +415,42 @@ export class TaskWorker<
         const minSize = this.options.batch?.minSize ?? 1;
         if (this.jobBatch.length >= minSize) {
           this.logger.info(
-            `Processing final pending batch (${this.jobBatch.length} jobs, met minSize ${minSize}) during shutdown for worker "${this.name}"...`
+            `Processing final pending batch (${this.jobBatch.length} jobs, met minSize ${minSize}) during shutdown for worker "${this.name}"...`,
           );
           try {
             await this.processBatchWrapper();
-          } catch (err) {
+          }
+          catch (err) {
             this.logger.error({ err }, 'Error processing final batch during shutdown.');
           }
-        } else {
+        }
+        else {
           this.logger.warn(
-            `Skipping final batch (${this.jobBatch.length} jobs) during shutdown for worker "${this.name}" as it does not meet minimum size ${minSize}. These jobs may be processed on next startup.`
+            `Skipping final batch (${this.jobBatch.length} jobs) during shutdown for worker "${this.name}" as it does not meet minimum size ${minSize}. These jobs may be processed on next startup.`,
           );
           if (this.resolveJobBatchProcessPromise) {
             this.resolveJobBatchProcessPromise();
           }
         }
-      } else if (!force && this.batchProcessingRunning) {
+      }
+      else if (!force && this.batchProcessingRunning) {
         this.logger.info(
-          `Waiting for currently running batch to complete during shutdown for worker "${this.name}"...`
+          `Waiting for currently running batch to complete during shutdown for worker "${this.name}"...`,
         );
         const promiseToWaitFor = this.jobBatchProcessPromise;
         if (promiseToWaitFor) {
           try {
             await promiseToWaitFor;
             this.logger.info(`Active batch likely finished during shutdown for worker "${this.name}".`);
-          } catch (_error) {
+          }
+          catch {
             this.logger.warn(`Active batch likely failed during shutdown for worker "${this.name}".`);
           }
         }
-      } else if (force) {
+      }
+      else if (force) {
         this.logger.warn(
-          `Force closing worker "${this.name}". Any pending or active batch processing will be interrupted.`
+          `Force closing worker "${this.name}". Any pending or active batch processing will be interrupted.`,
         );
 
         // Handle any batch that might be in progress
@@ -444,7 +465,8 @@ export class TaskWorker<
         if (this.rejectJobBatchProcessPromise) {
           try {
             this.rejectJobBatchProcessPromise(new Error('Worker force closed'));
-          } catch (e) {
+          }
+          catch (e) {
             // Log the error caught during rejection
             this.logger.error({ err: e }, 'Error rejecting pending batch promise during force close.');
           }
@@ -460,7 +482,7 @@ export class TaskWorker<
 
   /**
    * Override the Job class to use TaskJob
-   * @returns {typeof Job}
+   * @returns The extended Job class.
    */
   protected get Job(): typeof Job {
     return TaskJob as any;

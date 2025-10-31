@@ -1,29 +1,29 @@
-import type { FlowChildJob, FlowJob, Job } from 'bullmq';
-import { ConnectionOptions } from 'bullmq';
-import { EventEmitter } from 'events';
-import { Redis, RedisOptions } from 'ioredis';
-import { type Logger, P, pino } from 'pino';
-import { LRU } from 'tiny-lru';
-import { EventDispatcher } from './event-dispatcher.js';
-import { TaskQueue } from './queue.js';
-import { TaskGroup } from './task-group.js';
+import type { ConnectionOptions, Job } from 'bullmq';
+import type { RedisOptions } from 'ioredis';
+import type { Logger } from 'pino';
+import type { TaskJob } from './job.js';
+import type { Task } from './task.js';
 import type {
   SchemaHandler,
   TaskDefinitionRegistry,
   TaskFlowRun,
   TaskFlowRunNode,
+  TaskGroupDefinition,
   TaskGroupDefinitionRegistry,
+  TaskGroupRegistry,
   TaskJobOptions,
   TaskRegistry,
-  TaskGroupRegistry,
-  TaskGroupDefinition,
   ToroTaskOptions,
 } from './types/index.js';
+import { EventEmitter } from 'node:events';
+import { Redis } from 'ioredis';
+import { pino } from 'pino';
+import { LRU } from 'tiny-lru';
+import { EventDispatcher } from './event-dispatcher.js';
+import { TaskQueue } from './queue.js';
+import { TaskGroup } from './task-group.js';
 import { getConfigFromEnv } from './utils/get-config-from-env.js';
 import { TaskWorkflow } from './workflow.js';
-import type { Task } from './task.js';
-import { TaskJob } from './job.js';
-import { convertJobOptions } from './utils/convert-job-options.js';
 
 const LOGGER_NAME = 'ToroTask';
 const BASE_PREFIX = 'torotask';
@@ -46,8 +46,9 @@ export class ToroTask<
   private _redis: Redis | null = null;
   private _consumerQueues = new LRU<TaskQueue>(
     100, // Max number of cached queues
-    5 * 60_000 // TTL in ms (default: 5 minutes)
+    5 * 60_000, // TTL in ms (default: 5 minutes)
   );
+
   public readonly taskGroups: TGroups;
   private readonly _isTyped: boolean;
   private readonly _allowNonExistingQueues: boolean;
@@ -111,7 +112,7 @@ export class ToroTask<
         reuseConnections: this._reuseConnections,
         queueDiscoveryEnabled: enableQueueDiscovery ?? false,
       },
-      'ToroTask initialized'
+      'ToroTask initialized',
     );
 
     // Start queue discovery if enabled
@@ -140,10 +141,10 @@ export class ToroTask<
       const taskCount = Object.keys(typedGroupDef.tasks).length;
       this.logger.debug(
         {
-          groupId: groupId,
+          groupId,
           taskCount,
         },
-        'Task group initialized'
+        'Task group initialized',
       );
     }
   }
@@ -196,7 +197,8 @@ export class ToroTask<
         this.logger.info('Created shared Redis instance for queue connection reusing');
       }
       return this._sharedQueueRedisInstance;
-    } else {
+    }
+    else {
       // Use dedicated main Redis client when reusing is disabled
       if (!this._redis) {
         this._redis = new Redis(this.connectionOptions as RedisOptions);
@@ -242,7 +244,7 @@ export class ToroTask<
    */
   public createTaskGroup<TDefs extends TaskDefinitionRegistry>(
     id: string,
-    definitions?: TDefs
+    definitions?: TDefs,
   ): TaskGroup<TDefs, TaskRegistry<TDefs>> {
     if (this.taskGroups[id as keyof TGroups]) {
       return this.taskGroups[id as keyof TGroups] as TaskGroup<TDefs, TaskRegistry<TDefs>>;
@@ -257,7 +259,7 @@ export class ToroTask<
    * Retrieves an existing TaskGroup instance by id.
    */
   public getTaskGroup<G extends keyof TGroups, SpecificTaskGroup extends TGroups[G] = TGroups[G]>(
-    id: G
+    id: G,
   ): SpecificTaskGroup | undefined {
     return this.taskGroups[id] as SpecificTaskGroup;
   }
@@ -269,10 +271,12 @@ export class ToroTask<
    */
   private _getTask<PayloadType = any, ResultType = unknown>(
     groupId: string,
-    taskId: string
+    taskId: string,
   ): Task<PayloadType, ResultType, SchemaHandler> | undefined {
     const group = this.getTaskGroup(groupId as any);
-    if (!group) return undefined;
+    if (!group) {
+      return undefined;
+    }
 
     // Use getTask since id is now the same as ID
     return group.getTask(taskId as any) as Task<PayloadType, ResultType, SchemaHandler> | undefined;
@@ -282,7 +286,9 @@ export class ToroTask<
     G extends keyof TGroups,
     SpecificTaskGroup extends TGroups[G] = TGroups[G],
     TaskName extends keyof SpecificTaskGroup['tasks'] = keyof SpecificTaskGroup['tasks'],
-  >(groupId: G, taskId: TaskName): SpecificTaskGroup['tasks'][TaskName] | undefined {
+  >(groupId: G,
+    taskId: TaskName,
+  ): SpecificTaskGroup['tasks'][TaskName] | undefined {
     const group = this.taskGroups[groupId];
     if (group && group.tasks && Object.prototype.hasOwnProperty.call(group.tasks, taskId)) {
       return group.tasks[taskId as any] as any;
@@ -297,7 +303,7 @@ export class ToroTask<
    * @returns The Task instance if found, otherwise undefined.
    */
   public getTaskByPath<PayloadType = any, ResultType = unknown>(
-    taskPath: `${string}.${string}`
+    taskPath: `${string}.${string}`,
   ): Task<PayloadType, ResultType, SchemaHandler> | undefined {
     const [groupId, taskId] = taskPath.split('.');
     return this._getTask<PayloadType, ResultType>(groupId, taskId);
@@ -323,7 +329,9 @@ export class ToroTask<
   private async getConsumerQueue<PayloadType = any, ResultType = any>(group: string, task: string) {
     const key = `${group}.${task}`;
     const cached = this._consumerQueues.get(key);
-    if (cached) return cached;
+    if (cached) {
+      return cached;
+    }
 
     const exists = await this.queueExists(key);
     if (!exists && !this._allowNonExistingQueues) {
@@ -337,7 +345,7 @@ export class ToroTask<
 
   public async getJobById<PayloadType = any, ResultType = any>(
     queueName: string,
-    jobId: string
+    jobId: string,
   ): Promise<TaskJob<PayloadType, ResultType> | undefined> {
     const queue = this._consumerQueues.get(queueName);
 
@@ -359,7 +367,7 @@ export class ToroTask<
   public async getChildJobs<PayloadType = any, ResultType = any>(
     queueName: string,
     parentId: string,
-    afterTimestamp?: number
+    afterTimestamp?: number,
   ): Promise<TaskJob<PayloadType, ResultType>[]> {
     const queue = this._consumerQueues.get(queueName);
     if (!queue) {
@@ -385,7 +393,7 @@ export class ToroTask<
 
     this.logger.debug(
       { queueName, parentId, foundCount: childJobs.length },
-      `Found ${childJobs.length} child jobs for parent ${parentId}`
+      `Found ${childJobs.length} child jobs for parent ${parentId}`,
     );
 
     return childJobs as TaskJob<PayloadType, ResultType>[];
@@ -396,7 +404,8 @@ export class ToroTask<
    *
    * @param groupId The id of the task group.
    * @param taskId The id of the task to run.
-   * @param data The data to pass to the task.
+   * @param payload The data to pass to the task.
+   * @param options The options for the task job.
    * @returns A promise that resolves to the Job instance.
    * @internal
    */
@@ -404,7 +413,7 @@ export class ToroTask<
     groupId: string,
     taskId: string,
     payload: PayloadType,
-    options?: TaskJobOptions
+    options?: TaskJobOptions,
   ) {
     const task = this._getTask<PayloadType, ResultType>(groupId, taskId);
     if (task) {
@@ -423,7 +432,7 @@ export class ToroTask<
    * Runs a task in the specified group with the provided data.
    *
    * @param taskPath The id of the task to run in format group.task.
-   * @param data The data to pass to the task.
+   * @param payload The data to pass to the task.
    * @returns A promise that resolves to the Job instance.
    */
   async runTaskByPath<PayloadType = any, ResultType = any>(taskPath: `${string}.${string}`, payload: PayloadType) {
@@ -458,17 +467,19 @@ export class ToroTask<
     groupId: G,
     taskName: TaskName,
     payload: ActualPayload,
-    options?: TaskJobOptions
+    options?: TaskJobOptions,
   ): Promise<TaskJob<ActualPayload, Result>> {
     if (this._isTyped) {
       // Typed mode - use existing logic with local task groups
       const group = this.taskGroups[groupId as keyof TGroups];
       if (group && group.runTask) {
         return group.runTask<string, ActualTask, ActualPayload>(taskName as string, payload);
-      } else {
+      }
+      else {
         throw new Error(`Task group "${groupId as string}" not found.`);
       }
-    } else {
+    }
+    else {
       // Generic mode - use _runTask directly for queue-based execution
       return this._runTask<ActualPayload, Result>(groupId as string, taskName as string, payload, options);
     }
@@ -480,7 +491,7 @@ export class ToroTask<
    */
   async runFlow<TFlowRun extends TaskFlowRun<TAllTaskGroupsDefs> = TaskFlowRun<TAllTaskGroupsDefs>>(
     run: TFlowRun,
-    options?: Partial<TaskJobOptions>
+    options?: Partial<TaskJobOptions>,
   ): Promise<TaskFlowRunNode> {
     return await this.workflow.runFlow(run as any, options);
   }
@@ -490,7 +501,7 @@ export class ToroTask<
    */
   async runFlows<TFlowRun extends TaskFlowRun<TAllTaskGroupsDefs> = TaskFlowRun<TAllTaskGroupsDefs>>(
     runs: TFlowRun[],
-    options?: Partial<TaskJobOptions>
+    options?: Partial<TaskJobOptions>,
   ): Promise<TaskFlowRunNode[]> {
     return await this.workflow.runFlows(runs as any, options);
   }
@@ -502,11 +513,12 @@ export class ToroTask<
    * @param eventName
    * @param data
    * @param options
-   * @returns
+   * @returns A promise that resolves when the event is sent.
    */
   async sendEvent<E = unknown>(eventName: string, data: E, options?: TaskJobOptions) {
     return this.events.send(eventName, data, options);
   }
+
   /**
    * Fetches all BullMQ queue names from the Redis instance.
    * Uses shared client connection when connection reusing is enabled, otherwise uses main Redis client.
@@ -525,7 +537,7 @@ export class ToroTask<
       count: 100, // Adjust count for performance if needed
     });
 
-    const escapedPrefix = this.queuePrefix.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
+    const escapedPrefix = this.queuePrefix.replace(/[-/\\^$*+?.()|[\]{}]/g, '\\$&');
     const queueRegex = new RegExp(`^${escapedPrefix}:(.+):meta$`);
 
     return new Promise((resolve, reject) => {
@@ -585,14 +597,15 @@ export class ToroTask<
     }
 
     // Close all task resources (worker, queue, events) via task.close()
-    const taskClosePromises = Object.values(this.taskGroups).flatMap((group) => group.close());
+    const taskClosePromises = Object.values(this.taskGroups).flatMap(group => group.close());
     closePromises.push(...taskClosePromises);
 
     // Close EventDispatcher if it was initialized
     if (this._eventDispatcher) {
       this.logger.debug('Closing EventDispatcher...');
       closePromises.push(this._eventDispatcher.close());
-    } else {
+    }
+    else {
       this.logger.debug('EventDispatcher was not initialized, skipping closure.');
     }
 
@@ -611,7 +624,8 @@ export class ToroTask<
         await this._redis.quit();
         this.logger.debug('Main Redis client closed');
         this._redis = null;
-      } else {
+      }
+      else {
         this.logger.debug('No main Redis client to close (connection reusing may be enabled)');
       }
 
@@ -623,15 +637,17 @@ export class ToroTask<
         const connectionClosePromises = Array.from(this._createdConnections).map(async (connection, index) => {
           try {
             this.logger.debug(
-              `Closing tracked connection ${index + 1}/${this._createdConnections.size}, status: ${connection.status}`
+              `Closing tracked connection ${index + 1}/${this._createdConnections.size}, status: ${connection.status}`,
             );
             if (connection.status === 'ready') {
               await connection.quit();
               this.logger.debug(`Successfully closed tracked connection ${index + 1}`);
-            } else {
+            }
+            else {
               this.logger.debug(`Skipped closing connection ${index + 1} (status: ${connection.status})`);
             }
-          } catch (error) {
+          }
+          catch (error) {
             this.logger.warn({ err: error }, `Error closing Redis connection ${index + 1}`);
           }
         });
@@ -644,12 +660,14 @@ export class ToroTask<
         this._createdConnections.clear();
 
         this.logger.debug('All tracked Redis connections closed and cleared');
-      } else {
+      }
+      else {
         this.logger.debug('Connection reusing disabled, no shared connections to close');
       }
 
       this.logger.info('All managed resources (tasks, event dispatcher, queues, redis) closed.');
-    } catch (error) {
+    }
+    catch (error) {
       this.logger.error({ err: error }, 'Error during ToroTask resource closure.');
       // Potentially re-throw or handle aggregate error
     }
@@ -683,7 +701,7 @@ export class ToroTask<
 
       // Initialize known queues
       const existingQueues = await this.getAllQueueNames();
-      existingQueues.forEach((queueName) => this._knownQueues.add(queueName));
+      existingQueues.forEach(queueName => this._knownQueues.add(queueName));
       this.logger.debug({ count: existingQueues.length }, 'Initialized known queues');
 
       this._queueDiscoverySubscriber.on('pmessage', async (pattern, channel, message) => {
@@ -691,7 +709,7 @@ export class ToroTask<
           // Extract queue name from the keyspace notification
           // Channel format: __keyspace@0__:torotask:tasks:queueName:meta
           const keyMatch = channel.match(
-            new RegExp(`__keyspace@\\d+__:${this.queuePrefix.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&')}:(.+):meta$`)
+            new RegExp(`__keyspace@\\d+__:${this.queuePrefix.replace(/[-/\\^$*+?.()|[\]{}]/g, '\\$&')}:(.+):meta$`),
           );
 
           if (keyMatch && keyMatch[1]) {
@@ -704,7 +722,8 @@ export class ToroTask<
                 this.logger.info({ queueName }, 'New queue detected');
                 this.emit('queueCreated', queueName);
               }
-            } else if (message === 'del' || message === 'expired') {
+            }
+            else if (message === 'del' || message === 'expired') {
               // Queue was deleted or expired
               if (this._knownQueues.has(queueName)) {
                 this._knownQueues.delete(queueName);
@@ -713,7 +732,8 @@ export class ToroTask<
               }
             }
           }
-        } catch (error) {
+        }
+        catch (error) {
           this.logger.error({ error, pattern, channel, message }, 'Error processing keyspace notification');
         }
       });
@@ -726,7 +746,8 @@ export class ToroTask<
       this._isQueueDiscoveryActive = true;
       this.logger.info('Queue discovery started successfully');
       this.emit('queueDiscoveryStarted');
-    } catch (error) {
+    }
+    catch (error) {
       this.logger.error({ error }, 'Failed to start queue discovery');
       throw error;
     }
@@ -754,7 +775,8 @@ export class ToroTask<
 
       this.logger.info('Queue discovery stopped');
       this.emit('queueDiscoveryStopped');
-    } catch (error) {
+    }
+    catch (error) {
       this.logger.error({ error }, 'Error stopping queue discovery');
       throw error;
     }
@@ -794,7 +816,7 @@ export class ToroTask<
   }
 }
 
+export { EventDispatcher } from './event-dispatcher.js'; // Re-export EventDispatcher
 // --- Exports ---
 // Re-export core BullMQ types users might need
 export { ConnectionOptions, Job, JobsOptions, Queue } from 'bullmq';
-export { EventDispatcher } from './event-dispatcher.js'; // Re-export EventDispatcher

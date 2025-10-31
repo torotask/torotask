@@ -12,7 +12,6 @@ export type TaskServerOptions = ToroTaskOptions & {
   handleGlobalErrors?: boolean;
 };
 
-1;
-export type BaseConfig<PayloadType = any> = {
+export interface BaseConfig<PayloadType = any> {
   triggers?: SingleOrArray<TaskTrigger<PayloadType>>;
-};
+}

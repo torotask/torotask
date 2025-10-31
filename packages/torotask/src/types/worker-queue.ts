@@ -2,8 +2,7 @@ import type { JobProgress, QueueListener, WorkerListener } from 'bullmq'; // Ass
 import type { TaskJob } from '../job.js'; // Your specific Job type
 import type { TaskJobData } from './job.js';
 import type { TaskQueueOptions } from './queue.js';
-import type { TaskProcessor, TaskValidator } from './worker.js';
-import type { TaskWorkerOptions } from './worker.js';
+import type { TaskProcessor, TaskValidator, TaskWorkerOptions } from './worker.js';
 
 export type TaskWorkerQueueOptions<
   PayloadType = any,

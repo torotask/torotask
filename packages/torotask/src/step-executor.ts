@@ -1,14 +1,10 @@
-import { isArray, isPlainObject } from 'lodash-es';
-import ms, { type StringValue } from 'ms';
-import { Logger } from 'pino';
-import { ToroTask } from './client.js';
-import { TaskJob } from './job.js';
-import { DelayedError, WaitingChildrenError } from './step-errors.js';
-import { Task } from './task.js';
+import type { StringValue } from 'ms';
+import type { Logger } from 'pino';
+import type { ToroTask } from './client.js';
+import type { Task } from './task.js';
 import type {
   BulkJobsReference,
   SimplifiedJob,
-  StepBulkJob,
   StepResult,
   StepTaskJobOptions,
   TaskFlowRun,
@@ -17,6 +13,10 @@ import type {
   TaskGroupRegistry,
   TaskJobState,
 } from './types/index.js';
+import { isArray, isPlainObject } from 'lodash-es';
+import ms from 'ms';
+import { TaskJob } from './job.js';
+import { DelayedError, WaitingChildrenError } from './step-errors.js';
 import { getDateTime } from './utils/get-datetime.js';
 import { isControlError } from './utils/is-control-error.js';
 import { deserializeError, serializeError } from './utils/serialize-error.js';
@@ -35,7 +35,7 @@ export class StepExecutor<
 
   constructor(
     private job: JobType,
-    private parentTask: Task<TJobPayload, TJobResult, any>
+    private parentTask: Task<TJobPayload, TJobResult, any>,
   ) {
     this.logger = job.logger || (console as unknown as Logger);
     this.client = parentTask.group.client;
@@ -77,7 +77,7 @@ export class StepExecutor<
       if (jobs.length > 10) {
         this.logger.debug(
           { jobCount: jobs.length, stepKind },
-          `Using compact bulk job reference for ${jobs.length} jobs`
+          `Using compact bulk job reference for ${jobs.length} jobs`,
         );
 
         // Extract common queue name (assuming all jobs are in the same queue)
@@ -90,7 +90,7 @@ export class StepExecutor<
           queueName,
           timestamp: Date.now(),
           // Store only first few job IDs as a sample
-          sampleJobIds: jobs.slice(0, 3).map((j) => j.id!),
+          sampleJobIds: jobs.slice(0, 3).map(j => j.id!),
         };
 
         return bulkRef;
@@ -98,7 +98,7 @@ export class StepExecutor<
 
       // For smaller arrays, continue with normal serialization
       this.logger.debug({ stepKind, arrayLength: result.length }, `Processing array of TaskJob instances`);
-      return Promise.all(result.map((item) => this.memoizeStepResult(item, stepKind)));
+      return Promise.all(result.map(item => this.memoizeStepResult(item, stepKind)));
     }
 
     // Handle TaskJob instances by simplifying them
@@ -119,14 +119,14 @@ export class StepExecutor<
     // Handle arrays by recursively processing each element
     if (isArray(result)) {
       this.logger.debug({ stepKind, arrayLength: result.length }, `Processing array for potential TaskJob instances`);
-      return Promise.all(result.map((item) => this.memoizeStepResult(item, stepKind)));
+      return Promise.all(result.map(item => this.memoizeStepResult(item, stepKind)));
     }
 
     // Handle plain objects by recursively processing each property
     if (isPlainObject(result)) {
       this.logger.debug(
         { stepKind, objectKeys: Object.keys(result as object).length },
-        `Processing object for potential TaskJob instances`
+        `Processing object for potential TaskJob instances`,
       );
       const processedObject: Record<string, any> = {};
 
@@ -159,7 +159,7 @@ export class StepExecutor<
     if (memoizedData && memoizedData._isBulkJobsReference) {
       this.logger.debug(
         { count: memoizedData.count, queue: memoizedData.queueName, userStepId },
-        `Detected bulk job reference for step '${userStepId}' with ${memoizedData.count} jobs`
+        `Detected bulk job reference for step '${userStepId}' with ${memoizedData.count} jobs`,
       );
 
       const bulkRef = memoizedData as BulkJobsReference;
@@ -172,29 +172,32 @@ export class StepExecutor<
             bulkRef.queueName,
             this.job.id,
             // Optionally use timestamp for filtering if needed
-            bulkRef.timestamp
+            bulkRef.timestamp,
           );
 
           if (childJobs.length === bulkRef.count) {
             this.logger.debug(
               { count: childJobs.length, userStepId },
-              `Successfully retrieved all ${childJobs.length} child jobs`
-            );
-            return childJobs as unknown as T;
-          } else {
-            this.logger.warn(
-              { expectedCount: bulkRef.count, actualCount: childJobs.length, userStepId },
-              `Found different number of child jobs than expected for step '${userStepId}'`
+              `Successfully retrieved all ${childJobs.length} child jobs`,
             );
             return childJobs as unknown as T;
           }
-        } else {
+          else {
+            this.logger.warn(
+              { expectedCount: bulkRef.count, actualCount: childJobs.length, userStepId },
+              `Found different number of child jobs than expected for step '${userStepId}'`,
+            );
+            return childJobs as unknown as T;
+          }
+        }
+        else {
           throw new Error(`Cannot retrieve bulk jobs: client or job ID not available`);
         }
-      } catch (error: any) {
+      }
+      catch (error: any) {
         this.logger.error(
           { error: error?.message, count: bulkRef.count, userStepId },
-          `Error retrieving bulk jobs for step '${userStepId}'`
+          `Error retrieving bulk jobs for step '${userStepId}'`,
         );
         throw deserializeError(error);
       }
@@ -204,7 +207,7 @@ export class StepExecutor<
     if (memoizedData && memoizedData._isMemoizedTaskJob) {
       this.logger.debug(
         { jobId: memoizedData.jobId, userStepId },
-        `Detected memoized job data for step '${userStepId}'`
+        `Detected memoized job data for step '${userStepId}'`,
       );
 
       const jobData: SimplifiedJob = memoizedData as SimplifiedJob;
@@ -215,13 +218,15 @@ export class StepExecutor<
         if (this.client && jobData.queue) {
           const job = await this.client.getJobById(jobData.queue, jobData.jobId);
           return job as T;
-        } else {
+        }
+        else {
           throw new Error(`Cannot reconstruct job: client or queue not available.`);
         }
-      } catch (error: any) {
+      }
+      catch (error: any) {
         this.logger.error(
           { error: error?.message, jobId: memoizedData.jobId, userStepId },
-          `Error during job reconstruction attempt`
+          `Error during job reconstruction attempt`,
         );
         throw deserializeError(error);
       }
@@ -231,9 +236,9 @@ export class StepExecutor<
     if (isArray(memoizedData)) {
       this.logger.debug(
         { userStepId, arrayLength: memoizedData.length },
-        `Processing array for potential serialized jobs`
+        `Processing array for potential serialized jobs`,
       );
-      const result = await Promise.all(memoizedData.map((item) => this.reconstructJobIfNeeded(item, userStepId)));
+      const result = await Promise.all(memoizedData.map(item => this.reconstructJobIfNeeded(item, userStepId)));
       return result as unknown as T;
     }
 
@@ -241,7 +246,7 @@ export class StepExecutor<
     if (isPlainObject(memoizedData)) {
       this.logger.debug(
         { userStepId, objectKeys: Object.keys(memoizedData).length },
-        `Processing object for potential serialized jobs`
+        `Processing object for potential serialized jobs`,
       );
       const result: Record<string, any> = {};
 
@@ -280,13 +285,13 @@ export class StepExecutor<
     coreLogic: (internalStepId: string) => Promise<T>,
     handleMemoizedState?: (
       memoizedResult: StepResult,
-      internalStepId: string
+      internalStepId: string,
     ) => Promise<{
       processed: boolean; // True if this handler processed the state
       result?: T; // Result if processed and completed
       errorToThrow?: any; // Error to throw if processed and still pending or errored
     }>,
-    memoizeStepResult?: (result: T, stepKind: string) => Promise<any> // Optional custom memoizer
+    memoizeStepResult?: (result: T, stepKind: string) => Promise<any>, // Optional custom memoizer
   ): Promise<T> {
     const currentCount = this.stepCounts.get(userStepId) || 0;
     const internalStepId = `${userStepId}_${currentCount}`;
@@ -298,19 +303,21 @@ export class StepExecutor<
       if (memoizedResult.status === 'completed') {
         this.logger.debug(
           { internalStepId, data: memoizedResult.data, stepKind },
-          `Step '${userStepId}' (id: ${internalStepId}) already completed, returning memoized data.`
+          `Step '${userStepId}' (id: ${internalStepId}) already completed, returning memoized data.`,
         );
 
         // Check if the memoized result is a job that needs reconstruction
         const result = await this.reconstructJobIfNeeded(memoizedResult.data, userStepId);
         return result as T;
-      } else if (memoizedResult.status === 'errored') {
+      }
+      else if (memoizedResult.status === 'errored') {
         this.logger.warn(
           { internalStepId, error: memoizedResult.error, stepKind },
-          `Step '${userStepId}' (id: ${internalStepId}) previously errored, re-throwing.`
+          `Step '${userStepId}' (id: ${internalStepId}) previously errored, re-throwing.`,
         );
         throw deserializeError(memoizedResult.error);
-      } else if (handleMemoizedState) {
+      }
+      else if (handleMemoizedState) {
         const intermediateOutcome = await handleMemoizedState(memoizedResult, internalStepId);
         if (intermediateOutcome.processed) {
           if (intermediateOutcome.errorToThrow) {
@@ -320,12 +327,13 @@ export class StepExecutor<
         }
         this.logger.warn(
           { internalStepId, memoizedResult, stepKind },
-          `Memoized step '${userStepId}' (id: ${internalStepId}) with status '${memoizedResult.status}' not fully handled by intermediate handler, proceeding to core logic.`
+          `Memoized step '${userStepId}' (id: ${internalStepId}) with status '${memoizedResult.status}' not fully handled by intermediate handler, proceeding to core logic.`,
         );
-      } else {
+      }
+      else {
         this.logger.warn(
           { internalStepId, memoizedResult, stepKind },
-          `Memoized step '${userStepId}' (id: ${internalStepId}) with unhandled status '${memoizedResult.status}', proceeding to core logic.`
+          `Memoized step '${userStepId}' (id: ${internalStepId}) with unhandled status '${memoizedResult.status}', proceeding to core logic.`,
         );
       }
     }
@@ -344,14 +352,15 @@ export class StepExecutor<
       };
       await this.persistState();
       return result;
-    } catch (error: any) {
+    }
+    catch (error: any) {
       if (isControlError(error) && error.message.includes(internalStepId)) {
         throw error;
       }
 
       this.logger.debug(
         { internalStepId, stepKind, err: error },
-        `Core logic for step '${userStepId}' (id: ${internalStepId}) threw an unexpected error.`
+        `Core logic for step '${userStepId}' (id: ${internalStepId}) threw an unexpected error.`,
       );
       this.job.state.stepState![internalStepId] = {
         status: 'errored',
@@ -390,7 +399,8 @@ export class StepExecutor<
             this.job.state.stepState![internalStepId] = { status: 'completed' };
             await this.persistState();
             return { processed: true, result: undefined };
-          } else {
+          }
+          else {
             await this.job.moveToDelayed(sleepUntil, this.job.token);
             return {
               processed: true,
@@ -399,7 +409,7 @@ export class StepExecutor<
           }
         }
         return { processed: false };
-      }
+      },
     );
   }
 
@@ -410,14 +420,14 @@ export class StepExecutor<
       async (internalStepId: string) => {
         this.logger.debug(
           { internalStepId, userStepId, datetime },
-          `sleepUntil called for step '${userStepId}' (id: ${internalStepId}).`
+          `sleepUntil called for step '${userStepId}' (id: ${internalStepId}).`,
         );
 
         const timestampMs = getDateTime(datetime);
         if (timestampMs <= Date.now()) {
           this.logger.debug(
             { internalStepId, userStepId, timestampMs },
-            `Timestamp for sleepUntil step '${userStepId}' (id: ${internalStepId}) is in the past. Completing immediately.`
+            `Timestamp for sleepUntil step '${userStepId}' (id: ${internalStepId}) is in the past. Completing immediately.`,
           );
           this.job.state.stepState![internalStepId] = { status: 'completed' };
           await this.persistState();
@@ -435,7 +445,8 @@ export class StepExecutor<
             this.job.state.stepState![internalStepId] = { status: 'completed' };
             await this.persistState();
             return { processed: true, result: undefined };
-          } else {
+          }
+          else {
             await this.job.moveToDelayed(sleepUntilTime, this.job.token);
             return {
               processed: true,
@@ -444,7 +455,7 @@ export class StepExecutor<
           }
         }
         return { processed: false };
-      }
+      },
     );
   }
 
@@ -456,7 +467,11 @@ export class StepExecutor<
     Result = ActualTask extends Task<any, infer R, any, any> ? R : unknown,
     ActualPayload extends Payload = Payload,
     TJob extends TaskJob<ActualPayload, Result> = TaskJob<ActualPayload, Result>,
-  >(userStepId: string, taskName: TaskName, payload: ActualPayload, options?: StepTaskJobOptions): Promise<TJob> {
+  >(userStepId: string,
+    taskName: TaskName,
+    payload: ActualPayload,
+    options?: StepTaskJobOptions,
+  ): Promise<TJob> {
     return this._executeStep<TJob>(userStepId, 'runGroupTask', async (_internalStepId: string) => {
       const taskKey = taskName.toString();
       const task = this.parentTask?.group.tasks[taskKey];
@@ -474,7 +489,11 @@ export class StepExecutor<
     Payload = ActualTask extends Task<any, any, any, infer P> ? P : unknown,
     Result = ActualTask extends Task<any, infer R, any, any> ? R : unknown,
     ActualPayload extends Payload = Payload,
-  >(userStepId: string, taskName: TaskName, payload: ActualPayload, options?: StepTaskJobOptions): Promise<Result> {
+  >(userStepId: string,
+    taskName: TaskName,
+    payload: ActualPayload,
+    options?: StepTaskJobOptions,
+  ): Promise<Result> {
     return this._executeStep<Result>(userStepId, 'runGroupTaskAndWait', async (_internalStepId: string) => {
       const taskKey = taskName.toString();
       const task = this.parentTask?.group.tasks[taskKey];
@@ -500,7 +519,7 @@ export class StepExecutor<
     groupName: GroupName,
     taskName: TaskName,
     payload: ActualPayload,
-    options?: StepTaskJobOptions
+    options?: StepTaskJobOptions,
   ): Promise<TJob> {
     return this._executeStep<TJob>(userStepId, 'runTask', async (_internalStepId: string) => {
       if (!this.parentTask) {
@@ -536,7 +555,7 @@ export class StepExecutor<
     groupName: GroupName,
     taskName: TaskName,
     payload: ActualPayload,
-    options?: StepTaskJobOptions
+    options?: StepTaskJobOptions,
   ): Promise<Result> {
     return this._executeStep<Result>(userStepId, 'runTaskAndWait', async (_internalStepId: string) => {
       if (!this.parentTask) {
@@ -571,7 +590,7 @@ export class StepExecutor<
     groupName: GroupName,
     taskName: TaskName,
     tasks: Array<{ name?: string; payload?: ActualPayload; options?: StepTaskJobOptions }>,
-    options?: StepTaskJobOptions
+    options?: StepTaskJobOptions,
   ): Promise<TJob[]> {
     return this._executeStep<TJob[]>(userStepId, 'runTasks', async (_internalStepId: string) => {
       if (!this.parentTask) {
@@ -597,7 +616,7 @@ export class StepExecutor<
   async runFlow<TFlowRun extends TaskFlowRun<TAllTaskGroupsDefs> = TaskFlowRun<TAllTaskGroupsDefs>>(
     userStepId: string,
     task: TFlowRun,
-    options?: StepTaskJobOptions
+    options?: StepTaskJobOptions,
   ): Promise<TaskFlowRunNode> {
     return this._executeStep<TaskFlowRunNode>(userStepId, 'runFlow', async (_internalStepId: string) => {
       const result = this.client.runFlow(task as any, { ...options, parent: this.job });
@@ -608,7 +627,7 @@ export class StepExecutor<
   async runFlows<TFlowRun extends TaskFlowRun<TAllTaskGroupsDefs> = TaskFlowRun<TAllTaskGroupsDefs>>(
     userStepId: string,
     tasks: TFlowRun[],
-    options?: StepTaskJobOptions
+    options?: StepTaskJobOptions,
   ): Promise<TaskFlowRunNode[]> {
     return this._executeStep<TaskFlowRunNode[]>(userStepId, 'runFlow', async (_internalStepId: string) => {
       const result = this.client.runFlows(tasks as any, { ...options, parent: this.job });
@@ -623,7 +642,7 @@ export class StepExecutor<
       async (internalStepId: string) => {
         this.logger.debug(
           { internalStepId, userStepId },
-          `waitForChildTasks called for step '${userStepId}' (id: ${internalStepId}).`
+          `waitForChildTasks called for step '${userStepId}' (id: ${internalStepId}).`,
         );
         this.job.state.stepState![internalStepId] = { status: 'waiting_for_children' };
         await this.persistState();
@@ -632,15 +651,16 @@ export class StepExecutor<
         if (shouldWait) {
           this.logger.debug(
             { internalStepId, userStepId },
-            `Step '${userStepId}' (id: ${internalStepId}) successfully moved to waiting for children, throwing WaitingChildrenError.`
+            `Step '${userStepId}' (id: ${internalStepId}) successfully moved to waiting for children, throwing WaitingChildrenError.`,
           );
 
           // Create and throw the error - BullMQ will recognize it
           throw new WaitingChildrenError(`Step "${internalStepId}" is waiting for child tasks.`);
-        } else {
+        }
+        else {
           this.logger.debug(
             { internalStepId, userStepId },
-            `Step '${userStepId}' (id: ${internalStepId}) does not need to wait for children. Completing step.`
+            `Step '${userStepId}' (id: ${internalStepId}) does not need to wait for children. Completing step.`,
           );
           return [];
         }
@@ -649,23 +669,24 @@ export class StepExecutor<
         if (memoizedResult.status === 'waiting_for_children') {
           this.logger.debug(
             { internalStepId, userStepId, tasks: memoizedResult.childTaskIds },
-            `Handling intermediate 'waiting_for_children' state for step '${userStepId}' (id: ${internalStepId}). Re-checking.`
+            `Handling intermediate 'waiting_for_children' state for step '${userStepId}' (id: ${internalStepId}). Re-checking.`,
           );
           const token = this.job.token || '';
           const shouldStillWait = await this.job.moveToWaitingChildren(token);
           if (shouldStillWait) {
             this.logger.debug(
               { internalStepId, userStepId },
-              `Still waiting for children for step '${userStepId}' (id: ${internalStepId}). Re-throwing WaitingChildrenError.`
+              `Still waiting for children for step '${userStepId}' (id: ${internalStepId}). Re-throwing WaitingChildrenError.`,
             );
             return {
               processed: true,
               errorToThrow: new WaitingChildrenError(`Step "${internalStepId}" is waiting for child tasks.`),
             };
-          } else {
+          }
+          else {
             this.logger.debug(
               { internalStepId, userStepId },
-              `Children for step '${userStepId}' (id: ${internalStepId}) are now complete. Marking step as completed.`
+              `Children for step '${userStepId}' (id: ${internalStepId}) are now complete. Marking step as completed.`,
             );
             this.job.state.stepState![internalStepId] = { status: 'completed', data: [] };
             await this.persistState();
@@ -673,14 +694,13 @@ export class StepExecutor<
           }
         }
         return { processed: false };
-      }
+      },
     );
   }
 
   async sendEvent(userStepId: string, eventName: string, eventData: any): Promise<void> {
     return this._executeStep<void>(userStepId, 'sendEvent', async () => {
       await this.job.taskClient?.sendEvent(eventName, eventData);
-      return;
     });
   }
 }

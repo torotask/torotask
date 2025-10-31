@@ -1,11 +1,10 @@
-import { WorkerOptions } from 'bullmq';
+import type { WorkerOptions } from 'bullmq';
 import type {
   TaskGroupDefinitionRegistry,
   TaskGroupRegistry,
   TaskServerOptions,
   WorkerFilterGroups,
 } from './types/index.js';
-import { DelayedError, WaitingChildrenError } from './step-errors.js';
 import { ToroTask } from './client.js';
 import { filterGroups } from './utils/filter-groups.js';
 import { isControlError } from './utils/is-control-error.js';
@@ -30,7 +29,7 @@ export class TaskServer<
 
   constructor(
     public readonly options: TaskServerOptions,
-    taskGroupDefs?: TAllTaskGroupsDefs
+    taskGroupDefs?: TAllTaskGroupsDefs,
   ) {
     // Refined Logger Initialization
     options.loggerName = options.loggerName ?? LOGGER_NAME;
@@ -73,7 +72,7 @@ export class TaskServer<
     await Promise.allSettled(
       groupsToProcess.map(async (group) => {
         await group.startWorkers(undefined, mergedOptions);
-      })
+      }),
     );
 
     this.logger.info('Finished request to start workers');
@@ -97,7 +96,7 @@ export class TaskServer<
     await Promise.allSettled(
       groupsToProcess.map(async (group) => {
         await group.stopWorkers();
-      })
+      }),
     );
 
     this.logger.info('Finished request to stop workers');
@@ -141,9 +140,10 @@ export class TaskServer<
     if (isControlError(error)) {
       this.logger.error(
         { error, errorName: error.name, errorMessage: error.message },
-        `Likely missing await detected: ${error.name} was thrown but not caught. This is usually caused by not awaiting a promise that throws flow control errors.`
+        `Likely missing await detected: ${error.name} was thrown but not caught. This is usually caused by not awaiting a promise that throws flow control errors.`,
       );
-    } else {
+    }
+    else {
       this.logger.error({ error }, 'Unhandled Promise Rejection detected by TaskServer');
     }
   }

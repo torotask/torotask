@@ -1,9 +1,9 @@
-import express from 'express';
-import { ToroTask } from 'torotask';
 import { createBullBoard } from '@bull-board/api';
 import { BullMQAdapter } from '@bull-board/api/bullMQAdapter.js';
 import { ExpressAdapter } from '@bull-board/express';
+import express from 'express';
 import { pino } from 'pino';
+import { ToroTask } from 'torotask';
 
 export const logger = pino({
   transport: {
@@ -42,8 +42,9 @@ async function main() {
       // Use type assertion as any to bypass strict type check
       serverAdapter.setQueues(queueAdaptersMap as any);
       logger.info(`Queue list updated with ${queueAdaptersMap.size} queues.`);
-    } catch (error) {
-      logger.error('Error refreshing queue list:', error);
+    }
+    catch (error) {
+      logger.error(error, 'Error refreshing queue list:');
       // Optionally, clear queues or handle the error state in the UI
       // serverAdapter.setQueues([]);
     }
@@ -76,7 +77,7 @@ async function main() {
   // Queues will be populated by the first call to updateQueues
   const _bullBoard = createBullBoard({
     queues: [], // Start with empty queues, will be updated dynamically
-    serverAdapter: serverAdapter,
+    serverAdapter,
   });
 
   const app = express();
@@ -87,7 +88,7 @@ async function main() {
   await updateQueues();
 
   // Wait a moment for queue discovery to start
-  await new Promise((resolve) => setTimeout(resolve, 1000));
+  await new Promise(resolve => setTimeout(resolve, 1000));
 
   // other configurations of your server
 

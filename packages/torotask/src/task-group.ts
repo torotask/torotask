@@ -1,17 +1,15 @@
 import type { WorkerOptions } from 'bullmq';
-import { Logger } from 'pino';
+import type { Logger } from 'pino';
 import type { ToroTask } from './client.js';
-import { Task } from './task.js';
+import type { TaskJob } from './job.js';
 import type {
-  SchemaHandler,
   TaskDefinitionRegistry,
   TaskFlowRun,
   TaskFlowRunNode,
-  TaskFlowGroupRun,
   TaskRegistry,
   WorkerFilterTasks,
 } from './types/index.js';
-import type { TaskJob } from './job.js';
+import { Task } from './task.js';
 import { filterGroupTasks } from './utils/filter-group-tasks.js';
 
 /**
@@ -65,7 +63,7 @@ export class TaskGroup<
   createTask<TaskId extends Extract<keyof TDefs, string>>(
     // Config is the specific definition from TDefs
     id: string,
-    config: TDefs[TaskId]
+    config: TDefs[TaskId],
   ): TTasks[TaskId] {
     // Return type is the specific task type from TTasks
     // Generics for Task <P,R,S> are inferred from config (TDefs[TaskId])
@@ -77,7 +75,7 @@ export class TaskGroup<
       this as any, // Pass the TaskGroup instance
       id, // Use id directly as the task ID
       config, // Pass the original config (typed as TDefs[TaskId])
-      this.logger.child({ task: id }) // Use id for logger
+      this.logger.child({ task: id }), // Use id for logger
     );
 
     if (this.tasks[taskDefinitionId]) {
@@ -127,7 +125,9 @@ export class TaskGroup<
     Payload = ActualTask extends Task<any, any, any, infer P> ? P : unknown,
     Result = ActualTask extends Task<any, infer R, any, any> ? R : unknown,
     ActualPayload extends Payload = Payload,
-  >(taskName: TaskName, payload: ActualPayload): Promise<TaskJob<ActualPayload, Result>> {
+  >(taskName: TaskName,
+    payload: ActualPayload,
+  ): Promise<TaskJob<ActualPayload, Result>> {
     return this.client.runTask(this.id as any, taskName, payload);
   }
 
@@ -167,22 +167,23 @@ export class TaskGroup<
 
     this.logger.debug(
       { count: tasksToStart.length },
-      `Attempting to start workers for ${tasksToStart.length} tasks...`
+      `Attempting to start workers for ${tasksToStart.length} tasks...`,
     );
 
     const results = await Promise.allSettled(
       tasksToStart.map(async (task) => {
         await task.startWorker(workerOptions);
-      })
+      }),
     );
 
-    const failedStarts = results.filter((r) => r.status === 'rejected').length;
+    const failedStarts = results.filter(r => r.status === 'rejected').length;
     if (failedStarts > 0) {
       this.logger.warn(
         { success: tasksToStart.length - failedStarts, failed: failedStarts },
-        'Some workers failed to start.'
+        'Some workers failed to start.',
       );
-    } else {
+    }
+    else {
       this.logger.debug({ count: tasksToStart.length }, 'All requested workers started successfully.');
     }
 
@@ -197,7 +198,7 @@ export class TaskGroup<
    */
   async stopWorkers(
     // Use keyof TTasks for compile-time safety on task names
-    filter?: WorkerFilterTasks<TTasks>
+    filter?: WorkerFilterTasks<TTasks>,
   ): Promise<void> {
     const actionContext = 'stopping';
     this.logger.info({ filter: filter?.tasksById?.join(', ') ?? 'all' }, `${actionContext} workers for task group`);
@@ -216,16 +217,17 @@ export class TaskGroup<
     const results = await Promise.allSettled(
       tasksToStop.map(async (task) => {
         await task.stopWorker();
-      })
+      }),
     );
 
-    const failedStops = results.filter((r) => r.status === 'rejected').length;
+    const failedStops = results.filter(r => r.status === 'rejected').length;
     if (failedStops > 0) {
       this.logger.warn(
         { success: tasksToStop.length - failedStops, failed: failedStops },
-        'Some workers failed to stop.'
+        'Some workers failed to stop.',
       );
-    } else {
+    }
+    else {
       this.logger.info({ count: tasksToStop.length }, 'All requested workers stopped successfully.');
     }
 
@@ -241,12 +243,12 @@ export class TaskGroup<
    */
   async close(
     // Add the filter parameter
-    filter?: WorkerFilterTasks<TTasks>
+    filter?: WorkerFilterTasks<TTasks>,
   ): Promise<void> {
     const actionContext = 'closing';
     this.logger.info(
       { group: this.id, filter: filter?.tasksById?.join(', ') ?? 'all' },
-      `Attempting to ${actionContext} task(s)`
+      `Attempting to ${actionContext} task(s)`,
     );
 
     // Use the helper method to get tasks
@@ -259,16 +261,16 @@ export class TaskGroup<
 
     this.logger.debug(
       { group: this.id, count: tasksToClose.length },
-      `Processing ${actionContext} for ${tasksToClose.length} task(s)...`
+      `Processing ${actionContext} for ${tasksToClose.length} task(s)...`,
     );
 
     const results = await Promise.allSettled(
       tasksToClose.map(async (task) => {
         await task.close();
-      })
+      }),
     );
 
-    const failedCloses = results.filter((r) => r.status === 'rejected').length;
+    const failedCloses = results.filter(r => r.status === 'rejected').length;
     if (failedCloses > 0) {
       this.logger.warn(
         {
@@ -276,9 +278,10 @@ export class TaskGroup<
           success: tasksToClose.length - failedCloses,
           failed: failedCloses,
         },
-        `Some tasks failed to close cleanly.`
+        `Some tasks failed to close cleanly.`,
       );
-    } else {
+    }
+    else {
       this.logger.info({ group: this.id, count: tasksToClose.length }, 'All targeted tasks closed successfully.');
     }
     this.logger.info({ group: this.id, count: tasksToClose.length }, `Finished ${actionContext} task(s)`);

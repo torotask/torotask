@@ -9,7 +9,13 @@
   "author": "Ben Osman",
   "license": "MIT",
   "repository": "torotask/torotask.git",
-  "keywords": ["bullmq", "message-queue", "task-queue", "tasks"],
+
+  "keywords": [
+    "bullmq",
+    "message-queue",
+    "task-queue",
+    "tasks"
+  ],
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
@@ -19,7 +25,9 @@
   },
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
-  "files": ["dist"],
+  "files": [
+    "dist"
+  ],
   "scripts": {
     "build": "tsc --build",
     "build:dev": "tsc --build",

@@ -1,5 +1,5 @@
+import type { StepResult } from '../types/step.js';
 import { UnrecoverableError } from 'bullmq';
-import { StepResult } from '../types/step.js';
 
 // Maximum size for serialized errors, in bytes (default: 1MB)
 const MAX_ERROR_SIZE_BYTES = 1 * 1024 * 1024;
@@ -12,7 +12,8 @@ function getApproximateSize(obj: any): number {
     const jsonString = JSON.stringify(obj);
     // In JavaScript, each character is 2 bytes (UTF-16)
     return jsonString.length * 2;
-  } catch {
+  }
+  catch {
     // If we can't stringify, we can't estimate size accurately,
     // so we'll return a large number to trigger the size check
     return Number.MAX_SAFE_INTEGER;
@@ -43,19 +44,22 @@ export function serializeError(error: any, maxSizeBytes: number = MAX_ERROR_SIZE
           stack: error.stack,
           containedJobReference: true,
         };
-      } else {
+      }
+      else {
         serialized = {
           message: `[Job Reference Removed] ${String(error)}`,
           containedJobReference: true,
         };
       }
-    } else if (error instanceof Error) {
+    }
+    else if (error instanceof Error) {
       serialized = {
         message: error.message,
         name: error.name,
         stack: error.stack,
       };
-    } else {
+    }
+    else {
       serialized = {
         message: String(error),
       };
@@ -78,9 +82,10 @@ export function serializeError(error: any, maxSizeBytes: number = MAX_ERROR_SIZE
     }
 
     return serialized;
-  } catch (serializationError) {
+  }
+  catch (serializationError) {
     throw new UnrecoverableError(
-      `Failed to serialize error state: ${serializationError instanceof Error ? serializationError.message : String(serializationError)}`
+      `Failed to serialize error state: ${serializationError instanceof Error ? serializationError.message : String(serializationError)}`,
     );
   }
 }
@@ -97,9 +102,10 @@ export function deserializeError(storedError: StepResult['error']): Error {
     err.name = storedError?.name || 'StepExecutionError';
     // err.stack = storedError?.stack; // Stack might not be perfectly reconstructed
     return err;
-  } catch (deserializationError) {
+  }
+  catch (deserializationError) {
     throw new UnrecoverableError(
-      `Failed to deserialize error state: ${deserializationError instanceof Error ? deserializationError.message : String(deserializationError)}`
+      `Failed to deserialize error state: ${deserializationError instanceof Error ? deserializationError.message : String(deserializationError)}`,
     );
   }
 }
