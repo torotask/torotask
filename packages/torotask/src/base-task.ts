@@ -1,28 +1,28 @@
-import slugify from '@sindresorhus/slugify';
-import { Job, JobSchedulerJson, Processor } from 'bullmq';
-import cronstrue from 'cronstrue';
-import ms from 'ms';
+import type { Job, JobSchedulerJson } from 'bullmq';
 import type { Logger } from 'pino';
-import prettyMilliseconds from 'pretty-ms';
+import type { ToroTask } from './client.js';
+import type { TaskJob } from './job.js'; // Import TaskJob
 import type { TaskGroup } from './task-group.js';
 import type {
   BulkJob,
   EventSubscriptionInfo,
   RepeatOptionsWithoutKey,
   SingleOrArray,
-  TaskOptions,
+  TaskJobData,
   TaskJobOptions,
+  TaskOptions,
   TaskTrigger,
   TaskTriggerEvent,
   TaskWorkerOptions,
-  TaskJobData,
   TaskWorkerQueueListener,
 } from './types/index.js';
-import { TaskWorkerQueue } from './worker-queue.js';
 import EventEmitter from 'node:events';
-import { ToroTask } from './client.js';
+import slugify from '@sindresorhus/slugify';
+import cronstrue from 'cronstrue';
+import ms from 'ms';
+import prettyMilliseconds from 'pretty-ms';
 import { convertJobOptions } from './utils/convert-job-options.js';
-import { TaskJob } from './job.js'; // Import TaskJob
+import { TaskWorkerQueue } from './worker-queue.js';
 
 // Add internalId to TaskTrigger type for tracking purposes within the Task class
 type InternalTaskTrigger<PayloadType> = TaskTrigger<PayloadType> & { internalId: number };
@@ -62,7 +62,7 @@ export abstract class BaseTask<
     public readonly id: string,
     public options: TOptions,
     triggers: SingleOrArray<TaskTrigger<PayloadType>> | undefined,
-    parentLogger?: Logger
+    parentLogger?: Logger,
   ) {
     if (!group) {
       throw new Error('TaskGroup instance is required.');
@@ -109,9 +109,9 @@ export abstract class BaseTask<
             // This will now call the strongly-typed emit below
             this.emit(
               eventName as keyof TaskWorkerQueueListener<PayloadType, ResultType, string, DataType>,
-              ...(args as any) // Cast args for the strongly-typed emit
+              ...(args as any), // Cast args for the strongly-typed emit
             );
-          }
+          },
         );
       }
       // Symbol-based events are not relayed by this loop for now.
@@ -121,8 +121,8 @@ export abstract class BaseTask<
     this.queue.on('worker:ready', () => {
       this.logger.debug('Task is ready. Requesting trigger synchronization...');
       // Request sync instead of running it directly
-      this.requestTriggerSync().catch((err) =>
-        this.logger.error({ err }, 'Error requesting initial trigger synchronization')
+      this.requestTriggerSync().catch(err =>
+        this.logger.error({ err }, 'Error requesting initial trigger synchronization'),
       );
     });
   }
@@ -165,7 +165,7 @@ export abstract class BaseTask<
   async runAndWait(
     payload: PayloadType,
     overrideOptions?: TaskJobOptions,
-    state?: TaskJobOptions['state']
+    state?: TaskJobOptions['state'],
   ): Promise<ResultType> {
     const finalOptions: TaskJobOptions = {
       ...this.jobsOptions,
@@ -200,7 +200,7 @@ export abstract class BaseTask<
   processJob(
     _job: TaskJob<PayloadType, ResultType, string>,
     _token?: string,
-    _jobLogger?: Logger
+    _jobLogger?: Logger,
   ): Promise<ResultType> {
     throw new Error('processJob method must be implemented in a subclass.');
   }
@@ -223,7 +223,8 @@ export abstract class BaseTask<
       // Cron/Every schedulers are still managed locally by this Task instance
       await this._synchronizeCronEverySchedulers();
       this.logger.debug(`${logPrefix} Synchronization request sent and local schedulers updated.`);
-    } catch (error) {
+    }
+    catch (error) {
       this.logger.error({ err: error }, `${logPrefix} Error requesting trigger synchronization.`);
       // Decide if errors should propagate
       throw error;
@@ -245,10 +246,10 @@ export abstract class BaseTask<
       const schedulerPrefix = `trigger:`;
       const taskSchedulers = allSchedulers.filter((s: JobSchedulerJson) => s.key?.startsWith(schedulerPrefix));
       const existingSchedulerKeys = new Set(
-        taskSchedulers.map((s: JobSchedulerJson) => s.key).filter(Boolean) as string[]
+        taskSchedulers.map((s: JobSchedulerJson) => s.key).filter(Boolean) as string[],
       );
       this.logger.debug(
-        `${logPrefix} Found ${existingSchedulerKeys.size} existing cron/every job schedulers for this task.`
+        `${logPrefix} Found ${existingSchedulerKeys.size} existing cron/every job schedulers for this task.`,
       );
 
       // 2. Process current CRON/EVERY triggers and upsert job schedulers
@@ -274,7 +275,8 @@ export abstract class BaseTask<
             repeatOpts.pattern = trigger.cron;
             try {
               description = cronstrue.toString(trigger.cron);
-            } catch (_e) {
+            }
+            catch {
               description = trigger.cron;
             }
             break;
@@ -309,7 +311,7 @@ export abstract class BaseTask<
             name: this.id, // Use task id for the job name within the scheduler
             data: { payload: trigger.payload },
             opts: convertJobOptions(jobOptions),
-          })
+          }),
         );
       });
 
@@ -332,7 +334,8 @@ export abstract class BaseTask<
       }
 
       this.logger.info(`${logPrefix} Cron/Every synchronization complete.`);
-    } catch (error: any) {
+    }
+    catch (error: any) {
       this.logger.error({ err: error }, `${logPrefix} Error during Cron/Every synchronization.`);
       throw error;
     }
@@ -358,16 +361,17 @@ export abstract class BaseTask<
           eventId: trigger.event,
           payload: trigger.payload,
         });
-      } else {
+      }
+      else {
         this.logger.warn(
           { triggerId: trigger.internalId },
-          `${logPrefix} Skipping event trigger due to missing 'event' field.`
+          `${logPrefix} Skipping event trigger due to missing 'event' field.`,
         );
       }
     });
 
     this.logger.debug(
-      `${logPrefix} Found ${desiredSubscriptions.length} desired event subscriptions. Requesting sync job.`
+      `${logPrefix} Found ${desiredSubscriptions.length} desired event subscriptions. Requesting sync job.`,
     );
 
     // 2. Request the sync job via the manager
@@ -375,10 +379,12 @@ export abstract class BaseTask<
       const job = await manager.requestSync(this.group.id, this.id, desiredSubscriptions); // Use task id
       if (job) {
         this.logger.debug({ jobId: job.id }, `${logPrefix} Sync job successfully requested.`);
-      } else {
+      }
+      else {
         this.logger.debug(`${logPrefix} Sync job request skipped (already exists/pending).`);
       }
-    } catch (error) {
+    }
+    catch (error) {
       this.logger.error({ err: error }, `${logPrefix} Failed to request event trigger sync job.`);
       throw error; // Re-throw error to signal failure
     }
@@ -403,7 +409,7 @@ export abstract class BaseTask<
     if (triggers !== undefined) {
       this._initializeTriggers(triggers); // Re-initializes internal maps
       this.logger.debug(
-        `${logPrefix} Processed triggers. New total count: ${this.triggers.length}, Event triggers: ${this.currentEventTriggers.size}.`
+        `${logPrefix} Processed triggers. New total count: ${this.triggers.length}, Event triggers: ${this.currentEventTriggers.size}.`,
       );
       needsSyncRequest = true; // Request sync if triggers changed
     }
@@ -411,7 +417,8 @@ export abstract class BaseTask<
     if (needsSyncRequest) {
       this.logger.info(`${logPrefix} Changes detected, requesting trigger synchronization...`);
       await this.requestTriggerSync(); // Request sync via EventManager
-    } else {
+    }
+    else {
       this.logger.debug(`${logPrefix} No changes requiring trigger synchronization request.`);
     }
     this.logger.info(`${logPrefix} Task update complete.`);
@@ -433,7 +440,8 @@ export abstract class BaseTask<
       await this._synchronizeCronEverySchedulers(); // Syncs local queue schedulers
       this._initializeTriggers(currentTriggers); // Restore internal state if needed elsewhere
       this.logger.info(`${logPrefix} Cron/every schedulers removed via sync.`);
-    } catch (error: any) {
+    }
+    catch (error: any) {
       this.logger.error({ err: error }, `${logPrefix} Error removing cron/every schedulers.`);
       // Decide if we should still attempt event removal
       throw error; // Re-throw by default
@@ -445,7 +453,8 @@ export abstract class BaseTask<
       // Pass empty array to signal removal
       await manager.requestSync(this.group.id, this.id, []); // Use task id
       this.logger.info(`${logPrefix} Event trigger removal requested successfully.`);
-    } catch (error) {
+    }
+    catch (error) {
       this.logger.error({ err: error }, `${logPrefix} Failed to request event trigger removal.`);
       throw error; // Re-throw
     }
@@ -470,9 +479,10 @@ export abstract class BaseTask<
         // Type guard to ensure it's an event trigger before accessing 'event'
         if (trigger.event && typeof trigger.event === 'string' && trigger.event.trim() !== '') {
           newEventTriggers.set(trigger.internalId, trigger);
-        } else {
+        }
+        else {
           this.logger.warn(
-            `${logPrefix} Trigger ${trigger.internalId} type 'event' missing valid 'event' field. Skipping.`
+            `${logPrefix} Trigger ${trigger.internalId} type 'event' missing valid 'event' field. Skipping.`,
           );
         }
       }
@@ -480,7 +490,7 @@ export abstract class BaseTask<
     this.currentEventTriggers = newEventTriggers; // Update the map of *current* event triggers
 
     this.logger.debug(
-      `${logPrefix} Processed ${this.triggers.length} total triggers. Found ${this.currentEventTriggers.size} event triggers.`
+      `${logPrefix} Processed ${this.triggers.length} total triggers. Found ${this.currentEventTriggers.size} event triggers.`,
     );
 
     // No longer need to clean _registeredEventTriggers here, manager handles state comparison
@@ -498,7 +508,7 @@ export abstract class BaseTask<
 
   on<U extends keyof TaskWorkerQueueListener<PayloadType, ResultType, string, DataType>>(
     event: U,
-    listener: TaskWorkerQueueListener<PayloadType, ResultType, string, DataType>[U]
+    listener: TaskWorkerQueueListener<PayloadType, ResultType, string, DataType>[U],
   ): this {
     super.on(event, listener);
     return this;
@@ -506,7 +516,7 @@ export abstract class BaseTask<
 
   off<U extends keyof TaskWorkerQueueListener<PayloadType, ResultType, string, DataType>>(
     event: U,
-    listener: TaskWorkerQueueListener<PayloadType, ResultType, string, DataType>[U]
+    listener: TaskWorkerQueueListener<PayloadType, ResultType, string, DataType>[U],
   ): this {
     super.off(event, listener);
     return this;
@@ -514,7 +524,7 @@ export abstract class BaseTask<
 
   once<U extends keyof TaskWorkerQueueListener<PayloadType, ResultType, string, DataType>>(
     event: U,
-    listener: TaskWorkerQueueListener<PayloadType, ResultType, string, DataType>[U]
+    listener: TaskWorkerQueueListener<PayloadType, ResultType, string, DataType>[U],
   ): this {
     super.once(event, listener);
     return this;

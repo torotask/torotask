@@ -1,6 +1,6 @@
 import type { Task } from '../task.js';
-import type { TaskHandlerContext } from './task.js';
 import type { TaskJobData } from './job.js';
+import type { TaskHandlerContext } from './task.js';
 
 /** Handler details passed to the subtask handler */
 export interface SubTaskHandlerOptions<PayloadType = any> {
@@ -22,5 +22,5 @@ export interface SubTaskHandlerContext<
 /** SubTask handler function type */
 export type SubTaskHandler<PayloadType = any, ResultType = unknown> = (
   options: SubTaskHandlerOptions<PayloadType>,
-  context: SubTaskHandlerContext<PayloadType, ResultType>
+  context: SubTaskHandlerContext<PayloadType, ResultType>,
 ) => Promise<ResultType>;

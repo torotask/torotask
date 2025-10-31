@@ -1,13 +1,14 @@
-import { type FlowChildJob, FlowJob, type FlowJobBase, FlowProducer, Job } from 'bullmq';
-import { ToroTask } from './client.js';
+import type { FlowChildJob, FlowJob, FlowJobBase, Job } from 'bullmq';
+import type { ToroTask } from './client.js';
 import type { TaskFlowRun, TaskFlowRunNode, TaskJobOptions, TaskQueueOptions } from './types/index.js';
+import { FlowProducer } from 'bullmq';
 import { TaskJob } from './job.js';
 import { convertJobOptions } from './utils/convert-job-options.js';
 
 export class TaskWorkflow extends FlowProducer {
   constructor(
     public readonly taskClient: ToroTask,
-    options?: Partial<TaskQueueOptions>
+    options?: Partial<TaskQueueOptions>,
   ) {
     options = options || {};
     options.prefix = options.prefix || taskClient.queuePrefix;
@@ -18,7 +19,7 @@ export class TaskWorkflow extends FlowProducer {
 
   /**
    * Override the Job class to use TaskJob
-   * @returns {typeof Job}
+   * @returns The extended Job class.
    */
   protected get Job(): typeof Job {
     return TaskJob as any;
@@ -27,7 +28,7 @@ export class TaskWorkflow extends FlowProducer {
   _convertToFlow<TResult extends FlowJobBase<any> = FlowJob, TRun extends TaskFlowRun = TaskFlowRun>(
     run: TRun,
     options?: Partial<TaskJobOptions>,
-    removeParentOption?: boolean
+    removeParentOption?: boolean,
   ): TResult {
     const task = this.taskClient.getTask(run.taskGroup, run.taskName as string);
     if (!task) {
@@ -42,19 +43,20 @@ export class TaskWorkflow extends FlowProducer {
 
     if (removeParentOption && mergedOptions.parent) {
       delete mergedOptions.parent;
-    } else {
+    }
+    else {
       mergedOptions = convertJobOptions(mergedOptions);
     }
 
     return {
       name: (run.name as string) ?? run.taskName,
-      queueName: queueName,
+      queueName,
       data: {
         payload: run.payload,
         state: run.state,
       },
       opts: mergedOptions,
-      children: run.children?.map((child) => this._convertToFlow<FlowChildJob>(child, options, true)) || undefined,
+      children: run.children?.map(child => this._convertToFlow<FlowChildJob>(child, options, true)) || undefined,
     } as TResult;
   }
 

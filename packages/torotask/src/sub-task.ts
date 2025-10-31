@@ -1,4 +1,5 @@
 import type { Logger } from 'pino';
+import type { TaskJob } from './job.js';
 import type { Task } from './task.js';
 // Import types from the types file
 import type {
@@ -8,7 +9,6 @@ import type {
   TaskJobData,
   TaskJobOptions,
 } from './types/index.js';
-import { TaskJob } from './job.js';
 import { StepExecutor } from './step-executor.js';
 
 // --- SubTask Class ---
@@ -53,7 +53,7 @@ export class SubTask<
   /**
    * Adds a job to the parent task's queue, specifically targeting this subtask's handler.
    *
-   * @param data The data payload for the job.
+   * @param payload The data payload for the job.
    * @param overrideOptions Optional JobOptions to override the parent task's defaults.
    * @returns A promise resolving to the enqueued BullMQ Job object.
    */
@@ -84,10 +84,11 @@ export class SubTask<
     };
     try {
       return await this.handler(handlerOptions, handlerContext);
-    } catch (error) {
+    }
+    catch (error) {
       jobLogger.error(
         { err: error instanceof Error ? error : new Error(String(error)) },
-        `Job processing failed for job name "${job.name}"`
+        `Job processing failed for job name "${job.name}"`,
       );
       throw error;
     }

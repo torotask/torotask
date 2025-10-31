@@ -1,12 +1,13 @@
-import { QueueEvents, QueueEventsOptions } from 'bullmq';
-import { ToroTask } from './client.js';
+import type { QueueEventsOptions } from 'bullmq';
+import type { ToroTask } from './client.js';
 import type { TaskQueueEventsOptions } from './types/queue.js';
+import { QueueEvents } from 'bullmq';
 
 export class TaskQueueEvents extends QueueEvents {
   constructor(
     public readonly taskClient: ToroTask,
     name: string,
-    options?: Partial<TaskQueueEventsOptions>
+    options?: Partial<TaskQueueEventsOptions>,
   ) {
     if (!taskClient) {
       throw new Error('ToroTask instance is required.');

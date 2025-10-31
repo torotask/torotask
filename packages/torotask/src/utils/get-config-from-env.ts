@@ -25,10 +25,11 @@ export function getConfigFromEnv(prefix: string, env?: Record<string, any>): Rec
       const keyWithoutPrefix = key.substring(prefix.length);
 
       if (keyWithoutPrefix.includes('__')) {
-        const path = keyWithoutPrefix.split('__').map((pathKey) => camelcase(pathKey));
+        const path = keyWithoutPrefix.split('__').map(pathKey => camelcase(pathKey));
 
         set(config, path.join('.'), value);
-      } else {
+      }
+      else {
         const camelCaseKey = camelcase(keyWithoutPrefix, { locale: false });
         config[camelCaseKey] = value;
       }

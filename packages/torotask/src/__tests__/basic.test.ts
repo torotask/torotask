@@ -2,7 +2,7 @@
  * Simple test to verify Jest setup is working
  */
 
-describe('Basic Jest Setup', () => {
+describe('basic Jest Setup', () => {
   it('should run a simple test', () => {
     expect(1 + 1).toBe(2);
   });

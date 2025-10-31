@@ -1,8 +1,8 @@
-import { BulkJob } from './bulk.js';
+import type { BulkJob } from './bulk.js';
 import type { TaskJobOptions } from './job.js';
 
 export type StepStatus = 'completed' | 'errored' | 'sleeping' | 'waiting_for_child' | 'waiting_for_children';
-//| 'waiting_for_event';
+// | 'waiting_for_event';
 
 /**
  * Represents the result of a single step execution.

@@ -1,9 +1,9 @@
-import { WorkerOptions } from 'bullmq';
+import type { WorkerOptions } from 'bullmq';
 import type { Logger } from 'pino';
 import type { ToroTask } from './client.js';
-import { EventSubscriptions } from './event-subscriptions.js';
-import { TaskJob } from './job.js';
+import type { TaskJob } from './job.js';
 import type { EventSubscriptionInfo, SyncJobPayload, SyncJobReturn, TaskJobOptions } from './types/index.js';
+import { EventSubscriptions } from './event-subscriptions.js';
 import { TaskWorkerQueue } from './worker-queue.js';
 
 const SYNC_QUEUE_NAME = 'events.sync';
@@ -26,7 +26,7 @@ export class EventManager extends TaskWorkerQueue<PayloadType, ReturnType> {
     parentLogger: Logger,
     name: string = SYNC_QUEUE_NAME,
     prefix?: string,
-    subscriptions?: EventSubscriptions // Allow injecting subscriptions
+    subscriptions?: EventSubscriptions, // Allow injecting subscriptions
   ) {
     const logger = parentLogger.child({ service: 'EventManager', queue: name });
     prefix = prefix || taskClient.queuePrefix;
@@ -59,7 +59,7 @@ export class EventManager extends TaskWorkerQueue<PayloadType, ReturnType> {
     taskGroup: string,
     taskId: string,
     desiredSubscriptions: EventSubscriptionInfo[],
-    options?: TaskJobOptions
+    options?: TaskJobOptions,
   ): Promise<TaskJob<PayloadType, ReturnType, string>> {
     const payload: PayloadType = {
       taskGroup,
@@ -68,7 +68,7 @@ export class EventManager extends TaskWorkerQueue<PayloadType, ReturnType> {
     };
     this.logger.debug(
       { taskGroup, taskId, desiredCount: desiredSubscriptions.length },
-      `Requesting event trigger sync job.`
+      `Requesting event trigger sync job.`,
     );
 
     // Add job, preventing duplicates if one is already active or waiting
@@ -104,7 +104,8 @@ export class EventManager extends TaskWorkerQueue<PayloadType, ReturnType> {
         if (sub.eventId) {
           desiredEventNames.add(sub.eventId);
         }
-      } else {
+      }
+      else {
         // Handle non-trigger subscriptions if necessary based on original logic
         // For now, assuming triggerId was the main comparison point
         this.logger.warn({ sub }, `${logPrefix} Desired subscription lacks triggerId, skipping comparison.`);
@@ -112,7 +113,7 @@ export class EventManager extends TaskWorkerQueue<PayloadType, ReturnType> {
     });
     this.logger.debug(
       { desiredCount: desiredSubMap.size, desiredEvents: Array.from(desiredEventNames) },
-      `${logPrefix} Desired trigger subscriptions prepared.`
+      `${logPrefix} Desired trigger subscriptions prepared.`,
     );
 
     let registeredCount = 0;
@@ -128,12 +129,13 @@ export class EventManager extends TaskWorkerQueue<PayloadType, ReturnType> {
         currentlyRegisteredSubscriptions = await this.subscriptions.getForTask(taskGroup, taskId);
         this.logger.debug(
           { currentCount: currentlyRegisteredSubscriptions.length },
-          `${logPrefix} Fetched current subscriptions for task via repository.`
+          `${logPrefix} Fetched current subscriptions for task via repository.`,
         );
-      } catch (fetchError) {
+      }
+      catch (fetchError) {
         this.logger.error(
           { err: fetchError, taskGroup, taskId },
-          `${logPrefix} Failed to fetch current subscriptions via repository.`
+          `${logPrefix} Failed to fetch current subscriptions via repository.`,
         );
         errorCount++;
         // Abort if we can't get the current state.
@@ -145,13 +147,14 @@ export class EventManager extends TaskWorkerQueue<PayloadType, ReturnType> {
       currentlyRegisteredSubscriptions.forEach((sub) => {
         if (sub.triggerId !== undefined) {
           currentlyRegisteredMap.set(sub.triggerId, sub);
-        } else {
+        }
+        else {
           // Handle non-trigger subscriptions if needed
         }
       });
       this.logger.debug(
         { currentCount: currentlyRegisteredMap.size },
-        `${logPrefix} Current trigger registrations map prepared.`
+        `${logPrefix} Current trigger registrations map prepared.`,
       );
 
       // --- 2. Identify subscriptions to register or update (based on triggerId) ---
@@ -164,7 +167,7 @@ export class EventManager extends TaskWorkerQueue<PayloadType, ReturnType> {
           // Case 1: Trigger ID is new -> Register it
           this.logger.info(
             { eventName: desiredInfo.eventId, triggerId, subId },
-            `${logPrefix} Registering new trigger subscription...`
+            `${logPrefix} Registering new trigger subscription...`,
           );
           promises.push(
             this.subscriptions
@@ -175,17 +178,18 @@ export class EventManager extends TaskWorkerQueue<PayloadType, ReturnType> {
               .catch((err) => {
                 this.logger.error(
                   { err, eventName: desiredInfo.eventId, triggerId, subId },
-                  `${logPrefix} Failed registration.`
+                  `${logPrefix} Failed registration.`,
                 );
                 errorCount++;
-              })
+              }),
           );
-        } else {
+        }
+        else {
           // Case 2: Trigger ID exists -> Check if content differs (simple eventId check for now)
           if (desiredInfo.eventId !== registeredInfo.eventId) {
             this.logger.info(
               { newEvent: desiredInfo.eventId, oldEvent: registeredInfo.eventId, triggerId, subId },
-              `${logPrefix} Updating existing trigger subscription registration (event changed)...`
+              `${logPrefix} Updating existing trigger subscription registration (event changed)...`,
             );
             // Schedule unregister of old, then register of new
             promises.push(
@@ -199,16 +203,17 @@ export class EventManager extends TaskWorkerQueue<PayloadType, ReturnType> {
                 .catch((err) => {
                   this.logger.error(
                     { err, eventName: desiredInfo.eventId, triggerId, subId },
-                    `${logPrefix} Failed update.`
+                    `${logPrefix} Failed update.`,
                   );
                   errorCount++;
-                })
+                }),
             );
-          } else {
+          }
+          else {
             // Trigger exists and is the same (based on eventId).
             this.logger.debug(
               { eventName: desiredInfo.eventId, triggerId, subId },
-              `${logPrefix} Trigger subscription already registered and unchanged.`
+              `${logPrefix} Trigger subscription already registered and unchanged.`,
             );
           }
           // Remove from currentlyRegisteredMap whether updated or unchanged, as it's accounted for.
@@ -223,7 +228,7 @@ export class EventManager extends TaskWorkerQueue<PayloadType, ReturnType> {
         const subId = this.subscriptions.getIdentifier(registeredInfo);
         this.logger.info(
           { eventName: registeredInfo.eventId, triggerId, subId },
-          `${logPrefix} Unregistering stale trigger subscription (not in desired state)...`
+          `${logPrefix} Unregistering stale trigger subscription (not in desired state)...`,
         );
         promises.push(
           this.subscriptions
@@ -234,10 +239,10 @@ export class EventManager extends TaskWorkerQueue<PayloadType, ReturnType> {
             .catch((err) => {
               this.logger.error(
                 { err, eventName: registeredInfo.eventId, triggerId, subId },
-                `${logPrefix} Failed stale unregistration.`
+                `${logPrefix} Failed stale unregistration.`,
               );
               errorCount++;
-            })
+            }),
         );
       });
 
@@ -246,11 +251,12 @@ export class EventManager extends TaskWorkerQueue<PayloadType, ReturnType> {
 
       this.logger.debug(
         { registered: registeredCount, unregistered: unregisteredCount, errors: errorCount },
-        `${logPrefix} Synchronization finished.`
+        `${logPrefix} Synchronization finished.`,
       );
 
       return { registered: registeredCount, unregistered: unregisteredCount, errors: errorCount };
-    } catch (error) {
+    }
+    catch (error) {
       this.logger.error({ err: error }, `${logPrefix} Critical error during synchronization process.`);
       // Throw error to fail the job
       throw error;

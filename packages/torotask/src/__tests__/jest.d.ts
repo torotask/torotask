@@ -1,6 +1,6 @@
 /// <reference types="jest" />
 
-import { TestRedisServer } from './helpers/test-redis.js';
+import type { TestRedisServer } from './helpers/test-redis.js';
 
 // Extend Jest global for better typing
 declare global {

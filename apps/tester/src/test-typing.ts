@@ -19,7 +19,6 @@ validGroup.getTask('helloTask')?.run({
   createdAt: new Date(),
 });
 
-validGroup.tasks;
 const task = validGroup.getTask('helloTask');
 task?.run({
   name: 'test',
@@ -32,7 +31,7 @@ validGroup.runTask('helloTask', {
 });
 validGroup.startWorkers({ tasksById: ['helloTask', 'batchTask'] });
 // This should show a TypeScript error as 'test' is not a valid key in our taskGroups
-//const invalidGroup = server.taskGroups.exampleGroup.tasks.helloTask;
+// const invalidGroup = server.taskGroups.exampleGroup.tasks.helloTask;
 
 // We can access tasks within the valid group with type safety too
 const helloTask = server.getTask('exampleGroup', 'helloTask');

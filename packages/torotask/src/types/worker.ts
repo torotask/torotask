@@ -1,18 +1,18 @@
 import type { WorkerOptions } from 'bullmq';
 import type { Logger } from 'pino';
 import type { TaskJob } from '../job.js';
-import type { TaskDefinitionRegistry, TaskRegistry } from './task.js';
-import { TaskGroupDefinitionRegistry, TaskGroupRegistry } from './task-group.js';
 import type { CreateClientFunction } from './client.js';
+import type { TaskGroupDefinitionRegistry, TaskGroupRegistry } from './task-group.js';
+import type { TaskDefinitionRegistry, TaskRegistry } from './task.js';
 
-export type TaskWorkerBatchOptions = {
+export interface TaskWorkerBatchOptions {
   size: number;
   minSize?: number;
   /**
    * The maximum time in milliseconds to wait before processing a batch.
    */
   timeout: number;
-};
+}
 
 export type TaskWorkerOptions = WorkerOptions & {
   logger?: Logger;
@@ -27,11 +27,11 @@ export type TaskWorkerOptions = WorkerOptions & {
 
 export type TaskProcessor<PayloadType = any, ResultType = any, NameType extends string = string> = (
   job: TaskJob<PayloadType, ResultType, NameType>,
-  token?: string
+  token?: string,
 ) => Promise<ResultType>;
 
 export type TaskValidator<PayloadType = any, ResultType = any, NameType extends string = string> = (
-  job: TaskJob<PayloadType, ResultType, NameType>
+  job: TaskJob<PayloadType, ResultType, NameType>,
 ) => Promise<PayloadType>;
 
 /** Worker Filter defined here */

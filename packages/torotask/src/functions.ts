@@ -1,28 +1,28 @@
-import { z } from 'zod';
+import type { TaskJob } from './job.js';
+import type { StepExecutor } from './step-executor.js';
 import type {
+  EffectivePayloadType,
+  ResolvedSchemaType,
+  SchemaHandler,
+  SingleOrArray,
   TaskDefinition,
+  TaskDefinitionRegistry,
   TaskGroupDefinition,
   TaskGroupDefinitionRegistry,
-  SchemaHandler,
-  TaskTrigger,
-  SingleOrArray,
-  ResolvedSchemaType,
-  TaskDefinitionRegistry,
-  TaskHandlerContext,
-  EffectivePayloadType,
-  TaskOptions, // Added TaskOptions for DefineTaskInputConfig
   TaskHandler, // Added TaskHandler for DefineTaskInputConfig
+  TaskHandlerContext,
+  TaskOptions, // Added TaskOptions for DefineTaskInputConfig
+  TaskTrigger,
 } from './types/index.js';
-import type { StepExecutor } from './step-executor.js';
-import type { TaskJob } from './job.js';
+import { z } from 'zod';
 
 // Helper type for the config object passed to defineTask, designed for inference
-type DefineTaskInputConfig<
+interface DefineTaskInputConfig<
   PayloadExplicit,
   SchemaInput extends SchemaHandler | undefined,
   // This InferredHandlerResult is the type that the provided handler function actually returns.
   InferredHandlerResult,
-> = {
+> {
   // The handler's result type is InferredHandlerResult, which TS will infer.
   handler: TaskHandler<
     EffectivePayloadType<PayloadExplicit, ResolvedSchemaType<SchemaInput>>,
@@ -33,22 +33,21 @@ type DefineTaskInputConfig<
   schema?: SchemaInput;
   triggers?: SingleOrArray<TaskTrigger<EffectivePayloadType<PayloadExplicit, ResolvedSchemaType<SchemaInput>>>>;
   id?: string; // From TaskDefinition
-};
+}
 
 /**
  * Defines a task group configuration.
  * This function helps with type inference for task group definitions.
  *
- * @template TDefs The type of task definitions contained in this group.
- * @param name The name of the task group.
- * @param definitions The task definitions for this group.
+ * @template TTaskMap The type of the task definition registry (a map of task definitions).
+ * @param config The task group definition, including an optional `id` and a `tasks` object.
  * @returns The task group definition object, correctly typed.
  */
 export function defineTaskGroup<
   // TTaskMap will be inferred from config.tasks, e.g., typeof { taskA, taskB } as const
   TTaskMap extends TaskDefinitionRegistry,
 >(
-  config: TaskGroupDefinition<TTaskMap> // config is { id?: 'groupX', tasks: TTaskMap }
+  config: TaskGroupDefinition<TTaskMap>, // config is { id?: 'groupX', tasks: TTaskMap }
 ): TaskGroupDefinition<TTaskMap> {
   return config;
 }
@@ -84,7 +83,7 @@ export function defineTask<
   // InferredHandlerResult will be inferred from the `handler` in `config`.
   InferredHandlerResult = unknown,
 >(
-  config: DefineTaskInputConfig<PayloadExplicit, SchemaInput, InferredHandlerResult>
+  config: DefineTaskInputConfig<PayloadExplicit, SchemaInput, InferredHandlerResult>,
 ): TaskDefinition<
   PayloadExplicit,
   // Conditional type: if ResultExplicit was the default 'unknown' (i.e., not specified), use the inferred type.
@@ -132,7 +131,7 @@ export function getTypedStep<
   TResult = any,
 >(
   context: TaskHandlerContext<TActualPayload, TResult>,
-  _currentGroup?: TCurrentTaskGroup
+  _currentGroup?: TCurrentTaskGroup,
 ): StepExecutor<TaskJob<TActualPayload, TResult, any>, TAllTaskGroupsDefs, TCurrentTaskGroup> {
   return context.step;
 }
