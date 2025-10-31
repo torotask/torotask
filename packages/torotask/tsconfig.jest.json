@@ -2,9 +2,9 @@
   "extends": "./tsconfig.json",
   "compilerOptions": {
     "module": "ESNext",
-    "isolatedModules": true,
     "types": ["jest", "node"],
-    "allowSyntheticDefaultImports": true
+    "allowSyntheticDefaultImports": true,
+    "isolatedModules": true
   },
   "include": ["src/**/*.ts", "src/**/*.d.ts", "src/__tests__/**/*.ts"],
   "exclude": ["node_modules", "dist"]
