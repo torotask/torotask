@@ -8,14 +8,9 @@
   "description": "Task queue processing in NodeJS based on BullMQ and Redis",
   "author": "Ben Osman",
   "license": "MIT",
-  "repository": "torotask/torotask.git",
 
-  "keywords": [
-    "bullmq",
-    "message-queue",
-    "task-queue",
-    "tasks"
-  ],
+  "repository": "torotask/torotask.git",
+  "keywords": ["bullmq", "message-queue", "task-queue", "tasks"],
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
@@ -25,9 +20,7 @@
   },
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
-  "files": [
-    "dist"
-  ],
+  "files": ["dist"],
   "scripts": {
     "build": "tsc --build",
     "build:dev": "tsc --build",
@@ -39,6 +32,7 @@
     "test:watch": "jest --watch"
   },
   "dependencies": {
+    "@bull-board/api": "catalog:",
     "@sindresorhus/slugify": "^2.2.1",
     "bullmq": "catalog:",
     "camelcase": "^8.0.0",
@@ -55,6 +49,7 @@
     "zod": "^3.25.0"
   },
   "devDependencies": {
+    "@bull-board/express": "catalog:",
     "@types/glob": "^8.1.0",
     "@types/jest": "^29.5.12",
     "@types/lodash-es": "^4.17.12",

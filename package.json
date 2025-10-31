@@ -1,10 +1,12 @@
 {
   "name": "torotask-monorepo",
   "version": "0.1.0",
+
   "private": true,
   "packageManager": "pnpm@10.20.0+sha512.cf9998222162dd85864d0a8102e7892e7ba4ceadebbf5a31f9c2fce48dfce317a9c53b9f6464d1ef9042cba2e02ae02a9f7c143a2b438cd93c91840f0192b9dd",
   "description": "Monorepo for ToroTask related packages and apps",
   "license": "MIT",
+
   "scripts": {
     "build": "turbo run build",
     "clean": "turbo run clean",
@@ -13,7 +15,6 @@
     "lint": "eslint --cache .",
     "lint:fix": "eslint --cache --fix .",
     "prepare": "simple-git-hooks",
-    "syncpack:fix": "syncpack format && syncpack fix-mismatches",
     "test": "turbo run test"
   },
   "devDependencies": {
@@ -26,7 +27,6 @@
     "eslint-plugin-format": "^1.0.2",
     "lint-staged": "^15.5.0",
     "simple-git-hooks": "^2.12.1",
-    "syncpack": "^13.0.3",
     "tsx": "catalog:",
     "turbo": "^2.5.8",
     "typescript": "catalog:"
