@@ -59,7 +59,9 @@ export function defineTaskGroup<
  * @param groups The task group definitions.
  * @returns The task group definition registry, preserving its specific type.
  */
-export function defineTaskGroupRegistry<T extends TaskGroupDefinitionRegistry>(groups: T): T {
+export function defineTaskGroupRegistry<const T extends TaskGroupDefinitionRegistry>(
+  groups: T,
+): T {
   return groups;
 }
 
