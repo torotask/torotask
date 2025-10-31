@@ -19,7 +19,6 @@
     "lint": "eslint --cache .",
     "lint:fix": "eslint --cache --fix .",
     "prepare": "simple-git-hooks",
-    "syncpack:fix": "syncpack format && syncpack fix-mismatches",
     "changeset": "changeset",
     "version:packages": "changeset version",
     "publish:packages": "turbo run build --filter=./packages/* && changeset publish"
@@ -39,7 +38,6 @@
     "eslint-plugin-format": "^1.0.2",
     "lint-staged": "^15.5.0",
     "simple-git-hooks": "^2.12.1",
-    "syncpack": "^13.0.3",
     "tsx": "catalog:",
     "turbo": "^2.5.8",
     "typescript": "catalog:"
