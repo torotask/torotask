@@ -1,5 +1,7 @@
 import { logger, server } from './server.js';
 
+export * from './helpers.js';
+
 async function main() {
   // This would return undefined for unknown groups
   // server.taskGroups['unknownGroup']?.tasks['batchTask']?.stopWorker(); // Safe - returns undefined
