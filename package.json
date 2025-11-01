@@ -2,7 +2,6 @@
   "name": "torotask-monorepo",
   "version": "0.1.0",
   "private": true,
-  "packageManager": "pnpm@10.20.0",
   "description": "Monorepo for ToroTask related packages and apps",
   "license": "MIT",
   "scripts": {
@@ -13,7 +12,10 @@
     "format": "biome format --write",
     "lint": "biome lint",
     "prepare": "simple-git-hooks",
-    "syncpack:fix": "syncpack format && syncpack fix-mismatches"
+    "syncpack:fix": "syncpack format && syncpack fix-mismatches",
+    "changeset": "changeset",
+    "version:packages": "changeset version",
+    "publish:packages": "turbo run build --filter=./packages/* && changeset publish"
   },
   "devDependencies": {
     "@biomejs/biome": "1.9.4",
@@ -43,5 +45,10 @@
   },
   "simple-git-hooks": {
     "pre-commit": "pnpm lint-staged"
+  },
+  "packageManager": "pnpm@10.20.0",
+  "engines": {
+    "node": "20",
+    "pnpm": ">=10 <11"
   }
 }
