@@ -5,11 +5,31 @@ packages:
 catalog:
   '@bull-board/api': ^6.14.0
   '@bull-board/express': ^6.14.0
+  '@sindresorhus/slugify': ^2.2.1
   '@types/express': ^4.17.21
+  '@types/glob': ^8.1.0
+  '@types/jest': ^29.5.12
+  '@types/lodash-es': ^4.17.12
+  '@types/ms': ^2.1.0
   '@types/pino': ^7.0.5
-  bullmq: 5.56.0
+  '@types/uuid': ^10.0.0
+  bullmq: 5.63.0
+  camelcase: ^8.0.0
+  cronstrue: ^2.59.0
   express: ^4.19.2
+  glob: ^11.0.3
+  ioredis: ^5.4.1
+  jest: ^29.7.0
+  lodash-es: ^4.17.21
+  ms: ^2.1.3
   pino: 9.14.0
   pino-pretty: ^13.0.0
+  pretty-ms: ^9.2.0
+  redis-memory-server: ^0.10.0
+  tiny-lru: ^11.2.11
+  ts-jest: ^29.1.2
+  ts-node: ^10.9.2
   tsx: 4.16.0
   typescript: 5.5.3
+  uuid: ^11.1.0
+  zod: ^3.25.76

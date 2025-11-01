@@ -1,7 +1,7 @@
 import express from 'express';
 import { ToroTask } from 'torotask';
 import { createBullBoard } from '@bull-board/api';
-import { BullMQAdapter } from '@bull-board/api/bullMQAdapter.js';
+import { BullMQAdapter } from '@bull-board/api/bullMQAdapter';
 import { ExpressAdapter } from '@bull-board/express';
 import { pino } from 'pino';
 
@@ -43,7 +43,7 @@ async function main() {
       serverAdapter.setQueues(queueAdaptersMap as any);
       logger.info(`Queue list updated with ${queueAdaptersMap.size} queues.`);
     } catch (error) {
-      logger.error('Error refreshing queue list:', error);
+      logger.error(error, 'Error refreshing queue list:');
       // Optionally, clear queues or handle the error state in the UI
       // serverAdapter.setQueues([]);
     }
