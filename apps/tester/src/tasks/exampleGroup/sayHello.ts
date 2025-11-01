@@ -1,5 +1,5 @@
 import { createSchema, defineTask } from 'torotask';
-import { getStep } from '../../server.js';
+import { getClient, getGroup, getStep } from '../../helpers.js';
 
 export const helloTask = defineTask({
   id: 'hello-task',
@@ -43,6 +43,10 @@ export const helloTask = defineTask({
     const { payload } = options;
     const { logger, job } = context;
     const step = getStep(context, 'exampleGroup');
+    const group = getGroup(context, 'exampleGroup');
+    const _client = getClient(context);
+
+    group.runTask('batchTask', { name: 'Batch User', createdAt: new Date() });
 
     console.log('payload', payload);
     const _result1 = await step.do('first-step', async () => {
