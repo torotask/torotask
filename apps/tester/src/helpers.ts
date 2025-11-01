@@ -1,42 +1,18 @@
+import type { TaskHandlerContext } from 'torotask';
 import type { taskGroups } from './tasks/index.js';
-import { getTypedClient, getTypedGroup, getTypedStep } from 'torotask';
+import { getTypedContext } from 'torotask';
 
 /**
- * This function is used to get a step executor for a specific task group and task.
- * It takes a context object that contains the task job and the task group definitions.
- * The function returns a step executor that can be used to execute steps for the specified task.
+ * A project-specific helper to get a fully typed context for a given task group.
+ * This wraps the core `getTypedContext` and pre-fills it with the project's `taskGroups` type.
  *
- * @param context - The context object containing the task job and task group definitions.
- * @returns A step executor for the specified task group and task.
+ * @template TContext The original task handler context, used to infer payload and result types.
+ * @template TCurrentTaskGroup The key of the current task group.
+ * @param context The generic task handler context.
+ * @param currentGroup The key of the current task group.
+ * @returns A strongly-typed context object for the specified task group.
  */
-export function getStep<TCurrentTaskGroup extends keyof typeof taskGroups = never>(
-  context: any,
-  currentGroup?: TCurrentTaskGroup,
+export function getTaskContext<TContext extends TaskHandlerContext<any, any>, TCurrentTaskGroup extends keyof typeof taskGroups>(context: TContext, currentGroup: TCurrentTaskGroup,
 ) {
-  // Use the getTypedStep function to retrieve the step executor
-  return getTypedStep<typeof taskGroups, TCurrentTaskGroup>(context, currentGroup);
-}
-
-/**
- * Retrieves the client from the task handler context, strongly typed for this project.
- *
- * @param context The task handler context.
- * @returns The client, correctly typed.
- */
-export function getClient(context: any) {
-  return getTypedClient<typeof taskGroups>(context);
-}
-
-/**
- * Retrieves the task group from the task handler context, strongly typed for this project.
- *
- * @param context The task handler context.
- * @param currentGroup The identifier for the current task group, used for type inference.
- * @returns The task group, correctly typed.
- */
-export function getGroup<TCurrentTaskGroup extends keyof typeof taskGroups>(
-  context: any,
-  currentGroup: TCurrentTaskGroup,
-) {
-  return getTypedGroup<typeof taskGroups, TCurrentTaskGroup>(context, currentGroup);
+  return getTypedContext<typeof taskGroups, TCurrentTaskGroup, TContext>(context, currentGroup);
 }
