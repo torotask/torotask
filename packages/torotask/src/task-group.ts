@@ -128,7 +128,11 @@ export class TaskGroup<
   >(taskName: TaskName,
     payload: ActualPayload,
   ): Promise<TaskJob<ActualPayload, Result>> {
-    return this.client.runTask(this.id as any, taskName, payload);
+    const task = this.getTask(taskName);
+    if (task) {
+      return task.run(payload as any) as Promise<TaskJob<ActualPayload, Result>>;
+    }
+    throw new Error(`Task "${taskName as string}" not found in group "${this.id}".`);
   }
 
   /**

@@ -7,6 +7,7 @@ import type {
   TaskWorkerQueueOptions,
   WorkerEventHandlers,
 } from './types/index.js';
+import { QueueBase } from 'bullmq';
 import { TaskQueueEvents } from './queue-events.js';
 import { TaskQueue } from './queue.js';
 import { TaskWorker } from './worker.js';
@@ -221,21 +222,21 @@ export class TaskWorkerQueue<PayloadType = any, ResultType = any, NameType exten
 
   // Override emit, on, off, once to use the new combined listener interface
   emit<U extends keyof TaskWorkerQueueListener>(event: U, ...args: Parameters<TaskWorkerQueueListener[U]>): boolean {
-    return (this as any).emit(event, ...args);
+    return QueueBase.prototype.emit.call(this, event, ...args);
   }
 
   off<U extends keyof TaskWorkerQueueListener>(eventName: U, listener: TaskWorkerQueueListener[U]): this {
-    (this as any).off(eventName, listener);
+    QueueBase.prototype.off.call(this, eventName, listener);
     return this;
   }
 
   on<U extends keyof TaskWorkerQueueListener>(event: U, listener: TaskWorkerQueueListener[U]): this {
-    (this as any).on(event, listener);
+    QueueBase.prototype.on.call(this, event, listener);
     return this;
   }
 
   once<U extends keyof TaskWorkerQueueListener>(event: U, listener: TaskWorkerQueueListener[U]): this {
-    (this as any).once(event, listener);
+    QueueBase.prototype.once.call(this, event, listener);
     return this;
   }
 }
