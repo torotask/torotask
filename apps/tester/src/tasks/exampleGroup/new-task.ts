@@ -30,9 +30,6 @@ export const newTask = defineTask({
     const message = `Hello, ${payload.lastname}!`;
     logger.debug(`Processed message: ${message}`);
 
-    // Simulate some async work
-    await new Promise(resolve => setTimeout(resolve, 100));
-
     return message; // Return a result
   },
 });
