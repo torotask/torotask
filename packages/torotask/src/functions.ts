@@ -1,5 +1,7 @@
+import type { ToroTask } from './client.js';
 import type { TaskJob } from './job.js';
 import type { StepExecutor } from './step-executor.js';
+import type { TaskGroup } from './task-group.js';
 import type {
   EffectivePayloadType,
   ResolvedSchemaType,
@@ -136,4 +138,44 @@ export function getTypedStep<
   _currentGroup?: TCurrentTaskGroup,
 ): StepExecutor<TaskJob<TActualPayload, TResult, any>, TAllTaskGroupsDefs, TCurrentTaskGroup> {
   return context.step;
+}
+
+/**
+ * Retrieves the client from the task handler context.
+ * This function is useful for accessing the client in a strongly typed manner.
+ *
+ * @template TAllTaskGroupsDefs The type of all task group definitions.
+ * @param context The task handler context.
+ * @returns The client, correctly typed.
+ */
+export function getTypedClient<
+  TAllTaskGroupsDefs extends TaskGroupDefinitionRegistry,
+  TActualPayload = any,
+  TResult = any,
+>(
+  context: TaskHandlerContext<TActualPayload, TResult>,
+): ToroTask<TAllTaskGroupsDefs> {
+  return context.client as any;
+}
+
+/**
+ * Retrieves the task group from the task handler context.
+ * This function is useful for accessing the task group in a strongly typed manner.
+ *
+ * @template TAllTaskGroupsDefs The type of all task group definitions.
+ * @template TCurrentTaskGroup The key of the current task group.
+ * @param context The task handler context.
+ * @param _currentGroup The identifier for the current task group, used for type inference.
+ * @returns The task group, correctly typed.
+ */
+export function getTypedGroup<
+  TAllTaskGroupsDefs extends TaskGroupDefinitionRegistry,
+  const TCurrentTaskGroup extends keyof TAllTaskGroupsDefs,
+  TActualPayload = any,
+  TResult = any,
+>(
+  context: TaskHandlerContext<TActualPayload, TResult>,
+  _currentGroup: TCurrentTaskGroup,
+): TaskGroup<TAllTaskGroupsDefs[TCurrentTaskGroup]['tasks']> {
+  return context.group as any;
 }
