@@ -1,5 +1,5 @@
 import { createSchema, defineTask } from 'torotask';
-import { useTaskContext } from './context.js';
+import { getTaskContext } from '../../helpers.js';
 
 export const helloTask = defineTask({
   id: 'hello-task',
@@ -41,7 +41,7 @@ export const helloTask = defineTask({
   ),
   handler: async (options, context) => {
     const { payload } = options;
-    const { logger, job, step, group } = useTaskContext(context);
+    const { logger, job, step, group } = getTaskContext(context, 'exampleGroup');
 
     group.runTask('batchTask', { name: 'Batch User', createdAt: new Date() });
 
