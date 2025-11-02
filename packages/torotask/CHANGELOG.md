@@ -1,5 +1,11 @@
 # torotask
 
+## 0.11.0
+
+### Minor Changes
+
+- Upgrade typescript+ ([#12](https://github.com/torotask/torotask/pull/12)) ([`08ec70f`](https://github.com/torotask/torotask/commit/08ec70f7f521d044d4e35ed969cc94badee18d8a))
+
 ## 0.10.0
 
 ### Minor Changes
