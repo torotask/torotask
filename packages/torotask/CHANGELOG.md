@@ -1,5 +1,11 @@
 # torotask
 
+## 0.8.6
+
+### Patch Changes
+
+- Dependency updates ([#3](https://github.com/torotask/torotask/pull/3)) ([`65890f4`](https://github.com/torotask/torotask/commit/65890f448b847d1c1c00800247f5dd43419c5088))
+
 ## 0.8.5
 
 ### Patch Changes
