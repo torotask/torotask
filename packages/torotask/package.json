@@ -1,7 +1,7 @@
 {
   "name": "torotask",
   "type": "module",
-  "version": "0.9.1",
+  "version": "0.10.0",
   "description": "Task queue processing in NodeJS based on BullMQ and Redis",
   "author": "Ben Osman",
   "license": "MIT",

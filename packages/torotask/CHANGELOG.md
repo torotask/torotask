@@ -1,5 +1,11 @@
 # torotask
 
+## 0.10.0
+
+### Minor Changes
+
+- Add stateless step functions ([#10](https://github.com/torotask/torotask/pull/10)) ([`12bcb4d`](https://github.com/torotask/torotask/commit/12bcb4d2dc73724486fc3307c8c91edf86951114))
+
 ## 0.9.1
 
 ### Patch Changes
