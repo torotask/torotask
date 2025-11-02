@@ -21,7 +21,7 @@ env:
 
 jobs:
   lint:
-    name: Lint
+    name: Lint & Format
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
@@ -36,27 +36,8 @@ jobs:
         with:
           build: false
 
-      # - name: Run Linter
-      #  run: pnpm exec eslint ${{ steps.changed-files.outputs.all_changed_files }}
-
-  # format:
-  #   name: Format
-  #   runs-on: ubuntu-latest
-  #   steps:
-  #     - name: Checkout repository
-  #       uses: actions/checkout@v4
-
-  #     - name: Get changed files
-  #       id: changed-files
-  #       uses: tj-actions/changed-files@v47
-
-  #     - name: Prepare
-  #       uses: ./.github/actions/prepare
-  #       with:
-  #         build: false
-
-  #     #- name: Run Formatter
-  #     #  run: pnpm exec prettier --check --ignore-unknown ${{ steps.changed-files.outputs.all_changed_files }}
+      - name: Run Linter
+        run: pnpm exec eslint ${{ steps.changed-files.outputs.all_changed_files }}
 
   build:
     name: Build
