@@ -1,0 +1,180 @@
+name: Prepare Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Release version (eg: 0.1.0)"
+        required: true
+        type: string
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+
+env:
+  NODE_OPTIONS: --max_old_space_size=6144
+
+jobs:
+  prepare-release:
+    name: Prepare Release
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Validate version format and existence
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          VERSION=${{ github.event.inputs.version }}
+          TAG="v$VERSION"
+          REPO="${{ github.repository }}"
+
+          # Check for semver format
+          if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-.*)?$ ]]; then
+            echo "❌ Invalid version format for '$VERSION'. Expected: x.y.z or x.y.z-prerelease"
+            exit 1
+          fi
+
+          # Check for tag existence
+          if gh api repos/$REPO/git/refs/tags/$TAG \
+               --silent >/dev/null 2>&1; then
+            echo "❌ Tag '$TAG' already exists"
+            exit 1
+          fi
+
+          echo "✅ Version '$VERSION' is valid and available"
+
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Prepare
+        uses: ./.github/actions/prepare
+
+      - name: Generate release notes and update versions
+        id: changeset-version
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          TOROTASK_VERSION: ${{ github.event.inputs.version }}
+        run: |
+          echo "🔄 Running changeset version..."
+
+          # Run changeset version, which will update CHANGELOG.md files
+          pnpm changeset version
+
+          echo "✅ changeset version complete. Extracting release notes..."
+
+          # Extract release notes from the torotask CHANGELOG.md
+          VERSION=${{ github.event.inputs.version }}
+          CHANGELOG_FILE="./packages/torotask/CHANGELOG.md"
+
+          # Use awk to find the section for the new version.
+          # It starts printing from the line with "## $VERSION" and stops at the next "## " heading.
+          RELEASE_NOTES=$(awk -v ver="## $VERSION" '
+            $0 == ver { f=1; next }
+            f && /^## / { f=0 }
+            f { print }
+          ' "$CHANGELOG_FILE" | sed '1{/^$/d}')
+
+          if [ -z "$RELEASE_NOTES" ]; then
+            echo "❌ Could not extract release notes for version $VERSION from $CHANGELOG_FILE"
+            echo "--- CHANGELOG.md content for debugging ---"
+            cat "$CHANGELOG_FILE"
+            echo "------------------------------------------"
+            exit 1
+          fi
+
+          echo "✅ Successfully extracted release notes."
+
+          # Output release notes
+          {
+            echo "release_notes<<EOF"
+            echo "$RELEASE_NOTES"
+            echo "EOF"
+          } >> $GITHUB_OUTPUT
+
+          # Verify version was updated in main package
+          PACKAGE_VERSION=$(node -p "require('./packages/torotask/package.json').version")
+          if [ "$PACKAGE_VERSION" != "${{ github.event.inputs.version }}" ]; then
+            echo "❌ Version mismatch: package.json shows $PACKAGE_VERSION, expected ${{ github.event.inputs.version }}"
+            exit 1
+          fi
+
+          echo "✅ Version updated successfully to ${{ github.event.inputs.version }}"
+
+      - name: Verify changeset cleanup
+        run: |
+          # Count remaining changeset files (excluding config)
+          CHANGESET_COUNT=$(find .changeset -name "*.md" -not -name "config.json" | wc -l)
+          if [ $CHANGESET_COUNT -ne 0 ]; then
+            echo "❌ Changesets not properly cleared. Found $CHANGESET_COUNT remaining files:"
+            find .changeset -name "*.md" -not -name "config.json"
+            exit 1
+          fi
+          echo "✅ Changesets cleared successfully"
+
+      - name: Create release PR
+        id: create-pr
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          VERSION=${{ github.event.inputs.version }}
+          TAG="v$VERSION"
+          BRANCH_NAME="release-$VERSION"
+          PR_TITLE="Release $VERSION"
+
+          # Build the PR body content
+          PR_BODY=$(cat <<'EOF'
+          ### ✅ Release Checklist
+          - [x] Changesets processed and cleared
+          - [x] Package versions updated
+          - [x] Release notes generated
+          - [ ] PR reviewed and approved
+          - [ ] Tests passed
+
+          ### 🚀 Release Notes
+          ```md
+          ${{ steps.changeset-version.outputs.release_notes }}
+          ```
+          EOF
+          )
+
+          # Configure git and commit changes
+          git checkout -b "$BRANCH_NAME"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "Release $VERSION"
+          git push origin "$BRANCH_NAME" --force
+
+          # Look for existing open PR with this branch
+          EXISTING_PR=$(gh pr list \
+            --state open \
+            --head "$BRANCH_NAME" \
+            --json number \
+            --jq '.[0].number' || echo "")
+
+          if [ -n "$EXISTING_PR" ]; then
+            echo "🔄 Updating existing PR #$EXISTING_PR"
+            gh pr edit $EXISTING_PR \
+              --title "$PR_TITLE" \
+              --body "$PR_BODY"
+            echo "pr_number=$EXISTING_PR" >> $GITHUB_OUTPUT
+            echo "new_pr=false" >> $GITHUB_OUTPUT
+          else
+            echo "✨ Creating new PR"
+            NEW_PR=$(gh pr create \
+              --title "$PR_TITLE" \
+              --body "$PR_BODY" \
+              --label "Release" \
+              --label "No Changeset" \
+              --head "$BRANCH_NAME" \
+              --base "main" \
+              --draft=false \
+              | grep -o '[0-9]\+$')
+            echo "pr_number=$NEW_PR" >> $GITHUB_OUTPUT
+            echo "new_pr=true" >> $GITHUB_OUTPUT
+          fi
+          echo "tag=$TAG" >> $GITHUB_OUTPUT
