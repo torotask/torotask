@@ -3,10 +3,10 @@ import type { Logger } from 'pino';
 import { type ZodSchema, z } from 'zod';
 import type { ToroTask } from '../client.js';
 import type { TaskJob } from '../job.js';
-import type { TaskQueue } from '../queue.js';
 import type { StepExecutor } from '../step-executor.js';
 import type { TaskGroup } from '../task-group.js';
 import type { Task } from '../task.js';
+import type { TaskWorkerQueue } from '../worker-queue.js';
 import type { TaskJobOptions } from './job.js';
 import type { TaskQueueOptions } from './queue.js';
 import type { EffectivePayloadType, ResolvedSchemaType, SchemaHandler } from './schema.js';
@@ -40,7 +40,7 @@ export interface BaseHandlerContext<PayloadType = unknown, ResultType = unknown>
   logger: Logger;
   client: ToroTask;
   group: TaskGroup;
-  queue: TaskQueue<PayloadType, ResultType>;
+  queue: TaskWorkerQueue<PayloadType, ResultType>;
 }
 
 /** Context passed to the task handler */

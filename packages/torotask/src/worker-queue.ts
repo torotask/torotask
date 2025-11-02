@@ -221,22 +221,26 @@ export class TaskWorkerQueue<PayloadType = any, ResultType = any, NameType exten
   // --- Update Event Emitter Signatures ---
 
   // Override emit, on, off, once to use the new combined listener interface
+  // @ts-expect-error - Intentionally widening the event interface
   emit<U extends keyof TaskWorkerQueueListener>(event: U, ...args: Parameters<TaskWorkerQueueListener[U]>): boolean {
-    return QueueBase.prototype.emit.call(this, event, ...args);
+    return (super.emit as any)(event, ...args);
   }
 
+  // @ts-expect-error - Intentionally widening the event interface
   off<U extends keyof TaskWorkerQueueListener>(eventName: U, listener: TaskWorkerQueueListener[U]): this {
-    QueueBase.prototype.off.call(this, eventName, listener);
+    (super.off as any)(eventName, listener);
     return this;
   }
 
+  // @ts-expect-error - Intentionally widening the event interface
   on<U extends keyof TaskWorkerQueueListener>(event: U, listener: TaskWorkerQueueListener[U]): this {
-    QueueBase.prototype.on.call(this, event, listener);
+    (super.on as any)(event, listener);
     return this;
   }
 
+  // @ts-expect-error - Intentionally widening the event interface
   once<U extends keyof TaskWorkerQueueListener>(event: U, listener: TaskWorkerQueueListener[U]): this {
-    QueueBase.prototype.once.call(this, event, listener);
+    (super.once as any)(event, listener);
     return this;
   }
 }
