@@ -1,5 +1,8 @@
+import type { ToroTask } from './client.js';
 import type { TaskJob } from './job.js';
 import type { StepExecutor } from './step-executor.js';
+import type { TaskGroup } from './task-group.js';
+import type { Task } from './task.js';
 import type {
   EffectivePayloadType,
   ResolvedSchemaType,
@@ -59,7 +62,9 @@ export function defineTaskGroup<
  * @param groups The task group definitions.
  * @returns The task group definition registry, preserving its specific type.
  */
-export function defineTaskGroupRegistry<T extends TaskGroupDefinitionRegistry>(groups: T): T {
+export function defineTaskGroupRegistry<const T extends TaskGroupDefinitionRegistry>(
+  groups: T,
+): T {
   return groups;
 }
 
@@ -115,23 +120,30 @@ export function createSchema<T extends z.ZodTypeAny>(schemaFn: (zod: typeof z) =
 }
 
 /**
- * Retrieves the step executor from the task handler context.
- * This function is useful for accessing the step executor in a strongly typed manner.
+ * Returns a fully typed context for a given task group.
+ * This includes strongly-typed `step`, `group`, `client`, `task`, and `job` properties.
  *
  * @template TAllTaskGroupsDefs The type of all task group definitions.
- * @template TActualPayload The actual payload type for the task.
- * @template TResult The result type for the task.
- * @param context The task handler context.
- * @returns The step executor, correctly typed.
+ * @template TCurrentTaskGroup The key of the current task group.
+ * @template TContext The original task handler context, used to infer payload and result types.
+ * @param context The generic task handler context.
+ * @param _currentGroup The identifier for the current task group, used for type inference.
+ * @returns A strongly-typed context object.
  */
-export function getTypedStep<
+export function getTypedContext<
   TAllTaskGroupsDefs extends TaskGroupDefinitionRegistry,
-  const TCurrentTaskGroup extends keyof TAllTaskGroupsDefs = never,
-  TActualPayload = any,
-  TResult = any,
->(
-  context: TaskHandlerContext<TActualPayload, TResult>,
-  _currentGroup?: TCurrentTaskGroup,
-): StepExecutor<TaskJob<TActualPayload, TResult, any>, TAllTaskGroupsDefs, TCurrentTaskGroup> {
-  return context.step;
+  const TCurrentTaskGroup extends keyof TAllTaskGroupsDefs,
+  TContext extends TaskHandlerContext<any, any>,
+>(context: TContext, _currentGroup: TCurrentTaskGroup) {
+  type TPayload = TContext extends TaskHandlerContext<infer P, any> ? P : unknown;
+  type TResult = TContext extends TaskHandlerContext<any, infer R> ? R : unknown;
+
+  return {
+    ...context,
+    step: context.step as StepExecutor<TaskJob<TPayload, TResult, any>, TAllTaskGroupsDefs, TCurrentTaskGroup>,
+    group: context.group as TaskGroup<TAllTaskGroupsDefs[TCurrentTaskGroup]['tasks']>,
+    client: context.client as ToroTask<TAllTaskGroupsDefs>,
+    task: context.task as Task<TPayload, TResult, any>,
+    job: context.job as TaskJob<TPayload, TResult>,
+  };
 }

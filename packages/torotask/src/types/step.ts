@@ -46,3 +46,5 @@ export interface BulkJobsReference {
 export type StepTaskJobOptions = Omit<TaskJobOptions, 'parent'>;
 
 export type StepBulkJob<Payload> = Omit<BulkJob<Payload>, 'data' | 'state'>;
+
+export type StepInnerString = string | number | symbol;
