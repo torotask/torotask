@@ -89,7 +89,7 @@ jobs:
               
               // 2. Filter out private packages
               const publicChangedPackages = changedPackages.filter(pkg => {
-                const isPrivate = pkg.packageJson.private === true;
+                const isPrivate = String(pkg.packageJson.private) == 'true';
                 if (isPrivate) {
                   core.info(`🔒 Skipping private package: ${pkg.packageJson.name}`);
                 }
