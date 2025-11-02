@@ -58,6 +58,19 @@ jobs:
   #     #- name: Run Formatter
   #     #  run: pnpm exec prettier --check --ignore-unknown ${{ steps.changed-files.outputs.all_changed_files }}
 
+
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Prepare
+        uses: ./.github/actions/prepare
+        with:
+          build: true
+
   # unit:
   #   name: Unit Tests
   #   runs-on: ubuntu-latest
