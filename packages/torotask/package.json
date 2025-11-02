@@ -1,12 +1,10 @@
 {
   "name": "torotask",
+  "type": "module",
   "version": "0.8.6",
-  "keywords": ["bullmq", "message-queue", "task-queue", "tasks"],
   "description": "Task queue processing in NodeJS based on BullMQ and Redis",
   "author": "Ben Osman",
   "license": "MIT",
-  "type": "module",
-  "main": "dist/index.js",
   "publishConfig": {
     "access": "public"
   },
@@ -14,14 +12,25 @@
     "type": "git",
     "url": "https://github.com/torotask/torotask.git"
   },
+  "keywords": ["bullmq", "message-queue", "task-queue", "tasks"],
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "files": ["dist"],
   "scripts": {
     "build": "tsc --build",
     "build:dev": "tsc --build",
     "clean": "tsc --build --clean",
     "dev": "tsc --build --watch",
     "test": "jest",
-    "test:unit": "jest --testPathPattern=unit",
     "test:integration": "jest --testPathPattern=integration",
+    "test:unit": "jest --testPathPattern=unit",
     "test:watch": "jest --watch"
   },
   "dependencies": {
@@ -40,15 +49,6 @@
     "uuid": "catalog:",
     "zod": "catalog:"
   },
-  "exports": {
-    ".": {
-      "types": "./dist/index.d.ts",
-      "import": "./dist/index.js"
-    },
-    "./package.json": "./package.json"
-  },
-  "files": ["dist"],
-  "types": "dist/index.d.ts",
   "devDependencies": {
     "@bull-board/express": "catalog:",
     "@types/glob": "catalog:",

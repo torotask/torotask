@@ -4,10 +4,9 @@
  */
 
 import { TestRedisServer } from '../helpers/test-redis.js';
-import { createMockRedisConfig } from '../helpers/mock-factories.js';
-import { waitFor, delay } from '../helpers/test-utils.js';
+import { delay } from '../helpers/test-utils.js';
 
-describe('StepExecutor - Integration Tests', () => {
+describe('stepExecutor - Integration Tests', () => {
   let redisServer: TestRedisServer | null;
 
   beforeAll(async () => {
@@ -16,16 +15,11 @@ describe('StepExecutor - Integration Tests', () => {
     if (!globalThis.__REDIS_SERVER__) {
       try {
         await redisServer.start();
-      } catch (_error) {
+      }
+      catch {
         console.log('Redis not available, skipping integration tests');
         redisServer = null;
       }
-    }
-  });
-
-  afterAll(async () => {
-    if (!globalThis.__REDIS_SERVER__ && redisServer) {
-      await redisServer.stop();
     }
   });
 
@@ -37,7 +31,13 @@ describe('StepExecutor - Integration Tests', () => {
     await redisServer.flushAll();
   });
 
-  describe('Redis connectivity', () => {
+  afterAll(async () => {
+    if (!globalThis.__REDIS_SERVER__ && redisServer) {
+      await redisServer.stop();
+    }
+  });
+
+  describe('redis connectivity', () => {
     it('should connect to test Redis instance', async () => {
       if (!redisServer) {
         console.log('Redis not available, skipping test');
@@ -87,7 +87,7 @@ describe('StepExecutor - Integration Tests', () => {
     });
   });
 
-  describe('BullMQ integration preparation', () => {
+  describe('bullMQ integration preparation', () => {
     it('should be ready for BullMQ queue operations', async () => {
       if (!redisServer) {
         console.log('Redis not available, skipping test');

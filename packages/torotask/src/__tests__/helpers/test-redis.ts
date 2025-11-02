@@ -1,5 +1,5 @@
-import { RedisMemoryServer } from 'redis-memory-server';
 import { Redis } from 'ioredis';
+import { RedisMemoryServer } from 'redis-memory-server';
 
 export class TestRedisServer {
   private server: RedisMemoryServer | null = null;

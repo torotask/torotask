@@ -1,8 +1,9 @@
-import { Job, JobsOptions, MinimalQueue } from 'bullmq';
-import { Logger } from 'pino';
+import type { JobsOptions, MinimalQueue } from 'bullmq';
+import type { Logger } from 'pino';
+import type { ToroTask } from './client.js';
 import type { TaskJobData, TaskJobOptions, TaskJobState } from './types/index.js';
+import { Job } from 'bullmq';
 import { TaskQueue } from './queue.js';
-import { ToroTask } from './client.js';
 import { convertJobOptions } from './utils/convert-job-options.js';
 
 export class TaskJob<
@@ -31,7 +32,7 @@ export class TaskJob<
     name: NameType,
     data: DataType,
     public options: TaskJobOptions<DataType> = {},
-    id?: string
+    id?: string,
   ) {
     const opts = convertJobOptions(options);
     super(queue, name, data, opts, id);
@@ -104,7 +105,7 @@ export class TaskJob<
 
   /**
    * Sets/replaces the internal list of Job instances managed by this container.
-   * @param jobs The array of Job instances representing the batch.
+   * @param batch The array of Job instances representing the batch.
    */
   setBatch(batch: (typeof this)[]) {
     this.batch = batch;
@@ -161,19 +162,20 @@ export class TaskJob<
    * @returns A promise that resolves when all lock extensions have been attempted.
    */
   async extendLocks(duration: number): Promise<void> {
-    if (!this.isBatch) return;
+    if (!this.isBatch) {
+      return;
+    }
 
     this.logger?.debug(`Manually extending locks for ${this.batch.length} jobs in batch ${this.id} by ${duration}ms`);
 
-    const promises = this.batch.map((job) =>
+    const promises = this.batch.map(job =>
       // Each job needs its token for lock extension
       job.token
         ? job.extendLock(job.token, duration).catch((err) => {
             // Log or handle individual extension errors
             this.logger?.error(`Failed to extend lock for job ${job.id} within batch ${this.id}:`, err);
-          })
-        : // Handle case where job token might be missing (shouldn't happen if fetched correctly)
-          Promise.reject(new Error(`Job ${job.id} missing token for lock extension.`))
+          }) // Handle case where job token might be missing (shouldn't happen if fetched correctly)
+        : Promise.reject(new Error(`Job ${job.id} missing token for lock extension.`)),
     );
     // Use Promise.allSettled to wait for all attempts and see individual results/errors
     await Promise.allSettled(promises);
@@ -189,10 +191,10 @@ export class TaskJob<
     if (!this.isBatch) {
       return super.updateProgress(progress);
     }
-    const promises = this.batch.map((job) =>
+    const promises = this.batch.map(job =>
       job.updateProgress(progress).catch((err) => {
         this.logger?.error(`Failed to update progress for job ${job.id} within batch ${this.id}:`, err);
-      })
+      }),
     );
     await Promise.allSettled(promises);
   }
@@ -209,11 +211,11 @@ export class TaskJob<
       return super.log(logRow);
     }
     let firstLogCount: number = 0; // S
-    const promises = this.batch.map((job) =>
+    const promises = this.batch.map(job =>
       job.log(logRow).catch((err) => {
         this.logger?.error(`Failed to add log entry for job ${job.id} within batch ${this.id}:`, err);
         return null; // Return null or another indicator for failed logs
-      })
+      }),
     );
 
     const results = await Promise.allSettled(promises);
@@ -237,10 +239,10 @@ export class TaskJob<
     if (!this.isBatch) {
       return super.clearLogs(keepLogs);
     }
-    const promises = this.batch.map((job) =>
+    const promises = this.batch.map(job =>
       job.clearLogs(keepLogs).catch((err) => {
         this.logger?.error(`Failed to add log entry for job ${job.id} within batch ${this.id}:`, err);
-      })
+      }),
     );
     await Promise.allSettled(promises);
   }
@@ -263,7 +265,7 @@ export class TaskJob<
       return super.moveToFailed(error, token, fetchNext);
     }
     this.logger?.warn(
-      `Attempting to move ${this.batchLength} jobs in batch ${this.id} to failed state due to error: ${error.message}`
+      `Attempting to move ${this.batchLength} jobs in batch ${this.id} to failed state due to error: ${error.message}`,
     );
     const promises = this.batch.map(async (job) => {
       if (!job.token) {

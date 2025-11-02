@@ -54,10 +54,12 @@ export class EventSubscriptions {
     let suffix = '';
     if (triggerId !== undefined) {
       suffix = `:trigger:${triggerId}`;
-    } else if (eventId !== undefined) {
+    }
+    else if (eventId !== undefined) {
       // Use eventId if triggerId is not present (for non-trigger subscriptions)
       suffix = `:event:${eventId}`;
-    } else {
+    }
+    else {
       // Fallback or error needed if neither is defined?
       this.logger.warn({ info }, 'Subscription info lacks both triggerId and eventId for identifier generation');
       // Using a generic suffix, but this might cause collisions if multiple non-id event subs exist per task
@@ -94,17 +96,19 @@ export class EventSubscriptions {
       if (hsetResult === 1) {
         this.logger.debug(
           { eventName, fieldKey: subscriptionId, redisKey: eventKey },
-          'Task subscription added to event Hash in Redis (new field)'
+          'Task subscription added to event Hash in Redis (new field)',
         );
-      } else if (hsetResult === 0) {
+      }
+      else if (hsetResult === 0) {
         this.logger.debug(
           { eventName, fieldKey: subscriptionId, redisKey: eventKey },
-          'Task subscription updated in event Hash in Redis (existing field)'
+          'Task subscription updated in event Hash in Redis (existing field)',
         );
-      } else {
+      }
+      else {
         this.logger.warn(
           { eventName, fieldKey: subscriptionId, redisKey: eventKey, hsetResult: results?.[0] },
-          'Unexpected result from HSET within MULTI during registration'
+          'Unexpected result from HSET within MULTI during registration',
         );
       }
       // Check SADD result (index 1 of results array)
@@ -112,17 +116,20 @@ export class EventSubscriptions {
       if (saddResult === 1) {
         // Note: ioredis returns number for SADD
         this.logger.debug({ eventName, taskIndexKey }, 'Event name added to task index set');
-      } else if (saddResult === 0) {
+      }
+      else if (saddResult === 0) {
         this.logger.debug({ eventName, taskIndexKey }, 'Event name was already in task index set');
-      } else {
+      }
+      else {
         this.logger.warn(
           { eventName, taskIndexKey, saddResult: results?.[1] },
-          'Unexpected result from SADD within MULTI during registration'
+          'Unexpected result from SADD within MULTI during registration',
         );
       }
 
       // this.logger.info({ eventName, info, subscriptionId }, 'Subscription registered'); // Simpler log from previous version
-    } catch (error) {
+    }
+    catch (error) {
       this.logger.error({ err: error, eventName, info }, 'Error registering subscription');
       throw error;
     }
@@ -153,7 +160,7 @@ export class EventSubscriptions {
         this.logger.info(
           // Match original log level and message
           { eventName, fieldKey: subscriptionId, redisKey: eventKey },
-          'Task subscription removed from event Hash in Redis'
+          'Task subscription removed from event Hash in Redis',
         );
 
         // Then check remaining with HVALS
@@ -162,11 +169,12 @@ export class EventSubscriptions {
           try {
             const otherInfo = JSON.parse(jsonString) as EventSubscriptionInfo;
             return otherInfo.taskGroup === taskGroup && otherInfo.taskId === taskId;
-          } catch (parseError) {
+          }
+          catch (parseError) {
             this.logger.warn(
               // Match original log
               { err: parseError, eventKey, jsonString },
-              'Failed to parse remaining member during unregisterTaskEvent check'
+              'Failed to parse remaining member during unregisterTaskEvent check',
             );
             return false;
           }
@@ -177,35 +185,38 @@ export class EventSubscriptions {
           this.logger.info(
             // Match original log
             { eventName, taskIndexKey },
-            'Last subscription for this task to this event removed. Removing event from task index.'
+            'Last subscription for this task to this event removed. Removing event from task index.',
           );
           const sremResult = await this.redis.srem(taskIndexKey, eventName);
           if (sremResult === 0) {
             this.logger.warn(
               // Match original log
               { eventName, taskIndexKey },
-              'Attempted to remove event from task index, but it was not found.'
+              'Attempted to remove event from task index, but it was not found.',
             );
           }
-        } else {
+        }
+        else {
           this.logger.debug(
             // Match original log
             { eventName, taskIndexKey },
-            'Other subscriptions for this task still exist for this event. Task index unchanged.'
+            'Other subscriptions for this task still exist for this event. Task index unchanged.',
           );
         }
-      } else {
+      }
+      else {
         // Match original log
         this.logger.warn(
           { eventName, fieldKey: subscriptionId, redisKey: eventKey },
-          'Task subscription field not found in event Hash during unregistration'
+          'Task subscription field not found in event Hash during unregistration',
         );
       }
-    } catch (error) {
+    }
+    catch (error) {
       // Match original log message structure
       this.logger.error(
         { err: error, eventName, taskGroup: info.taskGroup, taskId: info.taskId, fieldKey: subscriptionId },
-        'Failed to unregister event task subscription from Redis Hash' // Original message didn't include "from Redis Hash" but context is clear
+        'Failed to unregister event task subscription from Redis Hash', // Original message didn't include "from Redis Hash" but context is clear
       );
       throw error;
     }
@@ -235,7 +246,7 @@ export class EventSubscriptions {
         this.logger.trace(
           // Use trace for potentially verbose logging
           { eventName, count: subscriptionJsonStrings.length, key: eventKey },
-          `Fetched subscription JSONs from Hash for task ${taskGroup}:${taskId}.`
+          `Fetched subscription JSONs from Hash for task ${taskGroup}:${taskId}.`,
         );
         subscriptionJsonStrings.forEach((jsonString) => {
           try {
@@ -244,17 +255,19 @@ export class EventSubscriptions {
             if (info.taskGroup === taskGroup && info.taskId === taskId) {
               allSubscriptions.push(info);
             }
-          } catch (parseError) {
+          }
+          catch (parseError) {
             this.logger.warn(
               { err: parseError, eventName, key: eventKey, jsonString },
-              `Failed to parse subscription JSON from Hash while getting subscriptions for task ${taskGroup}:${taskId}.`
+              `Failed to parse subscription JSON from Hash while getting subscriptions for task ${taskGroup}:${taskId}.`,
             );
           }
         });
-      } catch (fetchError) {
+      }
+      catch (fetchError) {
         this.logger.error(
           { err: fetchError, eventName, key: eventKey },
-          `Failed to fetch subscriptions from Hash for event ${eventName} while getting subscriptions for task ${taskGroup}:${taskId}.`
+          `Failed to fetch subscriptions from Hash for event ${eventName} while getting subscriptions for task ${taskGroup}:${taskId}.`,
         );
         // Propagate error to signal failure in getting complete current state
         throw fetchError;
@@ -272,8 +285,9 @@ export class EventSubscriptions {
     const eventKey = this.getEventKey(eventName);
     try {
       const subscriptions = await this.redis.hvals(eventKey);
-      return subscriptions.map((sub) => JSON.parse(sub));
-    } catch (error) {
+      return subscriptions.map(sub => JSON.parse(sub));
+    }
+    catch (error) {
       this.logger.error({ err: error, eventName }, 'Error getting subscriptions for event');
       throw error;
     }
@@ -289,7 +303,8 @@ export class EventSubscriptions {
     const taskIndexKey = this.getTaskIndexKey(taskGroup, taskId);
     try {
       return await this.redis.smembers(taskIndexKey);
-    } catch (error) {
+    }
+    catch (error) {
       this.logger.error({ err: error, taskGroup, taskId }, 'Error getting task event index');
       throw error;
     }

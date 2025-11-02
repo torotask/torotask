@@ -1,11 +1,11 @@
-import { TaskGroup } from '../task-group.js';
+import type { TaskGroup } from '../task-group.js';
 import type { Task } from '../task.js';
-import type { TaskRegistry, TaskDefinitionRegistry, WorkerFilterTasks, SchemaHandler } from '../types/index.js';
+import type { SchemaHandler, TaskDefinitionRegistry, TaskRegistry, WorkerFilterTasks } from '../types/index.js';
 
 export function filterGroupTasks<TDefs extends TaskDefinitionRegistry, TTasks extends TaskRegistry<TDefs>>(
   taskGroup: TaskGroup<TDefs>,
   filter?: WorkerFilterTasks<TTasks>,
-  actionContext: 'starting' | 'stopping' | 'closing' | string = 'processing'
+  actionContext: 'starting' | 'stopping' | 'closing' | string = 'processing',
 ): Array<Task<any, any, SchemaHandler>> {
   // Return type changed to be more general
   const tasksToProcessSet = new Set<Task<any, any, SchemaHandler>>();
@@ -20,7 +20,8 @@ export function filterGroupTasks<TDefs extends TaskDefinitionRegistry, TTasks ex
       const task = taskGroup.getTask(id);
       if (task) {
         tasksToProcessSet.add(task);
-      } else {
+      }
+      else {
         notFoundKeys.push(id);
       }
     });
@@ -50,7 +51,7 @@ export function filterGroupTasks<TDefs extends TaskDefinitionRegistry, TTasks ex
         totalFound: tasksToProcessArray.length,
         context: actionContext,
       },
-      `Some requested tasks for ${actionContext} workers were not found.`
+      `Some requested tasks for ${actionContext} workers were not found.`,
     );
   }
 
@@ -61,9 +62,10 @@ export function filterGroupTasks<TDefs extends TaskDefinitionRegistry, TTasks ex
     }
     taskGroup.logger.info(
       { filter: filterCriteria.length > 0 ? filterCriteria.join('; ') : 'all specified', context: actionContext },
-      `No matching tasks found to process workers for.`
+      `No matching tasks found to process workers for.`,
     );
-  } else if (tasksToProcessArray.length === 0 && requestedByIdCount === 0) {
+  }
+  else if (tasksToProcessArray.length === 0 && requestedByIdCount === 0) {
     taskGroup.logger.info({ context: actionContext }, `No tasks available in the group to process workers for.`);
   }
 

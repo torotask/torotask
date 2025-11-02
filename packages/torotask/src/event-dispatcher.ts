@@ -1,10 +1,10 @@
 import type { WorkerOptions } from 'bullmq'; // Added missing imports
 import type { Logger } from 'pino';
 import type { ToroTask } from './client.js'; // Assuming client path
-import { EventManager } from './event-manager.js';
 import type { TaskJob } from './job.js';
 import type { Task } from './task.js'; // Assuming task path
 import type { EventSubscriptionInfo, SyncJobReturn, TaskJobOptions } from './types/index.js';
+import { EventManager } from './event-manager.js';
 import { TaskWorkerQueue } from './worker-queue.js';
 
 // Define a default queue name for events, easily configurable if needed
@@ -55,18 +55,18 @@ export class EventDispatcher extends TaskWorkerQueue<PayloadType, ReturnType> {
     this.manager.queueEvents.on('completed', ({ jobId, returnvalue }) => {
       this.logger.debug({ jobId, returnvalue }, 'EventManager sync job completed');
       // Type guard to ensure returnvalue is actually SyncJobReturn
-      const isSyncResult =
-        returnvalue !== null &&
-        typeof returnvalue === 'object' &&
-        typeof (returnvalue as SyncJobReturn).registered === 'number' &&
-        typeof (returnvalue as SyncJobReturn).unregistered === 'number';
+      const isSyncResult
+        = returnvalue !== null
+          && typeof returnvalue === 'object'
+          && typeof (returnvalue as SyncJobReturn).registered === 'number'
+          && typeof (returnvalue as SyncJobReturn).unregistered === 'number';
 
       if (isSyncResult) {
         const syncResult = returnvalue as SyncJobReturn;
         if (syncResult.registered > 0 || syncResult.unregistered > 0) {
           this.logger.info(
             { syncResult },
-            'Detected registration changes, triggering debounced active events refresh.'
+            'Detected registration changes, triggering debounced active events refresh.',
           );
           this.setActiveEventsDebounced(); // Trigger refresh
         }
@@ -118,7 +118,8 @@ export class EventDispatcher extends TaskWorkerQueue<PayloadType, ReturnType> {
 
       this.activeEvents = newActiveEvents;
       this.logger.debug({ count: this.activeEvents.size }, 'Local activeEvents cache refreshed.');
-    } catch (error) {
+    }
+    catch (error) {
       this.logger.error({ err: error, pattern }, 'Failed to scan event keys from Redis for activeEvents cache.');
       // Decide: Keep stale cache or clear it? Keeping stale might be safer.
       throw error; // Re-throw to indicate failure
@@ -157,7 +158,7 @@ export class EventDispatcher extends TaskWorkerQueue<PayloadType, ReturnType> {
   async send<E = unknown>(
     eventName: string,
     data: E,
-    options?: TaskJobOptions
+    options?: TaskJobOptions,
   ): Promise<TaskJob<PayloadType, any> | undefined> {
     if (!eventName || typeof eventName !== 'string' || eventName.trim() === '') {
       this.logger.error({ eventName }, 'Invalid event name provided for publishing.');
@@ -167,7 +168,8 @@ export class EventDispatcher extends TaskWorkerQueue<PayloadType, ReturnType> {
 
     if (this.disableSubscription) {
       await this.setActiveEvents(); // Ensure we have the latest active events
-    } else {
+    }
+    else {
       await this.subscribeToActiveEvents(); // Ensure we are subscribed to active events
     }
 
@@ -180,7 +182,7 @@ export class EventDispatcher extends TaskWorkerQueue<PayloadType, ReturnType> {
 
     this.logger.debug(
       { eventName: jobName, hasData: data !== undefined },
-      'Publishing event (subscribers likely exist in cache)'
+      'Publishing event (subscribers likely exist in cache)',
     );
     // Use the queue inherited from BaseQueue to add the job
     return this.add(jobName, data, options);
@@ -200,7 +202,7 @@ export class EventDispatcher extends TaskWorkerQueue<PayloadType, ReturnType> {
 
     jobLogger.debug(
       { hasPayload: eventPayload !== undefined },
-      'Processing event job, querying Redis Hash for subscribers via EventManager...'
+      'Processing event job, querying Redis Hash for subscribers via EventManager...',
     );
 
     try {
@@ -215,7 +217,7 @@ export class EventDispatcher extends TaskWorkerQueue<PayloadType, ReturnType> {
 
       jobLogger.debug(
         { count: subscriptions.length },
-        'Found subscriptions, dispatching jobs to target task queues...'
+        'Found subscriptions, dispatching jobs to target task queues...',
       );
 
       // --- Dispatch to each subscribed task's queue ---
@@ -226,7 +228,7 @@ export class EventDispatcher extends TaskWorkerQueue<PayloadType, ReturnType> {
         if (!subInfo.taskGroup || !subInfo.taskId) {
           jobLogger.warn(
             { subscriptionInfo: subInfo },
-            'Skipping dispatch: Subscription info missing taskGroup or taskId.'
+            'Skipping dispatch: Subscription info missing taskGroup or taskId.',
           );
           continue;
         }
@@ -237,10 +239,11 @@ export class EventDispatcher extends TaskWorkerQueue<PayloadType, ReturnType> {
         let taskInstance;
         try {
           taskInstance = this.taskClient.getTask(subInfo.taskGroup, subInfo.taskId) as Task<any, any> | undefined;
-        } catch (taskError) {
+        }
+        catch (taskError) {
           jobLogger.error(
             { err: taskError, taskGroup: subInfo.taskGroup, taskId: subInfo.taskId },
-            'Failed to get target task instance.'
+            'Failed to get target task instance.',
           );
           continue; // Skip this subscription if queue cannot be obtained
         }
@@ -250,35 +253,37 @@ export class EventDispatcher extends TaskWorkerQueue<PayloadType, ReturnType> {
         };
         if (taskInstance) {
           dispatchPromises.push(taskInstance.run(mergedPayload));
-        } else {
+        }
+        else {
           jobLogger.error(
             { taskGroup: subInfo.taskGroup, taskId: subInfo.taskId },
-            'Could not get target task instance for dispatch (was null/undefined).'
+            'Could not get target task instance for dispatch (was null/undefined).',
           );
         }
       } // end for loop
 
       // Wait for all dispatches to attempt completion
       const results = await Promise.allSettled(dispatchPromises);
-      const successfulDispatches = results.filter((r) => r.status === 'fulfilled').length;
+      const successfulDispatches = results.filter(r => r.status === 'fulfilled').length;
       const failedDispatches = results.length - successfulDispatches;
 
       jobLogger.debug(
         { successful: successfulDispatches, failed: failedDispatches, total: results.length },
-        'Finished dispatching event to subscribed tasks.'
+        'Finished dispatching event to subscribed tasks.',
       );
 
       // If any dispatch failed, throw an error to mark the main event job as failed
       if (failedDispatches > 0) {
         // Collect reasons for logging or more specific error message
-        const errors = results.filter((r) => r.status === 'rejected').map((r) => (r as PromiseRejectedResult).reason);
+        const errors = results.filter(r => r.status === 'rejected').map(r => (r as PromiseRejectedResult).reason);
         jobLogger.error({ errors, failedCount: failedDispatches }, 'One or more dispatches to tasks failed.');
         throw new Error(`Failed to dispatch event to ${failedDispatches} task(s).`);
       }
-    } catch (error) {
+    }
+    catch (error) {
       jobLogger.error(
         { err: error },
-        'Failed to process event job due to an error retrieving subscriptions or dispatching.'
+        'Failed to process event job due to an error retrieving subscriptions or dispatching.',
       );
       // Re-throw the error so BullMQ knows the job failed and can handle retries etc.
       throw error;

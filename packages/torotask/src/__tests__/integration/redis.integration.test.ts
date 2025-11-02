@@ -4,7 +4,7 @@
 
 import { TestRedisServer } from '../helpers/test-redis.js';
 
-describe('Redis Integration', () => {
+describe('redis Integration', () => {
   let redisServer: TestRedisServer | null;
 
   beforeAll(async () => {
@@ -13,16 +13,11 @@ describe('Redis Integration', () => {
     if (!globalThis.__REDIS_SERVER__) {
       try {
         await redisServer.start();
-      } catch (_error) {
+      }
+      catch {
         console.log('Redis not available, skipping integration tests');
         redisServer = null;
       }
-    }
-  });
-
-  afterAll(async () => {
-    if (!globalThis.__REDIS_SERVER__ && redisServer) {
-      await redisServer.stop();
     }
   });
 
@@ -32,6 +27,12 @@ describe('Redis Integration', () => {
       return;
     }
     await redisServer.flushAll();
+  });
+
+  afterAll(async () => {
+    if (!globalThis.__REDIS_SERVER__ && redisServer) {
+      await redisServer.stop();
+    }
   });
 
   it('should connect to Redis if available', async () => {

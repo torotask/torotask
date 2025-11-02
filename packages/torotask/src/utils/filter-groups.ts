@@ -1,7 +1,6 @@
-import { TaskServer } from '../server.js';
-import { TaskGroup } from '../task-group.js';
-import type { Task } from '../task.js';
-import type { TaskGroupRegistry, TaskGroupDefinitionRegistry, WorkerFilterGroups } from '../types/index.js';
+import type { TaskServer } from '../server.js';
+import type { TaskGroup } from '../task-group.js';
+import type { TaskGroupDefinitionRegistry, TaskGroupRegistry, WorkerFilterGroups } from '../types/index.js';
 
 export function filterGroups<
   TGroupDefs extends TaskGroupDefinitionRegistry,
@@ -9,7 +8,7 @@ export function filterGroups<
 >(
   server: TaskServer<TGroupDefs, TGroups>,
   filter?: WorkerFilterGroups<TGroups>,
-  actionContext: 'starting' | 'stopping' | 'closing' | string = 'processing'
+  actionContext: 'starting' | 'stopping' | 'closing' | string = 'processing',
 ): Array<TaskGroup<any, any>> {
   const groupsToProcessSet = new Set<TaskGroup<any, any>>();
   const notFoundKeys: Array<Extract<keyof TGroups, string>> = [];
@@ -23,7 +22,8 @@ export function filterGroups<
       const group = server.taskGroups[id as keyof TGroupDefs];
       if (group) {
         groupsToProcessSet.add(group);
-      } else {
+      }
+      else {
         notFoundKeys.push(id);
       }
     });
@@ -49,7 +49,7 @@ export function filterGroups<
         totalFound: groupsToProcessArray.length,
         context: actionContext,
       },
-      `Some requested groups for ${actionContext} were not found.`
+      `Some requested groups for ${actionContext} were not found.`,
     );
   }
 
@@ -60,9 +60,10 @@ export function filterGroups<
     }
     server.logger.info(
       { filter: filterCriteria.length > 0 ? filterCriteria.join('; ') : 'all specified', context: actionContext },
-      `No matching groups found to ${actionContext}.`
+      `No matching groups found to ${actionContext}.`,
     );
-  } else if (groupsToProcessArray.length === 0 && requestedByIdCount === 0) {
+  }
+  else if (groupsToProcessArray.length === 0 && requestedByIdCount === 0) {
     server.logger.info({ context: actionContext }, `No groups available to ${actionContext}.`);
   }
 

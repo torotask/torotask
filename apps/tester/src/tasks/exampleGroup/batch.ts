@@ -1,7 +1,7 @@
-import { defineTask, createSchema } from 'torotask';
+import { createSchema, defineTask } from 'torotask';
 
 // Define a schema for the payload
-const batchTaskPayloadSchema = createSchema((zod) => zod.object({ name: zod.string() }));
+const batchTaskPayloadSchema = createSchema(zod => zod.object({ name: zod.string() }));
 
 export const batchTask = defineTask({
   id: 'batch-task',
@@ -41,6 +41,6 @@ export const batchTask = defineTask({
     }
 
     // Simulate some async work
-    await new Promise((resolve) => setTimeout(resolve, 100));
+    await new Promise(resolve => setTimeout(resolve, 100));
   },
 });

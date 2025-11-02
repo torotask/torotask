@@ -4,14 +4,14 @@
  */
 
 import { StepExecutor } from '../../step-executor.js';
-import { createMockPayload, createMockTaskHandler, createMockJob } from '../helpers/mock-factories.js';
-import { delay, waitFor } from '../helpers/test-utils.js';
+import { createMockJob, createMockPayload } from '../helpers/mock-factories.js';
+import { delay } from '../helpers/test-utils.js';
 
 // Mock dependencies for unit testing
 jest.mock('ioredis');
 jest.mock('bullmq');
 
-describe('StepExecutor - Unit Tests', () => {
+describe('stepExecutor - Unit Tests', () => {
   let stepExecutor: StepExecutor<any, any, any, any>;
   let mockJob: any;
   let mockParentTask: any;
@@ -85,7 +85,7 @@ describe('StepExecutor - Unit Tests', () => {
         'test-sleep',
         'sleep',
         expect.any(Function),
-        expect.any(Function)
+        expect.any(Function),
       );
     });
 
@@ -98,7 +98,7 @@ describe('StepExecutor - Unit Tests', () => {
         'test-sleep',
         'sleep',
         expect.any(Function),
-        expect.any(Function)
+        expect.any(Function),
       );
     });
   });
@@ -106,18 +106,18 @@ describe('StepExecutor - Unit Tests', () => {
   describe('runTask() method', () => {
     it('should throw error when task group is not found', async () => {
       await expect(stepExecutor.runTask('test-step', 'nonExistentGroup', 'testTask', {})).rejects.toThrow(
-        "Task group 'nonExistentGroup' not found."
+        'Task group \'nonExistentGroup\' not found.',
       );
     });
 
     it('should throw error when task is not found in group', async () => {
       // Setup mock task group without the requested task
-      mockParentTask.group.client.taskGroups['testGroup'] = {
+      mockParentTask.group.client.taskGroups.testGroup = {
         tasks: {},
       };
 
       await expect(stepExecutor.runTask('test-step', 'testGroup', 'nonExistentTask', {})).rejects.toThrow(
-        "Task 'nonExistentTask' not found in group 'testGroup'."
+        'Task \'nonExistentTask\' not found in group \'testGroup\'.',
       );
     });
   });

@@ -8,10 +8,10 @@ import { DelayedError, WaitingChildrenError } from '../step-errors.js';
 
 export function isControlError(error: any): boolean {
   if (
-    error instanceof DelayedError ||
-    error instanceof WaitingChildrenError ||
-    error?.name === 'DelayedError' ||
-    error?.name === 'WaitingChildrenError'
+    error instanceof DelayedError
+    || error instanceof WaitingChildrenError
+    || error?.name === 'DelayedError'
+    || error?.name === 'WaitingChildrenError'
   ) {
     return true;
   }

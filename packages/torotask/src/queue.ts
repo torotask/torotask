@@ -1,7 +1,8 @@
-import { Queue, QueueOptions, JobsOptions, Job } from 'bullmq'; // Import JobsOptions
-import { Logger } from 'pino';
-import { ToroTask } from './client.js';
+import type { Job, JobsOptions, QueueOptions } from 'bullmq';
+import type { Logger } from 'pino';
+import type { ToroTask } from './client.js';
 import type { BulkJob, TaskJobData, TaskJobOptions, TaskJobState, TaskQueueOptions } from './types/index.js';
+import { Queue } from 'bullmq'; // Import JobsOptions
 import { TaskJob } from './job.js';
 
 export class TaskQueue<
@@ -15,7 +16,7 @@ export class TaskQueue<
   constructor(
     public readonly taskClient: ToroTask,
     name: string,
-    options?: Partial<TaskQueueOptions>
+    options?: Partial<TaskQueueOptions>,
   ) {
     if (!taskClient) {
       throw new Error('ToroTask instance is required.');
@@ -38,8 +39,11 @@ export class TaskQueue<
   }
 
   /**
-   * Override the Job class to use TaskJob
-   * @returns {typeof Job}
+   * Overrides the default BullMQ `Job` class with the custom `TaskJob` class.
+   * This ensures that jobs created and retrieved from this queue are instances of `TaskJob`,
+   * providing access to custom properties and methods.
+   *
+   * @returns The `TaskJob` class constructor.
    */
   protected get Job(): typeof Job {
     return TaskJob as any;
@@ -65,7 +69,7 @@ export class TaskQueue<
     name: NameType,
     payload: PayloadType,
     options?: TaskJobOptions,
-    state?: TaskJobState
+    state?: TaskJobState,
   ): Promise<TaskJob<PayloadType, ResultType, NameType>> {
     // Return specific TaskJob
     const data = {
@@ -89,12 +93,16 @@ export class TaskQueue<
       const data = {
         ...job.data,
       };
-      if (job.payload) data.payload = job.payload;
-      if (job.state) data.state = job.state;
+      if (job.payload) {
+        data.payload = job.payload;
+      }
+      if (job.state) {
+        data.state = job.state;
+      }
       return {
         name: job.name,
         opts: job.options,
-        data: data,
+        data,
       };
     });
 
@@ -111,7 +119,7 @@ export class TaskQueue<
     name: NameType,
     payload: PayloadType,
     options: TaskJobOptions,
-    state?: TaskJobState
+    state?: TaskJobState,
   ): Promise<ResultType> {
     // Use specific JobReturn generic
     const waitLogger = this.logger.child({ jobName: name, action: 'runAndWait' });
@@ -137,7 +145,7 @@ export class TaskQueue<
 
       jobLogger.debug('Refetching job after completion');
       // Use the overridden this.Job getter which returns TaskJob
-      const finishedJob = await this.Job.fromId<DataType, ResultType>(this, job.id);
+      const finishedJob = await this.Job.fromId<DataType, ResultType>(this as any, job.id);
 
       if (!finishedJob) {
         jobLogger.error('Failed to refetch job after completion.');
@@ -146,10 +154,11 @@ export class TaskQueue<
 
       jobLogger.debug({ returnValue: finishedJob.returnvalue }, 'Job completed successfully');
       return finishedJob.returnvalue;
-    } catch (error) {
+    }
+    catch (error) {
       jobLogger.error(
         { err: error instanceof Error ? error : new Error(String(error)) },
-        'Job failed or could not be waited for'
+        'Job failed or could not be waited for',
       );
       throw error;
     }

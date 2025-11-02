@@ -1,12 +1,12 @@
-import { server, logger } from './server.js';
+import { logger, server } from './server.js';
 
-const main = async () => {
+async function main() {
   // This would return undefined for unknown groups
   // server.taskGroups['unknownGroup']?.tasks['batchTask']?.stopWorker(); // Safe - returns undefined
 
   await server.start();
 
-  const _result = await server.taskGroups['exampleGroup'].tasks['batchTask'].runAndWait({
+  const _result = await server.taskGroups.exampleGroup.tasks.batchTask.runAndWait({
     name: 'test',
   });
 
@@ -27,16 +27,16 @@ const main = async () => {
     logger.info({ result }, 'Invoke Result'); // SUCCESS!
   } catch (error) {
     logger.error({ err: error }, 'Invocation failed');
-  }*/
+  } */
 
-  //logger.info('Worker process running. Waiting for jobs...');
+  // logger.info('Worker process running. Waiting for jobs...');
   setInterval(
     () => {
       // Optional: Add a heartbeat log or check worker status
       // logger.debug(`Worker for ${queue.name} is alive...`);
     },
-    1000 * 60 * 5
+    1000 * 60 * 5,
   ); // Keep alive, check every 5 minutes
-};
+}
 
-main().catch((err) => logger.error({ err }, 'Application error'));
+main().catch(err => logger.error({ err }, 'Application error'));

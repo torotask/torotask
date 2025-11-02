@@ -30,7 +30,7 @@ export function createMockRedisConfig(overrides: any = {}): any {
  * Creates a mock task handler function
  */
 export function createMockTaskHandler<T = any, R = any>(
-  result: R = { success: true } as R
+  result: R = { success: true } as R,
 ): (payload: T) => Promise<R> {
   return async (_payload: T): Promise<R> => {
     // Simple mock implementation
