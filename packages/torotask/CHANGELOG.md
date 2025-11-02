@@ -1,5 +1,11 @@
 # torotask
 
+## 0.9.0
+
+### Minor Changes
+
+- Switch to eslint and process repo ([#6](https://github.com/torotask/torotask/pull/6)) ([`ea1b8f5`](https://github.com/torotask/torotask/commit/ea1b8f58cca7a70488f7d623c60639992b790b2d))
+
 ## 0.8.6
 
 ### Patch Changes
