@@ -35,7 +35,24 @@ export class TaskJob<
     id?: string,
   ) {
     const opts = convertJobOptions(options);
-    super(queue, name, data, opts, id);
+
+    // Handle cases where the job data is nested, which can happen when
+    // re-creating jobs from systems like bull-board.
+    let finalData = data;
+    const jobData = data as any;
+    if (
+      jobData.payload
+      && typeof jobData.payload === 'object'
+      && 'payload' in jobData.payload
+    ) {
+      finalData = {
+        ...(jobData as object),
+        payload: jobData.payload.payload,
+        state: jobData.payload.state || jobData.state,
+      } as DataType;
+    }
+
+    super(queue, name, finalData, opts, id);
 
     this.payload = this.data.payload as PayloadType;
     this.state = this.data.state as StateType;
