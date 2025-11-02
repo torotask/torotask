@@ -1,5 +1,11 @@
 # torotask
 
+## 0.8.5
+
+### Patch Changes
+
+- Bump package for change to build system ([`e0c8b77`](https://github.com/torotask/torotask/commit/e0c8b77304a5618ffcc1673db6c7143f723600b6))
+
 ## 0.8.4
 
 ### Minor Changes
