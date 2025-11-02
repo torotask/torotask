@@ -1,8 +1,7 @@
-import type { FlowChildJob, FlowJob, Job } from 'bullmq';
 import { ConnectionOptions } from 'bullmq';
 import { EventEmitter } from 'events';
 import { Redis, RedisOptions } from 'ioredis';
-import { type Logger, P, pino } from 'pino';
+import { type Logger, pino } from 'pino';
 import { LRU } from 'tiny-lru';
 import { EventDispatcher } from './event-dispatcher.js';
 import { TaskQueue } from './queue.js';
@@ -23,7 +22,6 @@ import { getConfigFromEnv } from './utils/get-config-from-env.js';
 import { TaskWorkflow } from './workflow.js';
 import type { Task } from './task.js';
 import { TaskJob } from './job.js';
-import { convertJobOptions } from './utils/convert-job-options.js';
 
 const LOGGER_NAME = 'ToroTask';
 const BASE_PREFIX = 'torotask';
