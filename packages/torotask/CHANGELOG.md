@@ -1,5 +1,11 @@
 # torotask
 
+## 0.9.1
+
+### Patch Changes
+
+- Fix nested payloads when duplicating jobs ([#8](https://github.com/torotask/torotask/pull/8)) ([`7931297`](https://github.com/torotask/torotask/commit/793129747a85f1a74593f73c06c07aa8a19766c1))
+
 ## 0.9.0
 
 ### Minor Changes
