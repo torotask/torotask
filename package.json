@@ -15,7 +15,6 @@
     "clean": "turbo run clean",
     "dev": "turbo run dev",
     "test": "turbo run test",
-    "format": "prettier --write .",
     "lint": "eslint --cache .",
     "lint:fix": "eslint --cache --fix .",
     "prepare": "simple-git-hooks",
@@ -53,7 +52,11 @@
     "pre-commit": "pnpm lint-staged"
   },
   "lint-staged": {
-    "**/*.{ts,tsx,js,jsx}": ["eslint --cache --fix"],
-    "**/*.{json,md,yml,yaml}": ["eslint --cache --fix"]
+    "**/*.{ts,tsx,js,jsx,mjs,cjs}": [
+      "eslint --cache"
+    ],
+    "**/*.{json,md,yml,yaml}": [
+      "eslint --cache --fix"
+    ]
   }
 }
