@@ -30,6 +30,6 @@ catalog:
   ts-jest: ^29.1.2
   ts-node: ^10.9.2
   tsx: 4.16.0
-  typescript: 5.5.3
+  typescript: 5.9.3
   uuid: ^11.1.0
   zod: ^3.25.76

@@ -1,0 +1,5 @@
+---
+"torotask": minor
+---
+
+Upgrade typescript+
