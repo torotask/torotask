@@ -7,8 +7,7 @@
   "access": "public",
   "baseBranch": "main",
   "privatePackages": {
-    "version": true,
+    "version": false,
     "tag": false
-  },
-  "updateInternalDependencies": "patch"
+  }
 }
