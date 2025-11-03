@@ -36,7 +36,7 @@
     "@swc/core": "^1.11.21",
     "@types/node": "^22.14.0",
     "dotenv": "^16.4.7",
-    "eslint": "^9.38.0",
+    "eslint": "catalog:",
     "eslint-plugin-format": "^1.0.2",
     "lint-staged": "^15.5.0",
     "simple-git-hooks": "^2.12.1",
@@ -58,7 +58,7 @@
   },
   "lint-staged": {
     "**/*.{ts,tsx,js,jsx,mjs,cjs}": [
-      "eslint --cache"
+      "eslint --cache --fix"
     ],
     "**/*.{json,md,yml,yaml}": [
       "eslint --cache --fix"

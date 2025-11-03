@@ -16,6 +16,7 @@ catalog:
   bullmq: 5.63.0
   camelcase: ^8.0.0
   cronstrue: ^2.59.0
+  eslint: 9.38.0
   express: ^4.19.2
   glob: ^11.0.3
   ioredis: ^5.4.1

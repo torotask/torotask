@@ -45,6 +45,9 @@ catalogs:
     cronstrue:
       specifier: ^2.59.0
       version: 2.59.0
+    eslint:
+      specifier: 9.38.0
+      version: 9.38.0
     express:
       specifier: ^4.19.2
       version: 4.21.2
@@ -108,7 +111,7 @@ importers:
     devDependencies:
       '@antfu/eslint-config':
         specifier: ^6.1.0
-        version: 6.2.0(@vue/compiler-sfc@3.5.22)(eslint-plugin-format@1.0.2(eslint@9.39.0))(eslint@9.39.0)(typescript@5.9.3)
+        version: 6.2.0(@next/eslint-plugin-next@16.0.1)(@vue/compiler-sfc@3.5.22)(eslint-plugin-format@1.0.2(eslint@9.38.0(jiti@2.6.1)))(eslint-plugin-jsx-a11y@6.10.2(eslint@9.38.0(jiti@2.6.1)))(eslint-plugin-react-hooks@7.0.1(eslint@9.38.0(jiti@2.6.1)))(eslint@9.38.0(jiti@2.6.1))(typescript@5.9.3)
       '@changesets/changelog-github':
         specifier: ^0.5.1
         version: 0.5.1
@@ -134,11 +137,11 @@ importers:
         specifier: ^16.4.7
         version: 16.4.7
       eslint:
-        specifier: ^9.38.0
-        version: 9.39.0
+        specifier: 'catalog:'
+        version: 9.38.0(jiti@2.6.1)
       eslint-plugin-format:
         specifier: ^1.0.2
-        version: 1.0.2(eslint@9.39.0)
+        version: 1.0.2(eslint@9.38.0(jiti@2.6.1))
       lint-staged:
         specifier: ^15.5.0
         version: 15.5.0
