@@ -1,0 +1,8 @@
+{
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "esModuleInterop": true
+  },
+  "include": ["packages/torotask/src/**/*"],
+  "exclude": ["**/__tests__/**/*", "**/*.test.ts", "apps"]
+}

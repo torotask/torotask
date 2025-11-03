@@ -20,7 +20,11 @@
     "prepare": "simple-git-hooks",
     "changeset": "changeset",
     "version:packages": "changeset version",
-    "publish:packages": "turbo run build --filter=./packages/* && changeset publish"
+    "publish:packages": "turbo run build --filter=./packages/* && changeset publish",
+    "docs:gen": "typedoc && pnpm docs:postgen",
+    "docs:postgen": "node scripts/add-frontmatter.mjs",
+    "docs:dev": "turbo run dev --filter=docs",
+    "docs:build": "turbo run build --filter=docs"
   },
   "devDependencies": {
     "@antfu/eslint-config": "^6.1.0",
@@ -38,6 +42,8 @@
     "simple-git-hooks": "^2.12.1",
     "tsx": "catalog:",
     "turbo": "^2.5.8",
+    "typedoc": "^0.28.14",
+    "typedoc-plugin-markdown": "^4.9.0",
     "typescript": "catalog:"
   },
   "pnpm": {

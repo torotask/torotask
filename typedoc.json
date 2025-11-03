@@ -1,0 +1,8 @@
+{
+  "$schema": "https://typedoc.org/schema.json",
+  "entryPoints": ["packages/torotask/src/index.ts"],
+  "plugin": ["typedoc-plugin-markdown"],
+  "out": "apps/docs/content/docs/api",
+  "readme": "none",
+  "tsconfig": "tsconfig.typedoc.json"
+}
