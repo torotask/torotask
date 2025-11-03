@@ -458,10 +458,10 @@ export class ToroTask<
     ActualTask extends TAllTaskGroupsDefs extends undefined ? any : SpecificTaskGroup['tasks'][TaskName],
     Payload = TAllTaskGroupsDefs extends undefined
       ? any
-      : ActualTask extends Task<any, any, any, infer P>
+      : ActualTask extends Task<infer P, any, any>
         ? P
         : unknown,
-    Result = TAllTaskGroupsDefs extends undefined ? any : ActualTask extends Task<any, infer R, any, any> ? R : unknown,
+    Result = TAllTaskGroupsDefs extends undefined ? any : ActualTask extends Task<any, infer R, any> ? R : unknown,
     ActualPayload extends Payload = Payload,
   >(
     groupId: G,
@@ -473,7 +473,8 @@ export class ToroTask<
       // Typed mode - use existing logic with local task groups
       const group = this.taskGroups[groupId as keyof TGroups];
       if (group && group.runTask) {
-        return group.runTask<string, ActualTask, ActualPayload>(taskName as string, payload);
+        // The group.runTask method is now correctly typed and can be called directly.
+        return group.runTask(taskName as any, payload);
       }
       else {
         throw new Error(`Task group "${groupId as string}" not found.`);
@@ -481,7 +482,7 @@ export class ToroTask<
     }
     else {
       // Generic mode - use _runTask directly for queue-based execution
-      return this._runTask<ActualPayload, Result>(groupId as string, taskName as string, payload, options);
+      return this._runTask<ActualPayload, Result>(groupId as string, taskName as string, payload, options) as any;
     }
   }
 

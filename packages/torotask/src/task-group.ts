@@ -122,13 +122,21 @@ export class TaskGroup<
     TaskName extends Extract<keyof TTasks, string>,
     ActualTask extends TTasks[TaskName] = TTasks[TaskName],
     // Payload is the ActualPayloadType inferred from the Task instance
-    Payload = ActualTask extends Task<any, any, any, infer P> ? P : unknown,
-    Result = ActualTask extends Task<any, infer R, any, any> ? R : unknown,
+    Payload = ActualTask extends Task<infer P, any, any> ? P : unknown,
+    Result = ActualTask extends Task<any, infer R, any> ? R : unknown,
     ActualPayload extends Payload = Payload,
   >(taskName: TaskName,
     payload: ActualPayload,
   ): Promise<TaskJob<ActualPayload, Result>> {
-    return this.client.runTask(this.id as any, taskName, payload);
+    const task = this.getTask(taskName);
+    if (!task) {
+      // This should ideally not happen if TaskName is correctly typed
+      throw new Error(`Task "${taskName}" not found in group "${this.id}".`);
+    }
+    // The `run` method on the task instance should be used.
+    // We cast to `any` to bypass TypeScript's union type issue.
+    // This is safe because `taskName` ensures we have the correct task for the payload.
+    return (task as any).run(payload);
   }
 
   /**

@@ -15,7 +15,7 @@ import type {
   TaskOptions,
 } from './types/index.js';
 import { UnrecoverableError } from 'bullmq';
-import * as z from 'zod';
+import { z } from 'zod';
 import { BaseTask } from './base-task.js';
 import { StepExecutor } from './step-executor.js';
 import { SubTask } from './sub-task.js';
@@ -37,16 +37,17 @@ export class Task<
   PayloadExplicit = unknown,
   ResultType = unknown,
   SchemaInputVal extends SchemaHandler = undefined,
-  ActualPayloadType extends EffectivePayloadType<
-    PayloadExplicit,
-    ResolvedSchemaType<SchemaInputVal>
-  > = EffectivePayloadType<PayloadExplicit, ResolvedSchemaType<SchemaInputVal>>,
-> extends BaseTask<ActualPayloadType, ResultType, TaskJobData<ActualPayloadType>, TaskOptions> {
+> extends BaseTask<
+    EffectivePayloadType<PayloadExplicit, ResolvedSchemaType<SchemaInputVal>>,
+    ResultType,
+    TaskJobData<EffectivePayloadType<PayloadExplicit, ResolvedSchemaType<SchemaInputVal>>>,
+    TaskOptions
+  > {
   /**
    * A type-only property to help infer the actual payload type of the task.
    * This is equivalent to EffectivePayloadType<PayloadExplicit, ResolvedSchemaType<SchemaInputVal>>.
    */
-  public readonly _payloadType!: ActualPayloadType;
+  public readonly _payloadType!: EffectivePayloadType<PayloadExplicit, ResolvedSchemaType<SchemaInputVal>>;
   /**
    * A type-only property to help infer the result type of the task.
    */
@@ -57,7 +58,12 @@ export class Task<
   // The handler's payload type is determined by EffectivePayloadType.
   // TaskHandler (imported) uses EffectivePayloadType from types/task.ts.
   // The local EffectivePayloadType must match for consistency.
-  protected handler: TaskHandler<ActualPayloadType, ResultType, ResolvedSchemaType<SchemaInputVal>>;
+  protected handler: TaskHandler<
+    EffectivePayloadType<PayloadExplicit, ResolvedSchemaType<SchemaInputVal>>,
+    ResultType,
+    ResolvedSchemaType<SchemaInputVal>
+  >;
+
   public readonly schema: ResolvedSchemaType<SchemaInputVal>; // Stores the RESOLVED schema instance or undefined
 
   constructor(
@@ -93,7 +99,7 @@ export class Task<
   }
 
   defineSubTask<
-    SubTaskPayloadType = ActualPayloadType,
+    SubTaskPayloadType = EffectivePayloadType<PayloadExplicit, ResolvedSchemaType<SchemaInputVal>>,
     SubTaskResultType = ResultType,
   >(
     subTaskId: string,
@@ -118,7 +124,10 @@ export class Task<
     return this.subTasks.get(subTaskId);
   }
 
-  async process(job: TaskJob<ActualPayloadType, ResultType>, token?: string): Promise<ResultType> {
+  async process(
+    job: TaskJob<EffectivePayloadType<PayloadExplicit, ResolvedSchemaType<SchemaInputVal>>, ResultType>,
+    token?: string,
+  ): Promise<ResultType> {
     const { id, name: jobName } = job;
     const effectiveJobName = jobName === '' || jobName === '__default__' ? this.id : jobName;
     const jobLogger = this.logger.child({ jobId: id, jobName: effectiveJobName });
@@ -174,12 +183,15 @@ export class Task<
     }
   }
 
-  async validateJob(job: TaskJob<ActualPayloadType, ResultType>, jobLogger?: Logger): Promise<ActualPayloadType> {
+  async validateJob(
+    job: TaskJob<EffectivePayloadType<PayloadExplicit, ResolvedSchemaType<SchemaInputVal>>, ResultType>,
+    jobLogger?: Logger,
+  ): Promise<EffectivePayloadType<PayloadExplicit, ResolvedSchemaType<SchemaInputVal>>> {
     const effectiveJobLogger = jobLogger ?? this.getJobLogger(job);
     effectiveJobLogger.debug('Validating job payload');
 
     // Use CurrentPayloadType which is derived from the local EffectivePayloadType
-    type CurrentPayloadType = ActualPayloadType;
+    type CurrentPayloadType = EffectivePayloadType<PayloadExplicit, ResolvedSchemaType<SchemaInputVal>>;
 
     let result: CurrentPayloadType = job.payload;
 
@@ -197,13 +209,14 @@ export class Task<
     catch (error) {
       effectiveJobLogger.error(
         {
-          err: error instanceof z.ZodError ? error.format() : error,
+          // Note: .format() is deprecated in Zod v4, consider using z.treeifyError() instead
+          err: error instanceof z.ZodError ? error.issues : error,
           originalPayload: job.payload,
         },
         `Payload validation failed for job "${job.name}" (id: ${job.id})`,
       );
       if (error instanceof z.ZodError) {
-        const messages = error.errors.map(e => `${e.path.join('.') || 'payload'}: ${e.message}`);
+        const messages = error.issues.map(e => `${e.path.join('.') || 'payload'}: ${e.message}`);
         throw new UnrecoverableError(`Payload validation failed: ${messages.join('; ')}`);
       }
       throw error;
@@ -214,7 +227,7 @@ export class Task<
   }
 
   async processJob(
-    job: TaskJob<ActualPayloadType, ResultType>,
+    job: TaskJob<EffectivePayloadType<PayloadExplicit, ResolvedSchemaType<SchemaInputVal>>, ResultType>,
     token?: string,
     jobLogger?: Logger,
   ): Promise<ResultType> {
@@ -223,15 +236,23 @@ export class Task<
 
     const validatedPayload = await this.validateJob(job, effectiveJobLogger);
 
-    const handlerOptions: TaskHandlerOptions<ActualPayloadType> = {
+    const handlerOptions: TaskHandlerOptions<
+      EffectivePayloadType<PayloadExplicit, ResolvedSchemaType<SchemaInputVal>>
+    > = {
       id: job.id,
       name: this.id,
       payload: validatedPayload,
     };
 
-    const stepExecutor = new StepExecutor<TaskJob<ActualPayloadType, ResultType>>(job, this);
+    const stepExecutor = new StepExecutor<
+      TaskJob<EffectivePayloadType<PayloadExplicit, ResolvedSchemaType<SchemaInputVal>>, ResultType>
+    >(job, this as any);
     // TaskHandlerContext's PayloadType will be CurrentPayloadType
-    const handlerContext: TaskHandlerContext<ActualPayloadType, ResultType, ResolvedSchemaType<SchemaInputVal>> = {
+    const handlerContext: TaskHandlerContext<
+      EffectivePayloadType<PayloadExplicit, ResolvedSchemaType<SchemaInputVal>>,
+      ResultType,
+      ResolvedSchemaType<SchemaInputVal>
+    > = {
       logger: effectiveJobLogger,
       client: this.taskClient,
       group: this.group,
