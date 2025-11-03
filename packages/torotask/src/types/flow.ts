@@ -15,7 +15,7 @@ interface SpecificFlowRunConfig<
   TName extends keyof TaskGroupRegistry<TAllTaskGroupsDefs>[GName]['tasks'],
   TOptions = TaskFlowRunOptions,
   // Payload inferred using your logic from the "processed" task definition
-  Payload = TaskGroupRegistry<TAllTaskGroupsDefs>[GName]['tasks'][TName] extends Task<any, any, any, infer P>
+  Payload = TaskGroupRegistry<TAllTaskGroupsDefs>[GName]['tasks'][TName] extends Task<infer P, any, any>
     ? P
     : unknown,
 > {
