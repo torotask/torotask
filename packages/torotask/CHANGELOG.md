@@ -1,5 +1,11 @@
 # torotask
 
+## 0.12.0
+
+### Minor Changes
+
+- Upgrade Zod to v4 ([#14](https://github.com/torotask/torotask/pull/14)) ([`ba400e6`](https://github.com/torotask/torotask/commit/ba400e61d7609482a78489bb9fb6a0024a6ebb4f))
+
 ## 0.11.0
 
 ### Minor Changes
