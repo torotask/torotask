@@ -52,7 +52,6 @@
     "pino": "catalog:",
     "pretty-ms": "catalog:",
     "tiny-lru": "catalog:",
-    "ts-node": "catalog:",
     "uuid": "catalog:",
     "zod": "catalog:"
   },
