@@ -23,29 +23,22 @@
     "publish:packages": "turbo run build --filter=./packages/* && changeset publish"
   },
   "devDependencies": {
-    "@antfu/eslint-config": "^6.1.0",
-    "@changesets/changelog-github": "^0.5.2",
-    "@changesets/cli": "^2.29.8",
-    "@changesets/get-github-info": "^0.7.0",
-    "@changesets/types": "6.1.0",
-    "@swc-node/register": "^1.10.10",
-    "@swc/core": "^1.11.21",
-    "@types/node": "^22.14.0",
-    "dotenv": "^16.4.7",
-    "eslint": "^9.38.0",
-    "eslint-plugin-format": "^1.0.2",
-    "lint-staged": "^15.5.0",
-    "simple-git-hooks": "^2.12.1",
+    "@antfu/eslint-config": "catalog:",
+    "@changesets/changelog-github": "catalog:",
+    "@changesets/cli": "catalog:",
+    "@changesets/get-github-info": "catalog:",
+    "@changesets/types": "catalog:",
+    "@swc-node/register": "catalog:",
+    "@swc/core": "catalog:",
+    "@types/node": "catalog:",
+    "dotenv": "catalog:",
+    "eslint": "catalog:",
+    "eslint-plugin-format": "catalog:",
+    "lint-staged": "catalog:",
+    "simple-git-hooks": "catalog:",
     "tsx": "catalog:",
-    "turbo": "^2.5.8",
+    "turbo": "catalog:",
     "typescript": "catalog:"
-  },
-  "pnpm": {
-    "overrides": {
-      "brace-expansion@>=1.0.0 <=1.1.11": ">=1.1.12",
-      "brace-expansion@>=2.0.0 <=2.0.1": ">=2.0.2",
-      "tmp@<=0.2.3": ">=0.2.4"
-    }
   },
   "simple-git-hooks": {
     "pre-commit": "pnpm lint-staged"
