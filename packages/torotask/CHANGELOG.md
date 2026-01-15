@@ -1,5 +1,11 @@
 # torotask
 
+## 0.12.1
+
+### Patch Changes
+
+- Dependency updates ([#16](https://github.com/torotask/torotask/pull/16)) ([`e9b03b4`](https://github.com/torotask/torotask/commit/e9b03b486258f87cae8e96b2568af2fa40bb9b15))
+
 ## 0.12.0
 
 ### Minor Changes
