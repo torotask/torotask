@@ -128,15 +128,13 @@ export class TaskGroup<
   >(taskName: TaskName,
     payload: ActualPayload,
   ): Promise<TaskJob<ActualPayload, Result>> {
+    // Call the task's run method directly to avoid circular calls with client.runTask
     const task = this.getTask(taskName);
     if (!task) {
       // This should ideally not happen if TaskName is correctly typed
       throw new Error(`Task "${taskName}" not found in group "${this.id}".`);
     }
-    // The `run` method on the task instance should be used.
-    // We cast to `any` to bypass TypeScript's union type issue.
-    // This is safe because `taskName` ensures we have the correct task for the payload.
-    return (task as any).run(payload);
+    return task.run(payload) as Promise<TaskJob<ActualPayload, Result>>;
   }
 
   /**
