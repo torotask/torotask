@@ -470,7 +470,7 @@ export class StepExecutor<
     if (!task) {
       throw new Error(`Task '${taskKey}' not found in this Task group.`);
     }
-    return (await task.run(payload, { ...options, parent: this.job })) as TJob;
+    return (await task.run(payload, { parent: this.job, ...options })) as TJob;
   }
 
   async runGroupTask<
@@ -518,7 +518,7 @@ export class StepExecutor<
       throw new Error(`Task '${taskKey}' not found in this Task group.`);
     }
 
-    return await task.runAndWait(payload, { ...options, parent: this.job });
+    return await task.runAndWait(payload, { parent: this.job, ...options });
   }
 
   async runGroupTaskAndWait<
@@ -576,7 +576,7 @@ export class StepExecutor<
     if (!task) {
       throw new Error(`Task '${taskKey}' not found in group '${groupKey}'.`);
     }
-    const taskJob = (await task.run(payload, { ...options, parent: this.job })) as TJob;
+    const taskJob = (await task.run(payload, { parent: this.job, ...options })) as TJob;
 
     return taskJob;
   }
@@ -640,7 +640,7 @@ export class StepExecutor<
     if (!task) {
       throw new Error(`Task '${taskKey}' not found in group '${groupKey}'.`);
     }
-    return (await task.runAndWait(payload, { ...options, parent: this.job })) as Result;
+    return (await task.runAndWait(payload, { parent: this.job, ...options })) as Result;
   }
 
   async runTaskAndWait<
@@ -700,7 +700,7 @@ export class StepExecutor<
     if (!task) {
       throw new Error(`Task '${taskKey}' not found in group '${groupKey}'.`);
     }
-    const taskJobs = (await task.runMany(tasks, { ...options, parent: this.job })) as TJob[];
+    const taskJobs = (await task.runMany(tasks, { parent: this.job, ...options })) as TJob[];
 
     return taskJobs;
   }
@@ -748,7 +748,7 @@ export class StepExecutor<
     task: TaskFlowRun<TAllTaskGroupsDefs>,
     options?: StepTaskJobOptions,
   ): Promise<TaskFlowRunNode> {
-    const result = this.client.runFlow(task as any, { ...options, parent: this.job });
+    const result = this.client.runFlow(task as any, { parent: this.job, ...options });
     return result;
   }
 
@@ -773,7 +773,7 @@ export class StepExecutor<
     tasks: TaskFlowRun<TAllTaskGroupsDefs>[],
     options?: StepTaskJobOptions,
   ): Promise<TaskFlowRunNode[]> {
-    const result = this.client.runFlows(tasks as any, { ...options, parent: this.job });
+    const result = this.client.runFlows(tasks as any, { parent: this.job, ...options });
     return result;
   }
 

@@ -43,7 +43,7 @@ export interface BulkJobsReference {
   sampleJobIds?: string[];
 }
 
-export type StepTaskJobOptions = Omit<TaskJobOptions, 'parent'>;
+export type StepTaskJobOptions = TaskJobOptions;
 
 export type StepBulkJob<Payload> = Omit<BulkJob<Payload>, 'data' | 'state'>;
 
