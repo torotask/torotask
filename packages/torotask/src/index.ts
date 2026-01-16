@@ -13,5 +13,6 @@ export * from './task.js';
 export * from './types/index.js';
 export * from './utils/get-config-from-env.js';
 
-// Re-export core BullMQ types
+// Re-export core BullMQ types and errors
 export type { ConnectionOptions, Job, JobsOptions } from 'bullmq';
+export { DelayedError, RateLimitError, UnrecoverableError, WaitingChildrenError, WaitingError } from 'bullmq';

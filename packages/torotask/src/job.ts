@@ -2,7 +2,7 @@ import type { JobsOptions, MinimalQueue } from 'bullmq';
 import type { Logger } from 'pino';
 import type { ToroTask } from './client.js';
 import type { TaskJobData, TaskJobOptions, TaskJobState } from './types/index.js';
-import { Job } from 'bullmq';
+import { Job, UnrecoverableError } from 'bullmq';
 import { TaskQueue } from './queue.js';
 import { convertJobOptions } from './utils/convert-job-options.js';
 
@@ -118,6 +118,28 @@ export class TaskJob<
       ...state,
     };
     return this.setState(newState as StateType);
+  }
+
+  /**
+   * Throws an UnrecoverableError to permanently fail this job.
+   * The job will not be retried and will immediately move to the failed state.
+   *
+   * @param message - Error message describing why the job failed
+   * @param logMessage - If true, logs the message to the job's log before throwing (default: true)
+   * @throws UnrecoverableError - Always throws to fail the job
+   *
+   * @example
+   * ```ts
+   * if (!payload.userId) {
+   *   await job.failUnrecoverable('Missing required userId');
+   * }
+   * ```
+   */
+  async failUnrecoverable(message: string, logMessage: boolean = true): Promise<never> {
+    if (logMessage) {
+      await this.log(`[UNRECOVERABLE] ${message}`);
+    }
+    throw new UnrecoverableError(message);
   }
 
   /**
