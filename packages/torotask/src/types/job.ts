@@ -1,4 +1,4 @@
-import type { JobsOptions } from 'bullmq';
+import type { JobsOptions, ParentOptions } from 'bullmq';
 import type { TaskJob } from '../job.js';
 import type { StepResult } from './step.js';
 import type { IfAny, UnpackList } from './utils.js';
@@ -28,10 +28,17 @@ export type TaskJobDataItem<DataType, Item> = IfAny<
   Item extends keyof DataType ? (UnpackList<DataType[Item]> extends object ? UnpackList<DataType[Item]> : never) : never
 >;
 
+/**
+ * Parent option that accepts either:
+ * - A TaskJob instance (will extract id and queueQualifiedName)
+ * - BullMQ's ParentOptions format ({ id, queue })
+ */
+export type TaskJobParent = Partial<TaskJob> | ParentOptions;
+
 export type TaskJobOptions<Datatype = any, StateType = TaskJobDataItem<Datatype, 'state'>> = Omit<
   JobsOptions,
   'parent'
 > & {
   state?: StateType;
-  parent?: Partial<TaskJob>;
+  parent?: TaskJobParent;
 };
