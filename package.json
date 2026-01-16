@@ -45,7 +45,7 @@
   },
   "lint-staged": {
     "**/*.{ts,tsx,js,jsx,mjs,cjs}": [
-      "eslint --cache"
+      "eslint --cache --fix"
     ],
     "**/*.{json,md,yml,yaml}": [
       "eslint --cache --fix"

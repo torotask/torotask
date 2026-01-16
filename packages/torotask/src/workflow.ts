@@ -45,7 +45,7 @@ export class TaskWorkflow extends FlowProducer {
       delete mergedOptions.parent;
     }
     else {
-      mergedOptions = convertJobOptions(mergedOptions);
+      mergedOptions = convertJobOptions(mergedOptions, run.payload);
     }
 
     return {

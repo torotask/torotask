@@ -18,9 +18,10 @@ export type TaskTriggerEveryValue = StringValue | number;
 
 /**
  * Options for defining a Task, extending BullMQ's JobsOptions.
+ * @template PayloadType - The payload type for typed deduplication callbacks
  */
-export type TaskOptions = Prettify<
-  TaskJobOptions & {
+export type TaskOptions<PayloadType = any> = Prettify<
+  TaskJobOptions<any, any, PayloadType> & {
     allowCatchAll?: boolean;
     batch?: TaskWorkerOptions['batch'];
     workerOptions?: Partial<Omit<TaskWorkerOptions, 'batch'>>;
@@ -109,7 +110,7 @@ export interface TaskConfig<
     ResultType,
     ResolvedSchemaType<SchemaInputValue>
   >;
-  options?: TaskOptions;
+  options?: TaskOptions<EffectivePayloadType<PayloadExplicit, ResolvedSchemaType<SchemaInputValue>>>;
   schema?: SchemaInputValue;
   triggers?: SingleOrArray<TaskTrigger<EffectivePayloadType<PayloadExplicit, ResolvedSchemaType<SchemaInputValue>>>>;
 }

@@ -310,7 +310,7 @@ export abstract class BaseTask<
           this.queue.upsertJobScheduler(schedulerKey, repeatOpts, {
             name: this.id, // Use task id for the job name within the scheduler
             data: { payload: trigger.payload },
-            opts: convertJobOptions(jobOptions),
+            opts: convertJobOptions(jobOptions, trigger.payload),
           }),
         );
       });

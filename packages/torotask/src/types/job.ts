@@ -35,10 +35,51 @@ export type TaskJobDataItem<DataType, Item> = IfAny<
  */
 export type TaskJobParent = Partial<TaskJob> | ParentOptions;
 
-export type TaskJobOptions<Datatype = any, StateType = TaskJobDataItem<Datatype, 'state'>> = Omit<
+/**
+ * Deduplication options for task definitions.
+ * Unlike BullMQ's DeduplicationOptions, `id` is optional here.
+ * Use `id` for a literal ID or `idFromPayload` for dynamic ID generation.
+ * If neither produces a value at runtime, deduplication is skipped.
+ *
+ * @template PayloadType - The payload type for typed callback support
+ */
+export interface TaskDeduplicationOptions<PayloadType = any> {
+  /**
+   * Literal deduplication ID.
+   */
+  id?: string;
+  /**
+   * Callback function to generate deduplication ID from payload.
+   * Receives the fully-typed payload and returns the ID string.
+   * Return undefined/null to skip deduplication for this job.
+   *
+   * @example
+   * idFromPayload: (payload) => `${payload.userId}:${payload.action}`
+   */
+  idFromPayload?: (payload: PayloadType) => string | undefined | null;
+  /**
+   * TTL in milliseconds.
+   */
+  ttl?: number;
+  /**
+   * Extend TTL value on duplicate.
+   */
+  extend?: boolean;
+  /**
+   * Replace job record while it's in delayed state.
+   */
+  replace?: boolean;
+}
+
+export type TaskJobOptions<
+  Datatype = any,
+  StateType = TaskJobDataItem<Datatype, 'state'>,
+  PayloadType = any,
+> = Omit<
   JobsOptions,
-  'parent'
+  'parent' | 'deduplication'
 > & {
   state?: StateType;
   parent?: TaskJobParent;
+  deduplication?: TaskDeduplicationOptions<PayloadType>;
 };

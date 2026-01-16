@@ -32,7 +32,7 @@ interface DefineTaskInputConfig<
     InferredHandlerResult, // Key for inference
     ResolvedSchemaType<SchemaInput>
   >;
-  options?: TaskOptions;
+  options?: TaskOptions<EffectivePayloadType<PayloadExplicit, ResolvedSchemaType<SchemaInput>>>;
   schema?: SchemaInput;
   triggers?: SingleOrArray<TaskTrigger<EffectivePayloadType<PayloadExplicit, ResolvedSchemaType<SchemaInput>>>>;
   id?: string; // From TaskDefinition
