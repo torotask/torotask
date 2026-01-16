@@ -8,6 +8,11 @@ import { getTaskContext } from '../../helpers.js';
  */
 export const parentOverrideTestChild = defineTask({
   id: 'parent-override-test-child',
+  options: {
+    deduplication: {
+      idFromPayload: payload => `${payload.message}`,
+    },
+  },
   schema: createSchema(z => z.object({
     message: z.string(),
   })),
