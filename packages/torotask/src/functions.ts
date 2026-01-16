@@ -107,6 +107,32 @@ export function defineTask<
 }
 
 /**
+ * Defines a task configuration with an explicit result type.
+ * Use this when you want to specify the result type explicitly while still
+ * inferring the payload from the schema.
+ *
+ * @example
+ * ```ts
+ * const myTask = defineTaskWithResult<MyResultType>()({
+ *   schema: createSchema(z => z.object({ id: z.string() })),
+ *   handler: async (opts, ctx) => { return { success: true }; }
+ * })
+ * ```
+ *
+ * @template ResultExplicit The explicit result type for the task handler.
+ */
+export function defineTaskWithResult<ResultExplicit>() {
+  return <
+    PayloadExplicit = unknown,
+    SchemaInput extends SchemaHandler | undefined = undefined,
+  >(
+    config: DefineTaskInputConfig<PayloadExplicit, SchemaInput, ResultExplicit>,
+  ): TaskDefinition<PayloadExplicit, ResultExplicit, SchemaInput> => {
+    return config as unknown as TaskDefinition<PayloadExplicit, ResultExplicit, SchemaInput>;
+  };
+}
+
+/**
  * Creates a schema directly from a function that receives the Zod builder.
  * This avoids needing to import `zod` in the consumer's file just for the type.
  *
