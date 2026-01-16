@@ -1,5 +1,24 @@
 # torotask
 
+## 0.13.1
+
+### Patch Changes
+
+- Expose BullMQ errors and add failUnrecoverable helper ([#25](https://github.com/torotask/torotask/pull/25)) ([`c537feb`](https://github.com/torotask/torotask/commit/c537febc769fcdb6f52e3371b2ff9c5a604f8d95))
+
+- Re-export BullMQ error classes: `UnrecoverableError`, `DelayedError`, `RateLimitError`, `WaitingChildrenError`, `WaitingError`
+- Add `job.failUnrecoverable(message)` helper method that logs the error and throws
+
+```typescript
+import { UnrecoverableError, DelayedError, RateLimitError } from "torotask";
+
+// Use the helper method (logs message and throws UnrecoverableError)
+await job.failUnrecoverable("Invalid payload - missing required field");
+
+// Or throw directly for more control
+throw new UnrecoverableError("Custom failure message");
+```
+
 ## 0.13.0
 
 ### Minor Changes
