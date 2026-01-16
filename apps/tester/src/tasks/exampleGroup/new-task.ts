@@ -1,6 +1,6 @@
-import { createSchema, defineTask } from 'torotask';
+import { createSchema, defineTaskWithResult } from 'torotask';
 
-export const newTask = defineTask({
+export const newTask = defineTaskWithResult<string>()({
   id: 'new-task',
   options: {
     attempts: 3,
@@ -27,7 +27,7 @@ export const newTask = defineTask({
 
     logger.debug(`Handler received job data: ${JSON.stringify(payload)}`);
 
-    const message = `Hello, ${payload.lastname}!`;
+    const message = `Hello, ${payload}!`;
     logger.debug(`Processed message: ${message}`);
 
     return message; // Return a result
