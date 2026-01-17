@@ -160,10 +160,18 @@ export function getTypedContext<
   TAllTaskGroupsDefs extends TaskGroupDefinitionRegistry,
   const TCurrentTaskGroup extends keyof TAllTaskGroupsDefs,
   TContext extends TaskHandlerContext<any, any>,
->(context: TContext, _currentGroup: TCurrentTaskGroup) {
-  type TPayload = TContext extends TaskHandlerContext<infer P, any> ? P : unknown;
-  type TResult = TContext extends TaskHandlerContext<any, infer R> ? R : unknown;
-
+  TPayload = TContext extends TaskHandlerContext<infer P, any> ? P : unknown,
+  TResult = TContext extends TaskHandlerContext<any, infer R> ? R : unknown,
+>(
+  context: TContext,
+  _currentGroup: TCurrentTaskGroup,
+): Omit<TContext, 'step' | 'group' | 'client' | 'task' | 'job'> & {
+  step: StepExecutor<TaskJob<TPayload, TResult, any>, TAllTaskGroupsDefs, TCurrentTaskGroup>;
+  group: TaskGroup<TAllTaskGroupsDefs[TCurrentTaskGroup]['tasks']>;
+  client: ToroTask<TAllTaskGroupsDefs>;
+  task: Task<TPayload, TResult, any>;
+  job: TaskJob<TPayload, TResult>;
+} {
   return {
     ...context,
     step: context.step as StepExecutor<TaskJob<TPayload, TResult, any>, TAllTaskGroupsDefs, TCurrentTaskGroup>,
