@@ -43,4 +43,3 @@ export type TaskDefForGroup<
   GroupName extends keyof TGroupDefs,
   TaskName extends keyof TGroupDefs[GroupName]['tasks'],
 > = TGroupDefs[GroupName]['tasks'][TaskName];
-

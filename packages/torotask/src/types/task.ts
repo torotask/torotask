@@ -148,4 +148,3 @@ export type TaskPayloadFromDef<TDef> = TDef extends TaskDefinition<infer P, any,
 export type TaskResultFromDef<TDef> = TDef extends TaskDefinition<any, infer R, any>
   ? R
   : unknown;
-

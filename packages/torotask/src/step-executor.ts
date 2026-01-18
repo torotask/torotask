@@ -12,7 +12,6 @@ import type {
   TaskFlowRun,
   TaskFlowRunNode,
   TaskGroupDefinitionRegistry,
-  TaskGroupRegistry,
   TaskJobState,
   TaskKeysForGroup,
   TaskPayloadFromDef,
@@ -30,7 +29,6 @@ export class StepExecutor<
   JobType extends TaskJob = TaskJob,
   TAllTaskGroupsDefs extends TaskGroupDefinitionRegistry = TaskGroupDefinitionRegistry,
   TCurrentJobGroup extends keyof TAllTaskGroupsDefs = never,
-  TGroups extends TaskGroupRegistry<TAllTaskGroupsDefs> = TaskGroupRegistry<TAllTaskGroupsDefs>,
   TJobPayload = JobType extends TaskJob<infer P, any, any> ? P : unknown,
   TJobResult = JobType extends TaskJob<any, infer R, any> ? R : unknown,
 > {
@@ -563,32 +561,30 @@ export class StepExecutor<
   async runGroupTask<
     TaskName extends TaskKeysForGroup<TAllTaskGroupsDefs, TCurrentJobGroup>,
     TDef extends TaskDefForGroup<TAllTaskGroupsDefs, TCurrentJobGroup, TaskName> = TaskDefForGroup<TAllTaskGroupsDefs, TCurrentJobGroup, TaskName>,
-    Payload extends TaskPayloadFromDef<TDef> = TaskPayloadFromDef<TDef>,
     Result extends TaskResultFromDef<TDef> = TaskResultFromDef<TDef>,
-    TJob extends TaskJob<Payload, Result> = TaskJob<Payload, Result>,
+    TJob extends TaskJob<TaskPayloadFromDef<TDef>, Result> = TaskJob<TaskPayloadFromDef<TDef>, Result>,
   >(
     userStepId: string,
     taskName: TaskName,
-    payload: Payload,
+    payload: TaskPayloadFromDef<TDef>,
     options?: StepTaskJobOptions,
   ): Promise<TJob> {
     return this._executeStep<TJob>(userStepId, 'runGroupTask', async (_internalStepId: string) => {
-      return this._runGroupTask<Payload, TJob>(taskName, payload, options);
+      return this._runGroupTask<TaskPayloadFromDef<TDef>, TJob>(taskName, payload, options);
     });
   }
 
   async runGroupTaskStateless<
     TaskName extends TaskKeysForGroup<TAllTaskGroupsDefs, TCurrentJobGroup>,
     TDef extends TaskDefForGroup<TAllTaskGroupsDefs, TCurrentJobGroup, TaskName> = TaskDefForGroup<TAllTaskGroupsDefs, TCurrentJobGroup, TaskName>,
-    Payload extends TaskPayloadFromDef<TDef> = TaskPayloadFromDef<TDef>,
     Result extends TaskResultFromDef<TDef> = TaskResultFromDef<TDef>,
-    TJob extends TaskJob<Payload, Result> = TaskJob<Payload, Result>,
+    TJob extends TaskJob<TaskPayloadFromDef<TDef>, Result> = TaskJob<TaskPayloadFromDef<TDef>, Result>,
   >(
     taskName: TaskName,
-    payload: Payload,
+    payload: TaskPayloadFromDef<TDef>,
     options?: StepTaskJobOptions,
   ): Promise<TJob> {
-    return this._runGroupTask<Payload, TJob>(taskName, payload, options);
+    return this._runGroupTask<TaskPayloadFromDef<TDef>, TJob>(taskName, payload, options);
   }
 
   async _runGroupTaskAndWait<TPayload, TResult>(
@@ -628,17 +624,16 @@ export class StepExecutor<
   async runGroupTaskAndWait<
     TaskName extends TaskKeysForGroup<TAllTaskGroupsDefs, TCurrentJobGroup>,
     TDef extends TaskDefForGroup<TAllTaskGroupsDefs, TCurrentJobGroup, TaskName> = TaskDefForGroup<TAllTaskGroupsDefs, TCurrentJobGroup, TaskName>,
-    Payload extends TaskPayloadFromDef<TDef> = TaskPayloadFromDef<TDef>,
     Result extends TaskResultFromDef<TDef> = TaskResultFromDef<TDef>,
   >(
     userStepId: string,
     taskName: TaskName,
-    payload: Payload,
+    payload: TaskPayloadFromDef<TDef>,
     options?: StepTaskJobOptions,
   ): Promise<Result> {
     return this._executeStep<Result>(userStepId, 'runGroupTaskAndWait', async (internalStepId: string) => {
       // Start the child job
-      const job = await this._startGroupTask<Payload, Result>(taskName, payload, options);
+      const job = await this._startGroupTask<TaskPayloadFromDef<TDef>, Result>(taskName, payload, options);
 
       // Store child job reference BEFORE waiting - critical for recovery
       this.job.state.stepState![internalStepId] = {
@@ -656,14 +651,13 @@ export class StepExecutor<
   async runGroupTaskAndWaitStateless<
     TaskName extends TaskKeysForGroup<TAllTaskGroupsDefs, TCurrentJobGroup>,
     TDef extends TaskDefForGroup<TAllTaskGroupsDefs, TCurrentJobGroup, TaskName> = TaskDefForGroup<TAllTaskGroupsDefs, TCurrentJobGroup, TaskName>,
-    Payload extends TaskPayloadFromDef<TDef> = TaskPayloadFromDef<TDef>,
     Result extends TaskResultFromDef<TDef> = TaskResultFromDef<TDef>,
   >(
     taskName: TaskName,
-    payload: Payload,
+    payload: TaskPayloadFromDef<TDef>,
     options?: StepTaskJobOptions,
   ): Promise<Result> {
-    const { result } = await this._runGroupTaskAndWait<Payload, Result>(taskName, payload, options);
+    const { result } = await this._runGroupTaskAndWait<TaskPayloadFromDef<TDef>, Result>(taskName, payload, options);
     return result;
   }
 
@@ -699,18 +693,17 @@ export class StepExecutor<
     GroupName extends keyof TAllTaskGroupsDefs,
     TaskName extends TaskKeysForGroup<TAllTaskGroupsDefs, GroupName>,
     TDef extends TaskDefForGroup<TAllTaskGroupsDefs, GroupName, TaskName> = TaskDefForGroup<TAllTaskGroupsDefs, GroupName, TaskName>,
-    Payload extends TaskPayloadFromDef<TDef> = TaskPayloadFromDef<TDef>,
     Result extends TaskResultFromDef<TDef> = TaskResultFromDef<TDef>,
-    TJob extends TaskJob<Payload, Result> = TaskJob<Payload, Result>,
+    TJob extends TaskJob<TaskPayloadFromDef<TDef>, Result> = TaskJob<TaskPayloadFromDef<TDef>, Result>,
   >(
     userStepId: string,
     groupName: GroupName,
     taskName: TaskName,
-    payload: Payload,
+    payload: TaskPayloadFromDef<TDef>,
     options?: StepTaskJobOptions,
   ): Promise<TJob> {
     return this._executeStep<TJob>(userStepId, 'runTask', async (_internalStepId: string) => {
-      return this._runTask<Payload, TJob>(groupName, taskName, payload, options);
+      return this._runTask<TaskPayloadFromDef<TDef>, TJob>(groupName, taskName, payload, options);
     });
   }
 
@@ -718,16 +711,15 @@ export class StepExecutor<
     GroupName extends keyof TAllTaskGroupsDefs,
     TaskName extends TaskKeysForGroup<TAllTaskGroupsDefs, GroupName>,
     TDef extends TaskDefForGroup<TAllTaskGroupsDefs, GroupName, TaskName> = TaskDefForGroup<TAllTaskGroupsDefs, GroupName, TaskName>,
-    Payload extends TaskPayloadFromDef<TDef> = TaskPayloadFromDef<TDef>,
     Result extends TaskResultFromDef<TDef> = TaskResultFromDef<TDef>,
-    TJob extends TaskJob<Payload, Result> = TaskJob<Payload, Result>,
+    TJob extends TaskJob<TaskPayloadFromDef<TDef>, Result> = TaskJob<TaskPayloadFromDef<TDef>, Result>,
   >(
     groupName: GroupName,
     taskName: TaskName,
-    payload: Payload,
+    payload: TaskPayloadFromDef<TDef>,
     options?: StepTaskJobOptions,
   ): Promise<TJob> {
-    return this._runTask<Payload, TJob>(groupName, taskName, payload, options);
+    return this._runTask<TaskPayloadFromDef<TDef>, TJob>(groupName, taskName, payload, options);
   }
 
   /**
@@ -774,18 +766,17 @@ export class StepExecutor<
     GroupName extends keyof TAllTaskGroupsDefs,
     TaskName extends TaskKeysForGroup<TAllTaskGroupsDefs, GroupName>,
     TDef extends TaskDefForGroup<TAllTaskGroupsDefs, GroupName, TaskName> = TaskDefForGroup<TAllTaskGroupsDefs, GroupName, TaskName>,
-    Payload extends TaskPayloadFromDef<TDef> = TaskPayloadFromDef<TDef>,
     Result extends TaskResultFromDef<TDef> = TaskResultFromDef<TDef>,
   >(
     userStepId: string,
     groupName: GroupName,
     taskName: TaskName,
-    payload: Payload,
+    payload: TaskPayloadFromDef<TDef>,
     options?: StepTaskJobOptions,
   ): Promise<Result> {
     return this._executeStep<Result>(userStepId, 'runTaskAndWait', async (internalStepId: string) => {
       // Start the child job
-      const job = await this._startTask<Payload, Result>(groupName, taskName, payload, options);
+      const job = await this._startTask<TaskPayloadFromDef<TDef>, Result>(groupName, taskName, payload, options);
 
       // Store child job reference BEFORE waiting - critical for recovery
       this.job.state.stepState![internalStepId] = {
@@ -804,15 +795,14 @@ export class StepExecutor<
     GroupName extends keyof TAllTaskGroupsDefs,
     TaskName extends TaskKeysForGroup<TAllTaskGroupsDefs, GroupName>,
     TDef extends TaskDefForGroup<TAllTaskGroupsDefs, GroupName, TaskName> = TaskDefForGroup<TAllTaskGroupsDefs, GroupName, TaskName>,
-    Payload extends TaskPayloadFromDef<TDef> = TaskPayloadFromDef<TDef>,
     Result extends TaskResultFromDef<TDef> = TaskResultFromDef<TDef>,
   >(
     groupName: GroupName,
     taskName: TaskName,
-    payload: Payload,
+    payload: TaskPayloadFromDef<TDef>,
     options?: StepTaskJobOptions,
   ): Promise<Result> {
-    const { result } = await this._runTaskAndWait<Payload, Result>(groupName, taskName, payload, options);
+    const { result } = await this._runTaskAndWait<TaskPayloadFromDef<TDef>, Result>(groupName, taskName, payload, options);
     return result;
   }
 
@@ -845,18 +835,17 @@ export class StepExecutor<
     GroupName extends keyof TAllTaskGroupsDefs,
     TaskName extends TaskKeysForGroup<TAllTaskGroupsDefs, GroupName>,
     TDef extends TaskDefForGroup<TAllTaskGroupsDefs, GroupName, TaskName> = TaskDefForGroup<TAllTaskGroupsDefs, GroupName, TaskName>,
-    Payload extends TaskPayloadFromDef<TDef> = TaskPayloadFromDef<TDef>,
     Result extends TaskResultFromDef<TDef> = TaskResultFromDef<TDef>,
-    TJob extends TaskJob<Payload, Result> = TaskJob<Payload, Result>,
+    TJob extends TaskJob<TaskPayloadFromDef<TDef>, Result> = TaskJob<TaskPayloadFromDef<TDef>, Result>,
   >(
     userStepId: string,
     groupName: GroupName,
     taskName: TaskName,
-    tasks: Array<{ name?: string; payload?: Payload; options?: StepTaskJobOptions }>,
+    tasks: Array<{ name?: string; payload?: TaskPayloadFromDef<TDef>; options?: StepTaskJobOptions }>,
     options?: StepTaskJobOptions,
   ): Promise<TJob[]> {
     return this._executeStep<TJob[]>(userStepId, 'runTasks', async (_internalStepId: string) => {
-      return this._runTasks<Payload, TJob>(groupName, taskName, tasks, options);
+      return this._runTasks<TaskPayloadFromDef<TDef>, TJob>(groupName, taskName, tasks, options);
     });
   }
 
@@ -864,16 +853,15 @@ export class StepExecutor<
     GroupName extends keyof TAllTaskGroupsDefs,
     TaskName extends TaskKeysForGroup<TAllTaskGroupsDefs, GroupName>,
     TDef extends TaskDefForGroup<TAllTaskGroupsDefs, GroupName, TaskName> = TaskDefForGroup<TAllTaskGroupsDefs, GroupName, TaskName>,
-    Payload extends TaskPayloadFromDef<TDef> = TaskPayloadFromDef<TDef>,
     Result extends TaskResultFromDef<TDef> = TaskResultFromDef<TDef>,
-    TJob extends TaskJob<Payload, Result> = TaskJob<Payload, Result>,
+    TJob extends TaskJob<TaskPayloadFromDef<TDef>, Result> = TaskJob<TaskPayloadFromDef<TDef>, Result>,
   >(
     groupName: GroupName,
     taskName: TaskName,
-    tasks: Array<{ name?: string; payload?: Payload; options?: StepTaskJobOptions }>,
+    tasks: Array<{ name?: string; payload?: TaskPayloadFromDef<TDef>; options?: StepTaskJobOptions }>,
     options?: StepTaskJobOptions,
   ): Promise<TJob[]> {
-    return this._runTasks<Payload, TJob>(groupName, taskName, tasks, options);
+    return this._runTasks<TaskPayloadFromDef<TDef>, TJob>(groupName, taskName, tasks, options);
   }
 
   async _runFlow(
@@ -884,9 +872,9 @@ export class StepExecutor<
     return result;
   }
 
-  async runFlow<TFlowRun extends TaskFlowRun<TAllTaskGroupsDefs> = TaskFlowRun<TAllTaskGroupsDefs>>(
+  async runFlow(
     userStepId: string,
-    task: TFlowRun,
+    task: TaskFlowRun<TAllTaskGroupsDefs>,
     options?: StepTaskJobOptions,
   ): Promise<TaskFlowRunNode> {
     return this._executeStep<TaskFlowRunNode>(userStepId, 'runFlow', async (_internalStepId: string) => {
@@ -894,8 +882,8 @@ export class StepExecutor<
     });
   }
 
-  async runFlowStateless<TFlowRun extends TaskFlowRun<TAllTaskGroupsDefs> = TaskFlowRun<TAllTaskGroupsDefs>>(
-    task: TFlowRun,
+  async runFlowStateless(
+    task: TaskFlowRun<TAllTaskGroupsDefs>,
     options?: StepTaskJobOptions,
   ): Promise<TaskFlowRunNode> {
     return this._runFlow(task, options);
@@ -909,9 +897,9 @@ export class StepExecutor<
     return result;
   }
 
-  async runFlows<TFlowRun extends TaskFlowRun<TAllTaskGroupsDefs> = TaskFlowRun<TAllTaskGroupsDefs>>(
+  async runFlows(
     userStepId: string,
-    tasks: TFlowRun[],
+    tasks: TaskFlowRun<TAllTaskGroupsDefs>[],
     options?: StepTaskJobOptions,
   ): Promise<TaskFlowRunNode[]> {
     return this._executeStep<TaskFlowRunNode[]>(userStepId, 'runFlow', async (_internalStepId: string) => {
@@ -919,8 +907,8 @@ export class StepExecutor<
     });
   }
 
-  async runFlowsStateless<TFlowRun extends TaskFlowRun<TAllTaskGroupsDefs> = TaskFlowRun<TAllTaskGroupsDefs>>(
-    tasks: TFlowRun[],
+  async runFlowsStateless(
+    tasks: TaskFlowRun<TAllTaskGroupsDefs>[],
     options?: StepTaskJobOptions,
   ): Promise<TaskFlowRunNode[]> {
     return this._runFlows(tasks, options);

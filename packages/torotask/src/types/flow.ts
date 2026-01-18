@@ -1,6 +1,6 @@
 import type { JobNode } from 'bullmq';
 import type { TaskJobOptions, TaskJobState } from './job.js';
-import type { TaskGroupDefinitionRegistry, TaskKeysForGroup, TaskDefForGroup } from './task-group.js';
+import type { TaskDefForGroup, TaskGroupDefinitionRegistry, TaskKeysForGroup } from './task-group.js';
 import type { TaskPayloadFromDef } from './task.js';
 
 export type TaskFlowRunBaseOptions = Omit<TaskJobOptions, 'repeat' | 'parent'>;
@@ -14,14 +14,13 @@ interface SpecificFlowRunConfig<
   GName extends keyof TAllTaskGroupsDefs,
   TName extends TaskKeysForGroup<TAllTaskGroupsDefs, GName>,
   TOptions = TaskFlowRunOptions,
-  // Payload inferred from the task definition using our helper types
+  // Payload type derived from the task definition
   TDef extends TaskDefForGroup<TAllTaskGroupsDefs, GName, TName> = TaskDefForGroup<TAllTaskGroupsDefs, GName, TName>,
-  Payload extends TaskPayloadFromDef<TDef> = TaskPayloadFromDef<TDef>,
 > {
   taskGroup: GName;
   taskName: TName;
   name?: string;
-  payload?: Payload;
+  payload?: TaskPayloadFromDef<TDef>;
   state?: TaskJobState;
   options?: TOptions;
   children?: TaskFlowRun<TAllTaskGroupsDefs, TaskFlowRunChildOptions>[];
