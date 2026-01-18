@@ -25,3 +25,22 @@ export interface TaskGroupDefinition<TDefs extends TaskDefinitionRegistry> {
 export interface TaskGroupDefinitionRegistry {
   [groupKey: string]: TaskGroupDefinition<any>;
 }
+
+/**
+ * Helper type to extract task keys for a specific group from a task group definition registry.
+ * Uses direct property access for better IDE autocomplete performance.
+ */
+export type TaskKeysForGroup<
+  TGroupDefs extends TaskGroupDefinitionRegistry,
+  GroupName extends keyof TGroupDefs,
+> = keyof TGroupDefs[GroupName]['tasks'];
+
+/**
+ * Helper type to get a task definition from the registry.
+ */
+export type TaskDefForGroup<
+  TGroupDefs extends TaskGroupDefinitionRegistry,
+  GroupName extends keyof TGroupDefs,
+  TaskName extends keyof TGroupDefs[GroupName]['tasks'],
+> = TGroupDefs[GroupName]['tasks'][TaskName];
+

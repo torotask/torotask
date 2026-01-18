@@ -8,11 +8,15 @@ import type {
   StepInnerString,
   StepResult,
   StepTaskJobOptions,
+  TaskDefForGroup,
   TaskFlowRun,
   TaskFlowRunNode,
   TaskGroupDefinitionRegistry,
   TaskGroupRegistry,
   TaskJobState,
+  TaskKeysForGroup,
+  TaskPayloadFromDef,
+  TaskResultFromDef,
 } from './types/index.js';
 import { isArray, isPlainObject } from 'lodash-es';
 import ms from 'ms';
@@ -557,37 +561,34 @@ export class StepExecutor<
   }
 
   async runGroupTask<
-    TargetGroup extends TGroups[TCurrentJobGroup] = TGroups[TCurrentJobGroup],
-    TaskName extends keyof TargetGroup['tasks'] = keyof TargetGroup['tasks'],
-    ActualTask extends TargetGroup['tasks'][TaskName] = TargetGroup['tasks'][TaskName],
-    Payload = ActualTask extends Task<infer P, any, any> ? P : unknown,
-    Result = ActualTask extends Task<any, infer R, any> ? R : unknown,
-    ActualPayload extends Payload = Payload,
-    TJob extends TaskJob<ActualPayload, Result> = TaskJob<ActualPayload, Result>,
-  >(userStepId: string,
+    TaskName extends TaskKeysForGroup<TAllTaskGroupsDefs, TCurrentJobGroup>,
+    TDef extends TaskDefForGroup<TAllTaskGroupsDefs, TCurrentJobGroup, TaskName> = TaskDefForGroup<TAllTaskGroupsDefs, TCurrentJobGroup, TaskName>,
+    Payload extends TaskPayloadFromDef<TDef> = TaskPayloadFromDef<TDef>,
+    Result extends TaskResultFromDef<TDef> = TaskResultFromDef<TDef>,
+    TJob extends TaskJob<Payload, Result> = TaskJob<Payload, Result>,
+  >(
+    userStepId: string,
     taskName: TaskName,
-    payload: ActualPayload,
+    payload: Payload,
     options?: StepTaskJobOptions,
   ): Promise<TJob> {
     return this._executeStep<TJob>(userStepId, 'runGroupTask', async (_internalStepId: string) => {
-      return this._runGroupTask<ActualPayload, TJob>(taskName, payload, options);
+      return this._runGroupTask<Payload, TJob>(taskName, payload, options);
     });
   }
 
   async runGroupTaskStateless<
-    TargetGroup extends TGroups[TCurrentJobGroup] = TGroups[TCurrentJobGroup],
-    TaskName extends keyof TargetGroup['tasks'] = keyof TargetGroup['tasks'],
-    ActualTask extends TargetGroup['tasks'][TaskName] = TargetGroup['tasks'][TaskName],
-    Payload = ActualTask extends Task<infer P, any, any> ? P : unknown,
-    Result = ActualTask extends Task<any, infer R, any> ? R : unknown,
-    ActualPayload extends Payload = Payload,
-    TJob extends TaskJob<ActualPayload, Result> = TaskJob<ActualPayload, Result>,
+    TaskName extends TaskKeysForGroup<TAllTaskGroupsDefs, TCurrentJobGroup>,
+    TDef extends TaskDefForGroup<TAllTaskGroupsDefs, TCurrentJobGroup, TaskName> = TaskDefForGroup<TAllTaskGroupsDefs, TCurrentJobGroup, TaskName>,
+    Payload extends TaskPayloadFromDef<TDef> = TaskPayloadFromDef<TDef>,
+    Result extends TaskResultFromDef<TDef> = TaskResultFromDef<TDef>,
+    TJob extends TaskJob<Payload, Result> = TaskJob<Payload, Result>,
   >(
     taskName: TaskName,
-    payload: ActualPayload,
+    payload: Payload,
     options?: StepTaskJobOptions,
   ): Promise<TJob> {
-    return this._runGroupTask<ActualPayload, TJob>(taskName, payload, options);
+    return this._runGroupTask<Payload, TJob>(taskName, payload, options);
   }
 
   async _runGroupTaskAndWait<TPayload, TResult>(
@@ -625,20 +626,19 @@ export class StepExecutor<
   }
 
   async runGroupTaskAndWait<
-    TargetGroup extends TGroups[TCurrentJobGroup] = TGroups[TCurrentJobGroup],
-    TaskName extends keyof TargetGroup['tasks'] = keyof TargetGroup['tasks'],
-    ActualTask extends TargetGroup['tasks'][TaskName] = TargetGroup['tasks'][TaskName],
-    Payload = ActualTask extends Task<infer P, any, any> ? P : unknown,
-    Result = ActualTask extends Task<any, infer R, any> ? R : unknown,
-    ActualPayload extends Payload = Payload,
-  >(userStepId: string,
+    TaskName extends TaskKeysForGroup<TAllTaskGroupsDefs, TCurrentJobGroup>,
+    TDef extends TaskDefForGroup<TAllTaskGroupsDefs, TCurrentJobGroup, TaskName> = TaskDefForGroup<TAllTaskGroupsDefs, TCurrentJobGroup, TaskName>,
+    Payload extends TaskPayloadFromDef<TDef> = TaskPayloadFromDef<TDef>,
+    Result extends TaskResultFromDef<TDef> = TaskResultFromDef<TDef>,
+  >(
+    userStepId: string,
     taskName: TaskName,
-    payload: ActualPayload,
+    payload: Payload,
     options?: StepTaskJobOptions,
   ): Promise<Result> {
     return this._executeStep<Result>(userStepId, 'runGroupTaskAndWait', async (internalStepId: string) => {
       // Start the child job
-      const job = await this._startGroupTask<ActualPayload, Result>(taskName, payload, options);
+      const job = await this._startGroupTask<Payload, Result>(taskName, payload, options);
 
       // Store child job reference BEFORE waiting - critical for recovery
       this.job.state.stepState![internalStepId] = {
@@ -654,18 +654,16 @@ export class StepExecutor<
   }
 
   async runGroupTaskAndWaitStateless<
-    TargetGroup extends TGroups[TCurrentJobGroup] = TGroups[TCurrentJobGroup],
-    TaskName extends keyof TargetGroup['tasks'] = keyof TargetGroup['tasks'],
-    ActualTask extends TargetGroup['tasks'][TaskName] = TargetGroup['tasks'][TaskName],
-    Payload = ActualTask extends Task<infer P, any, any> ? P : unknown,
-    Result = ActualTask extends Task<any, infer R, any> ? R : unknown,
-    ActualPayload extends Payload = Payload,
+    TaskName extends TaskKeysForGroup<TAllTaskGroupsDefs, TCurrentJobGroup>,
+    TDef extends TaskDefForGroup<TAllTaskGroupsDefs, TCurrentJobGroup, TaskName> = TaskDefForGroup<TAllTaskGroupsDefs, TCurrentJobGroup, TaskName>,
+    Payload extends TaskPayloadFromDef<TDef> = TaskPayloadFromDef<TDef>,
+    Result extends TaskResultFromDef<TDef> = TaskResultFromDef<TDef>,
   >(
     taskName: TaskName,
-    payload: ActualPayload,
+    payload: Payload,
     options?: StepTaskJobOptions,
   ): Promise<Result> {
-    const { result } = await this._runGroupTaskAndWait<ActualPayload, Result>(taskName, payload, options);
+    const { result } = await this._runGroupTaskAndWait<Payload, Result>(taskName, payload, options);
     return result;
   }
 
@@ -698,42 +696,38 @@ export class StepExecutor<
   }
 
   async runTask<
-    GroupName extends keyof TGroups,
-    TargetGroup extends TGroups[GroupName] = TGroups[GroupName],
-    TaskName extends keyof TargetGroup['tasks'] = keyof TargetGroup['tasks'],
-    ActualTask extends TargetGroup['tasks'][TaskName] = TargetGroup['tasks'][TaskName],
-    Payload = ActualTask extends Task<infer P, any, any> ? P : unknown,
-    Result = ActualTask extends Task<any, infer R, any> ? R : unknown,
-    ActualPayload extends Payload = Payload,
-    TJob extends TaskJob<ActualPayload, Result> = TaskJob<ActualPayload, Result>,
+    GroupName extends keyof TAllTaskGroupsDefs,
+    TaskName extends TaskKeysForGroup<TAllTaskGroupsDefs, GroupName>,
+    TDef extends TaskDefForGroup<TAllTaskGroupsDefs, GroupName, TaskName> = TaskDefForGroup<TAllTaskGroupsDefs, GroupName, TaskName>,
+    Payload extends TaskPayloadFromDef<TDef> = TaskPayloadFromDef<TDef>,
+    Result extends TaskResultFromDef<TDef> = TaskResultFromDef<TDef>,
+    TJob extends TaskJob<Payload, Result> = TaskJob<Payload, Result>,
   >(
     userStepId: string,
     groupName: GroupName,
     taskName: TaskName,
-    payload: ActualPayload,
+    payload: Payload,
     options?: StepTaskJobOptions,
   ): Promise<TJob> {
     return this._executeStep<TJob>(userStepId, 'runTask', async (_internalStepId: string) => {
-      return this._runTask<ActualPayload, TJob>(groupName, taskName, payload, options);
+      return this._runTask<Payload, TJob>(groupName, taskName, payload, options);
     });
   }
 
   async runTaskStateless<
-    GroupName extends keyof TGroups,
-    TargetGroup extends TGroups[GroupName] = TGroups[GroupName],
-    TaskName extends keyof TargetGroup['tasks'] = keyof TargetGroup['tasks'],
-    ActualTask extends TargetGroup['tasks'][TaskName] = TargetGroup['tasks'][TaskName],
-    Payload = ActualTask extends Task<infer P, any, any> ? P : unknown,
-    Result = ActualTask extends Task<any, infer R, any> ? R : unknown,
-    ActualPayload extends Payload = Payload,
-    TJob extends TaskJob<ActualPayload, Result> = TaskJob<ActualPayload, Result>,
+    GroupName extends keyof TAllTaskGroupsDefs,
+    TaskName extends TaskKeysForGroup<TAllTaskGroupsDefs, GroupName>,
+    TDef extends TaskDefForGroup<TAllTaskGroupsDefs, GroupName, TaskName> = TaskDefForGroup<TAllTaskGroupsDefs, GroupName, TaskName>,
+    Payload extends TaskPayloadFromDef<TDef> = TaskPayloadFromDef<TDef>,
+    Result extends TaskResultFromDef<TDef> = TaskResultFromDef<TDef>,
+    TJob extends TaskJob<Payload, Result> = TaskJob<Payload, Result>,
   >(
     groupName: GroupName,
     taskName: TaskName,
-    payload: ActualPayload,
+    payload: Payload,
     options?: StepTaskJobOptions,
   ): Promise<TJob> {
-    return this._runTask<ActualPayload, TJob>(groupName, taskName, payload, options);
+    return this._runTask<Payload, TJob>(groupName, taskName, payload, options);
   }
 
   /**
@@ -777,23 +771,21 @@ export class StepExecutor<
   }
 
   async runTaskAndWait<
-    GroupName extends keyof TGroups,
-    TargetGroup extends TGroups[GroupName] = TGroups[GroupName],
-    TaskName extends keyof TargetGroup['tasks'] = keyof TargetGroup['tasks'],
-    ActualTask extends TargetGroup['tasks'][TaskName] = TargetGroup['tasks'][TaskName],
-    Payload = ActualTask extends Task<infer P, any, any> ? P : unknown,
-    Result = ActualTask extends Task<any, infer R, any> ? R : unknown,
-    ActualPayload extends Payload = Payload,
+    GroupName extends keyof TAllTaskGroupsDefs,
+    TaskName extends TaskKeysForGroup<TAllTaskGroupsDefs, GroupName>,
+    TDef extends TaskDefForGroup<TAllTaskGroupsDefs, GroupName, TaskName> = TaskDefForGroup<TAllTaskGroupsDefs, GroupName, TaskName>,
+    Payload extends TaskPayloadFromDef<TDef> = TaskPayloadFromDef<TDef>,
+    Result extends TaskResultFromDef<TDef> = TaskResultFromDef<TDef>,
   >(
     userStepId: string,
     groupName: GroupName,
     taskName: TaskName,
-    payload: ActualPayload,
+    payload: Payload,
     options?: StepTaskJobOptions,
   ): Promise<Result> {
     return this._executeStep<Result>(userStepId, 'runTaskAndWait', async (internalStepId: string) => {
       // Start the child job
-      const job = await this._startTask<ActualPayload, Result>(groupName, taskName, payload, options);
+      const job = await this._startTask<Payload, Result>(groupName, taskName, payload, options);
 
       // Store child job reference BEFORE waiting - critical for recovery
       this.job.state.stepState![internalStepId] = {
@@ -809,20 +801,18 @@ export class StepExecutor<
   }
 
   async runTaskAndWaitStateless<
-    GroupName extends keyof TGroups,
-    TargetGroup extends TGroups[GroupName] = TGroups[GroupName],
-    TaskName extends keyof TargetGroup['tasks'] = keyof TargetGroup['tasks'],
-    ActualTask extends TargetGroup['tasks'][TaskName] = TargetGroup['tasks'][TaskName],
-    Payload = ActualTask extends Task<infer P, any, any> ? P : unknown,
-    Result = ActualTask extends Task<any, infer R, any> ? R : unknown,
-    ActualPayload extends Payload = Payload,
+    GroupName extends keyof TAllTaskGroupsDefs,
+    TaskName extends TaskKeysForGroup<TAllTaskGroupsDefs, GroupName>,
+    TDef extends TaskDefForGroup<TAllTaskGroupsDefs, GroupName, TaskName> = TaskDefForGroup<TAllTaskGroupsDefs, GroupName, TaskName>,
+    Payload extends TaskPayloadFromDef<TDef> = TaskPayloadFromDef<TDef>,
+    Result extends TaskResultFromDef<TDef> = TaskResultFromDef<TDef>,
   >(
     groupName: GroupName,
     taskName: TaskName,
-    payload: ActualPayload,
+    payload: Payload,
     options?: StepTaskJobOptions,
   ): Promise<Result> {
-    const { result } = await this._runTaskAndWait<ActualPayload, Result>(groupName, taskName, payload, options);
+    const { result } = await this._runTaskAndWait<Payload, Result>(groupName, taskName, payload, options);
     return result;
   }
 
@@ -852,42 +842,38 @@ export class StepExecutor<
   }
 
   async runTasks<
-    GroupName extends keyof TGroups,
-    TargetGroup extends TGroups[GroupName] = TGroups[GroupName],
-    TaskName extends keyof TargetGroup['tasks'] = keyof TargetGroup['tasks'],
-    ActualTask extends TargetGroup['tasks'][TaskName] = TargetGroup['tasks'][TaskName],
-    Payload = ActualTask extends Task<infer P, any, any> ? P : unknown,
-    Result = ActualTask extends Task<any, infer R, any> ? R : unknown,
-    ActualPayload extends Payload = Payload,
-    TJob extends TaskJob<ActualPayload, Result> = TaskJob<ActualPayload, Result>,
+    GroupName extends keyof TAllTaskGroupsDefs,
+    TaskName extends TaskKeysForGroup<TAllTaskGroupsDefs, GroupName>,
+    TDef extends TaskDefForGroup<TAllTaskGroupsDefs, GroupName, TaskName> = TaskDefForGroup<TAllTaskGroupsDefs, GroupName, TaskName>,
+    Payload extends TaskPayloadFromDef<TDef> = TaskPayloadFromDef<TDef>,
+    Result extends TaskResultFromDef<TDef> = TaskResultFromDef<TDef>,
+    TJob extends TaskJob<Payload, Result> = TaskJob<Payload, Result>,
   >(
     userStepId: string,
     groupName: GroupName,
     taskName: TaskName,
-    tasks: Array<{ name?: string; payload?: ActualPayload; options?: StepTaskJobOptions }>,
+    tasks: Array<{ name?: string; payload?: Payload; options?: StepTaskJobOptions }>,
     options?: StepTaskJobOptions,
   ): Promise<TJob[]> {
     return this._executeStep<TJob[]>(userStepId, 'runTasks', async (_internalStepId: string) => {
-      return this._runTasks<ActualPayload, TJob>(groupName, taskName, tasks, options);
+      return this._runTasks<Payload, TJob>(groupName, taskName, tasks, options);
     });
   }
 
   async runTasksStateless<
-    GroupName extends keyof TGroups,
-    TargetGroup extends TGroups[GroupName] = TGroups[GroupName],
-    TaskName extends keyof TargetGroup['tasks'] = keyof TargetGroup['tasks'],
-    ActualTask extends TargetGroup['tasks'][TaskName] = TargetGroup['tasks'][TaskName],
-    Payload = ActualTask extends Task<infer P, any, any> ? P : unknown,
-    Result = ActualTask extends Task<any, infer R, any> ? R : unknown,
-    ActualPayload extends Payload = Payload,
-    TJob extends TaskJob<ActualPayload, Result> = TaskJob<ActualPayload, Result>,
+    GroupName extends keyof TAllTaskGroupsDefs,
+    TaskName extends TaskKeysForGroup<TAllTaskGroupsDefs, GroupName>,
+    TDef extends TaskDefForGroup<TAllTaskGroupsDefs, GroupName, TaskName> = TaskDefForGroup<TAllTaskGroupsDefs, GroupName, TaskName>,
+    Payload extends TaskPayloadFromDef<TDef> = TaskPayloadFromDef<TDef>,
+    Result extends TaskResultFromDef<TDef> = TaskResultFromDef<TDef>,
+    TJob extends TaskJob<Payload, Result> = TaskJob<Payload, Result>,
   >(
     groupName: GroupName,
     taskName: TaskName,
-    tasks: Array<{ name?: string; payload?: ActualPayload; options?: StepTaskJobOptions }>,
+    tasks: Array<{ name?: string; payload?: Payload; options?: StepTaskJobOptions }>,
     options?: StepTaskJobOptions,
   ): Promise<TJob[]> {
-    return this._runTasks<ActualPayload, TJob>(groupName, taskName, tasks, options);
+    return this._runTasks<Payload, TJob>(groupName, taskName, tasks, options);
   }
 
   async _runFlow(

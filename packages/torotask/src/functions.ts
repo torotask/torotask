@@ -174,7 +174,7 @@ export function getTypedContext<
 } {
   return {
     ...context,
-    step: context.step as StepExecutor<TaskJob<TPayload, TResult, any>, TAllTaskGroupsDefs, TCurrentTaskGroup>,
+    step: context.step as unknown as StepExecutor<TaskJob<TPayload, TResult, any>, TAllTaskGroupsDefs, TCurrentTaskGroup>,
     group: context.group as TaskGroup<TAllTaskGroupsDefs[TCurrentTaskGroup]['tasks']>,
     client: context.client as ToroTask<TAllTaskGroupsDefs>,
     task: context.task as Task<TPayload, TResult, any>,
