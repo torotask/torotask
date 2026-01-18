@@ -347,12 +347,18 @@ export class ToroTask<
     queueName: string,
     jobId: string,
   ): Promise<TaskJob<PayloadType, ResultType> | undefined> {
-    const queue = this._consumerQueues.get(queueName);
+    // Check if queue is already cached
+    let queue = this._consumerQueues.get(queueName);
 
-    if (queue) {
-      const job = await queue.getJob(jobId);
-      return job as TaskJob<PayloadType, ResultType>;
+    // If not cached, create and cache it (needed for job reconstruction after handler restarts)
+    if (!queue) {
+      this.logger.debug({ queueName, jobId }, 'Queue not in cache for getJobById, creating it');
+      queue = new TaskQueue<PayloadType, ResultType>(this, queueName);
+      this._consumerQueues.set(queueName, queue as any);
     }
+
+    const job = await queue.getJob(jobId);
+    return job as TaskJob<PayloadType, ResultType>;
   }
 
   /**
