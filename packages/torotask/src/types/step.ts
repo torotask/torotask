@@ -23,6 +23,9 @@ export interface StepResult<T = any> {
   timeoutAt?: number; // Timestamp (ms since epoch)
   childIdentifier?: string; // For runTask
   childTaskIds?: string[]; // For waitForChildTasks
+  // For runTaskAndWait recovery - stores child job reference to check state on retry
+  childJobId?: string;
+  childQueueName?: string;
 }
 
 export interface SimplifiedJob {

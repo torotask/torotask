@@ -263,6 +263,75 @@ export class StepExecutor<
   }
 
   /**
+   * Handles recovery for steps that were waiting for a child job.
+   * Checks the actual child job state and returns result or throws error.
+   */
+  private async _handleChildJobRecovery<T>(
+    memoizedResult: StepResult,
+    userStepId: string,
+    internalStepId: string,
+  ): Promise<T> {
+    const { childJobId, childQueueName } = memoizedResult;
+
+    this.logger.debug(
+      { childJobId, childQueueName, userStepId },
+      `Checking child job state for recovery`,
+    );
+
+    const childJob = await this.client.getJobById(childQueueName!, childJobId!);
+
+    if (!childJob) {
+      this.logger.warn(
+        { childJobId, childQueueName },
+        `Child job no longer exists`,
+      );
+      throw new Error(`Child job ${childJobId} no longer exists`);
+    }
+
+    const state = await childJob.getState();
+    this.logger.debug({ childJobId, state }, `Child job state`);
+
+    if (state === 'completed') {
+      // Child was fixed! Return its result and update our state
+      this.logger.info({ childJobId }, `Child job completed, recovering result`);
+      const result = await childJob.getResult();
+
+      // Update step state to completed
+      this.job.state.stepState![internalStepId] = {
+        status: 'completed',
+        childJobId,
+        childQueueName,
+        data: result,
+      };
+      await this.persistState();
+
+      return result as T;
+    }
+
+    if (state === 'failed') {
+      // Still failed - get the error from the child job
+      this.logger.debug({ childJobId }, `Child job still failed`);
+      const failedReason = childJob.failedReason || 'Child job failed';
+      throw new Error(failedReason);
+    }
+
+    // Child is running/waiting/delayed - wait for it
+    this.logger.info({ childJobId, state }, `Child job is ${state}, waiting for completion`);
+    const result = await childJob.waitForResult();
+
+    // Update step state to completed
+    this.job.state.stepState![internalStepId] = {
+      status: 'completed',
+      childJobId,
+      childQueueName,
+      data: result,
+    };
+    await this.persistState();
+
+    return result as T;
+  }
+
+  /**
    * Centralized method to execute a step, handling memoization, state persistence, and errors.
    * @param userStepId User-defined ID for the step.
    * @param stepKind A string identifier for the kind of step (e.g., 'do', 'sleep').
@@ -318,6 +387,10 @@ export class StepExecutor<
         );
         throw deserializeError(memoizedResult.error);
       }
+      else if (memoizedResult.status === 'waiting_for_child' && memoizedResult.childJobId) {
+        // Child job recovery - check if the child has been fixed
+        return await this._handleChildJobRecovery<T>(memoizedResult, userStepId, internalStepId);
+      }
       else if (handleMemoizedState) {
         const intermediateOutcome = await handleMemoizedState(memoizedResult, internalStepId);
         if (intermediateOutcome.processed) {
@@ -363,11 +436,25 @@ export class StepExecutor<
         { internalStepId, stepKind, err: error },
         `Core logic for step '${userStepId}' (id: ${internalStepId}) threw an unexpected error.`,
       );
-      this.job.state.stepState![internalStepId] = {
-        status: 'errored',
-        error: serializeError(error),
-      };
-      await this.persistState();
+
+      // Check if we already have a waiting_for_child state - if so, preserve it
+      // The child job reference was stored before waiting, and we'll use it for recovery
+      const existingState = this.job.state.stepState![internalStepId];
+      if (existingState?.status === 'waiting_for_child' && existingState.childJobId) {
+        // Child job reference already stored - no need to persist again
+        // On retry, _handleChildJobRecovery will check the child's actual state
+        this.logger.debug(
+          { internalStepId, childJobId: existingState.childJobId },
+          `Preserving child job reference for recovery`,
+        );
+      }
+      else {
+        this.job.state.stepState![internalStepId] = {
+          status: 'errored',
+          error: serializeError(error),
+        };
+        await this.persistState();
+      }
       throw error;
     }
   }
@@ -511,14 +598,34 @@ export class StepExecutor<
     taskName: StepInnerString,
     payload: TPayload,
     options?: StepTaskJobOptions,
-  ): Promise<TResult> {
+  ): Promise<{ job: TaskJob<TPayload, TResult>; result: TResult }> {
     const taskKey = taskName.toString();
     const task = this.parentTask?.group.tasks[taskKey];
     if (!task) {
       throw new Error(`Task '${taskKey}' not found in this Task group.`);
     }
 
-    return await task.runAndWait(payload, { parent: this.job, ...options });
+    // Start the job first, then wait for result
+    // This allows callers to store the job reference before waiting
+    const job = await task.run(payload, { parent: this.job, ...options }) as TaskJob<TPayload, TResult>;
+    const result = await job.waitForResult() as TResult;
+    return { job, result };
+  }
+
+  /**
+   * Helper to start a group task without waiting - used for recovery scenarios
+   */
+  async _startGroupTask<TPayload, TResult>(
+    taskName: StepInnerString,
+    payload: TPayload,
+    options?: StepTaskJobOptions,
+  ): Promise<TaskJob<TPayload, TResult>> {
+    const taskKey = taskName.toString();
+    const task = this.parentTask?.group.tasks[taskKey];
+    if (!task) {
+      throw new Error(`Task '${taskKey}' not found in this Task group.`);
+    }
+    return await task.run(payload, { parent: this.job, ...options }) as TaskJob<TPayload, TResult>;
   }
 
   async runGroupTaskAndWait<
@@ -533,8 +640,20 @@ export class StepExecutor<
     payload: ActualPayload,
     options?: StepTaskJobOptions,
   ): Promise<Result> {
-    return this._executeStep<Result>(userStepId, 'runGroupTaskAndWait', async (_internalStepId: string) => {
-      return await this._runGroupTaskAndWait<ActualPayload, Result>(taskName, payload, options);
+    return this._executeStep<Result>(userStepId, 'runGroupTaskAndWait', async (internalStepId: string) => {
+      // Start the child job
+      const job = await this._startGroupTask<ActualPayload, Result>(taskName, payload, options);
+
+      // Store child job reference BEFORE waiting - critical for recovery
+      this.job.state.stepState![internalStepId] = {
+        status: 'waiting_for_child',
+        childJobId: job.id,
+        childQueueName: job.queueName,
+      };
+      await this.persistState();
+
+      // Wait for result - if it fails, _executeStep will preserve our state
+      return await job.waitForResult();
     });
   }
 
@@ -550,7 +669,8 @@ export class StepExecutor<
     payload: ActualPayload,
     options?: StepTaskJobOptions,
   ): Promise<Result> {
-    return await this._runGroupTaskAndWait<ActualPayload, Result>(taskName, payload, options);
+    const { result } = await this._runGroupTaskAndWait<ActualPayload, Result>(taskName, payload, options);
+    return result;
   }
 
   async _runTask<
@@ -620,12 +740,15 @@ export class StepExecutor<
     return this._runTask<ActualPayload, TJob>(groupName, taskName, payload, options);
   }
 
-  async _runTaskAndWait<Payload, Result>(
+  /**
+   * Helper to start a cross-group task without waiting - used for recovery scenarios
+   */
+  async _startTask<Payload, Result>(
     groupName: StepInnerString,
     taskName: StepInnerString,
     payload: Payload,
     options?: StepTaskJobOptions,
-  ): Promise<Result> {
+  ): Promise<TaskJob<Payload, Result>> {
     if (!this.parentTask) {
       throw new Error('Cannot run task: parentTask is not available.');
     }
@@ -640,7 +763,21 @@ export class StepExecutor<
     if (!task) {
       throw new Error(`Task '${taskKey}' not found in group '${groupKey}'.`);
     }
-    return (await task.runAndWait(payload, { parent: this.job, ...options })) as Result;
+    return await task.run(payload, { parent: this.job, ...options }) as TaskJob<Payload, Result>;
+  }
+
+  /**
+   * Helper for stateless runTaskAndWait - starts job and waits
+   */
+  async _runTaskAndWait<Payload, Result>(
+    groupName: StepInnerString,
+    taskName: StepInnerString,
+    payload: Payload,
+    options?: StepTaskJobOptions,
+  ): Promise<{ job: TaskJob<Payload, Result>; result: Result }> {
+    const job = await this._startTask<Payload, Result>(groupName, taskName, payload, options);
+    const result = await job.waitForResult() as Result;
+    return { job, result };
   }
 
   async runTaskAndWait<
@@ -658,8 +795,20 @@ export class StepExecutor<
     payload: ActualPayload,
     options?: StepTaskJobOptions,
   ): Promise<Result> {
-    return this._executeStep<Result>(userStepId, 'runTaskAndWait', async (_internalStepId: string) => {
-      return await this._runTaskAndWait<ActualPayload, Result>(groupName, taskName, payload, options);
+    return this._executeStep<Result>(userStepId, 'runTaskAndWait', async (internalStepId: string) => {
+      // Start the child job
+      const job = await this._startTask<ActualPayload, Result>(groupName, taskName, payload, options);
+
+      // Store child job reference BEFORE waiting - critical for recovery
+      this.job.state.stepState![internalStepId] = {
+        status: 'waiting_for_child',
+        childJobId: job.id,
+        childQueueName: job.queueName,
+      };
+      await this.persistState();
+
+      // Wait for result - if it fails, _executeStep will preserve our state
+      return await job.waitForResult();
     });
   }
 
@@ -677,7 +826,8 @@ export class StepExecutor<
     payload: ActualPayload,
     options?: StepTaskJobOptions,
   ): Promise<Result> {
-    return await this._runTaskAndWait<ActualPayload, Result>(groupName, taskName, payload, options);
+    const { result } = await this._runTaskAndWait<ActualPayload, Result>(groupName, taskName, payload, options);
+    return result;
   }
 
   async _runTasks<ActualPayload, TJob>(
