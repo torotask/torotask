@@ -20,7 +20,7 @@ import { TaskJob } from './job.js';
 import { DelayedError, WaitingChildrenError } from './step-errors.js';
 import { getDateTime } from './utils/get-datetime.js';
 import { isControlError } from './utils/is-control-error.js';
-import { deserializeError, serializeError } from './utils/serialize-error.js';
+import { deserializeError } from './utils/serialize-error.js';
 
 export class StepExecutor<
   JobType extends TaskJob = TaskJob,
@@ -381,11 +381,13 @@ export class StepExecutor<
         return result as T;
       }
       else if (memoizedResult.status === 'errored') {
-        this.logger.warn(
+        // Legacy: step previously errored, but we now allow re-execution on retry
+        // (errors are visible in BullMQ dashboard, steps should be idempotent)
+        this.logger.info(
           { internalStepId, error: memoizedResult.error, stepKind },
-          `Step '${userStepId}' (id: ${internalStepId}) previously errored, re-throwing.`,
+          `Step '${userStepId}' (id: ${internalStepId}) previously errored, re-executing.`,
         );
-        throw deserializeError(memoizedResult.error);
+        // Fall through to re-execute the step
       }
       else if (memoizedResult.status === 'waiting_for_child' && memoizedResult.childJobId) {
         // Child job recovery - check if the child has been fixed
@@ -437,24 +439,18 @@ export class StepExecutor<
         `Core logic for step '${userStepId}' (id: ${internalStepId}) threw an unexpected error.`,
       );
 
-      // Check if we already have a waiting_for_child state - if so, preserve it
-      // The child job reference was stored before waiting, and we'll use it for recovery
+      // Check if we have a waiting_for_child state - preserve it for recovery
+      // For other steps, don't store the error - just let it re-execute on retry
+      // (errors are visible in BullMQ dashboard, and steps should be idempotent)
       const existingState = this.job.state.stepState![internalStepId];
       if (existingState?.status === 'waiting_for_child' && existingState.childJobId) {
-        // Child job reference already stored - no need to persist again
-        // On retry, _handleChildJobRecovery will check the child's actual state
         this.logger.debug(
           { internalStepId, childJobId: existingState.childJobId },
           `Preserving child job reference for recovery`,
         );
       }
-      else {
-        this.job.state.stepState![internalStepId] = {
-          status: 'errored',
-          error: serializeError(error),
-        };
-        await this.persistState();
-      }
+      // No error storage - step will re-execute on retry
+
       throw error;
     }
   }
