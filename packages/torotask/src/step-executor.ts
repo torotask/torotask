@@ -870,4 +870,42 @@ export class StepExecutor<
   async sendEventStateless(eventName: string, eventData: any): Promise<void> {
     await this._sendEvent(eventName, eventData);
   }
+
+  /**
+   * Gets the typed result of a completed child task.
+   * Returns undefined if the job hasn't completed yet.
+   *
+   * Use this after `waitForChildTasks()` to retrieve the return value from a job
+   * that was started with `runTask()`.
+   *
+   * @param job The TaskJob returned from runTask()
+   * @returns The typed return value, or undefined if the job hasn't completed
+   *
+   * @example
+   * ```ts
+   * const childJob = await step.runTask('start-child', 'groupName', 'taskName', payload);
+   * await step.waitForChildTasks('wait-for-children');
+   * const result = await step.getTaskResult(childJob); // string | undefined
+   * ```
+   */
+  async getTaskResult<TResult>(job: TaskJob<any, TResult>): Promise<TResult | undefined> {
+    return job.getResult();
+  }
+
+  /**
+   * Waits for a child task to complete and returns its typed result.
+   * Use this when you want to wait for a specific child task without using `waitForChildTasks()`.
+   *
+   * @param job The TaskJob returned from runTask()
+   * @returns The typed return value
+   *
+   * @example
+   * ```ts
+   * const childJob = await step.runTask('start-child', 'groupName', 'taskName', payload);
+   * const result = await step.waitForTaskResult(childJob); // Waits and returns string
+   * ```
+   */
+  async waitForTaskResult<TResult>(job: TaskJob<any, TResult>): Promise<TResult> {
+    return job.waitForResult();
+  }
 }
