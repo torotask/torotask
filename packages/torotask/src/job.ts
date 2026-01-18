@@ -1,4 +1,4 @@
-import type { JobsOptions, MinimalQueue } from 'bullmq';
+import type { JobsOptions, MinimalQueue, QueueEvents } from 'bullmq';
 import type { Logger } from 'pino';
 import type { ToroTask } from './client.js';
 import type { TaskJobData, TaskJobOptions, TaskJobState } from './types/index.js';
@@ -317,5 +317,83 @@ export class TaskJob<
     });
 
     await Promise.allSettled(promises);
+  }
+
+  /**
+   * Waits for this job to complete and returns its typed result.
+   * This is useful when you have started a child task with `step.runTask()` and want
+   * to later retrieve its result after `step.waitForChildTasks()`.
+   *
+   * @param queueEvents - Optional QueueEvents instance. If not provided, uses the one from taskQueue.
+   * @returns The typed return value of the job.
+   * @throws Error if the job fails or no QueueEvents is available.
+   *
+   * @example
+   * ```ts
+   * const childJob = await step.runTask('step-id', 'groupName', 'taskName', payload);
+   * await step.waitForChildTasks('wait-for-children');
+   * const result = await childJob.waitForResult(); // Typed result
+   * ```
+   */
+  async waitForResult(queueEvents?: QueueEvents): Promise<ReturnType> {
+    // Try to find QueueEvents
+    const events = queueEvents ?? (this.taskQueue as any)?.queueEvents;
+
+    if (!events) {
+      throw new Error(
+        'QueueEvents instance not available. Pass it explicitly or ensure taskQueue has queueEvents.',
+      );
+    }
+
+    if (!this.id) {
+      throw new Error('Job ID is missing. Cannot wait for result.');
+    }
+
+    this.logger?.debug({ jobId: this.id }, 'Waiting for job to finish...');
+
+    // Wait for the job to finish
+    await this.waitUntilFinished(events);
+
+    // Refetch the job to get the updated return value
+    const finishedJob = await TaskJob.fromId<DataType, ReturnType>(
+      this.queue as any,
+      this.id,
+    );
+
+    if (!finishedJob) {
+      throw new Error(`Failed to refetch job ${this.id} after completion.`);
+    }
+
+    this.logger?.debug(
+      { jobId: this.id, returnValue: finishedJob.returnvalue },
+      'Job completed, returning result',
+    );
+
+    return finishedJob.returnvalue;
+  }
+
+  /**
+   * Gets the result of a completed job without waiting.
+   * Returns undefined if the job hasn't completed yet.
+   *
+   * @returns The return value if completed, undefined otherwise.
+   */
+  async getResult(): Promise<ReturnType | undefined> {
+    if (!this.id) {
+      return undefined;
+    }
+
+    const state = await this.getState();
+    if (state !== 'completed') {
+      return undefined;
+    }
+
+    // Refetch to ensure we have the latest return value
+    const job = await TaskJob.fromId<DataType, ReturnType>(
+      this.queue as any,
+      this.id,
+    );
+
+    return job?.returnvalue;
   }
 }

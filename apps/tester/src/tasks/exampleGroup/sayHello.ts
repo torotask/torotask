@@ -94,7 +94,6 @@ export const helloTask = defineTask({
     await step.runTasks('test-run', 'differentGroup', 'realTask', [
       {
         payload: {
-          firstname: 'John',
           lastname: 'Doe',
         },
       },

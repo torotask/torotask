@@ -134,3 +134,17 @@ export type TaskRegistry<TDefs extends TaskDefinitionRegistry> = {
     ? Task<P, R, S> // ...the output type is Task<P, R>
     : never; // Should not happen if TDefs is correctly constrained
 };
+
+/**
+ * Extract payload type from a TaskDefinition
+ */
+export type TaskPayloadFromDef<TDef> = TDef extends TaskDefinition<infer P, any, infer S>
+  ? EffectivePayloadType<P, ResolvedSchemaType<S>>
+  : unknown;
+
+/**
+ * Extract result type from a TaskDefinition
+ */
+export type TaskResultFromDef<TDef> = TDef extends TaskDefinition<any, infer R, any>
+  ? R
+  : unknown;

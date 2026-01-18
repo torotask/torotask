@@ -48,3 +48,13 @@ export type IsString<T, Y, N> = T extends string ? Y : N;
 export type Prettify<T> = {
   [K in keyof T]: T[K];
 } & unknown;
+
+/**
+ * Enforces that T has no properties beyond those in Expected.
+ * Use this in generic constraints to get compile-time errors for excess properties.
+ *
+ * Usage: `<T extends NoExcessProperties<T, Expected>>`
+ */
+export type NoExcessProperties<T, Expected> = T & {
+  [K in Exclude<keyof T, keyof Expected>]: never;
+};

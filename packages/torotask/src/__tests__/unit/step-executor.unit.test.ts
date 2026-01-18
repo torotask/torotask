@@ -12,7 +12,7 @@ jest.mock('ioredis');
 jest.mock('bullmq');
 
 describe('stepExecutor - Unit Tests', () => {
-  let stepExecutor: StepExecutor<any, any, any, any>;
+  let stepExecutor: StepExecutor<any, any, any>;
   let mockJob: any;
   let mockParentTask: any;
 
