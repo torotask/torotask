@@ -1,9 +1,10 @@
-import type { Job, JobsOptions, QueueOptions } from 'bullmq';
+import type { Job, QueueOptions } from 'bullmq';
 import type { Logger } from 'pino';
 import type { ToroTask } from './client.js';
 import type { BulkJob, TaskJobData, TaskJobOptions, TaskJobState, TaskQueueOptions } from './types/index.js';
 import { Queue } from 'bullmq'; // Import JobsOptions
 import { TaskJob } from './job.js';
+import { convertJobOptions } from './utils/convert-job-options.js';
 
 export class TaskQueue<
   PayloadType = any,
@@ -76,7 +77,9 @@ export class TaskQueue<
       payload,
       state,
     };
-    const job = await super.add(name, data, options as JobsOptions); // Cast options to JobsOptions
+    // Convert options with payload to resolve idFromPayload callbacks
+    const convertedOptions = convertJobOptions(options, payload);
+    const job = await super.add(name, data, convertedOptions);
     // Cast the result from the base Job to the specific TaskJob
     return job as TaskJob<PayloadType, ResultType, NameType>;
   }
@@ -99,9 +102,11 @@ export class TaskQueue<
       if (job.state) {
         data.state = job.state;
       }
+      // Convert options with payload to resolve idFromPayload callbacks
+      const convertedOptions = convertJobOptions(job.options, data.payload);
       return {
         name: job.name,
-        opts: job.options,
+        opts: convertedOptions,
         data,
       };
     });
