@@ -1,5 +1,11 @@
 # torotask
 
+## 0.15.1
+
+### Patch Changes
+
+- Fix `idFromPayload` deduplication callback not being invoked when running tasks. The `TaskQueue.add()` and `TaskQueue.addBulk()` methods now correctly call `convertJobOptions()` with the payload to resolve the callback before passing options to BullMQ. ([#31](https://github.com/torotask/torotask/pull/31)) ([`c5e1e69`](https://github.com/torotask/torotask/commit/c5e1e695275a98a7b21f1ca72c8e19ccfbb57bac))
+
 ## 0.15.0
 
 ### Minor Changes
