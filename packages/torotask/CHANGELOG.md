@@ -1,5 +1,11 @@
 # torotask
 
+## 0.16.0
+
+### Minor Changes
+
+- Add default options for Tasks, and Event related queues. ([#33](https://github.com/torotask/torotask/pull/33)) ([`45cdfdb`](https://github.com/torotask/torotask/commit/45cdfdb49eb60f0cbd084d2d68f6b4b378a13950))
+
 ## 0.15.1
 
 ### Patch Changes
