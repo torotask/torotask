@@ -1,6 +1,7 @@
 import type { ConnectionOptions as BullMQConnectionOptions } from 'bullmq';
 import type { Redis } from 'ioredis';
 import type { Logger } from 'pino';
+import type { EventDispatcherOptions } from '../event-dispatcher.js';
 
 /** BullMQ Client Options using intersection */
 export type ToroTaskOptions = Partial<BullMQConnectionOptions> & {
@@ -54,6 +55,12 @@ export type ToroTaskOptions = Partial<BullMQConnectionOptions> & {
    * @default false
    */
   enableQueueDiscovery?: boolean;
+
+  /**
+   * Options for configuring the EventDispatcher and EventManager.
+   * Controls job options and worker settings for event queues.
+   */
+  eventOptions?: EventDispatcherOptions;
 };
 
 /**

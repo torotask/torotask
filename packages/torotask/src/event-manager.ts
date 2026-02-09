@@ -1,8 +1,8 @@
-import type { WorkerOptions } from 'bullmq';
+import type { JobsOptions, WorkerOptions } from 'bullmq';
 import type { Logger } from 'pino';
 import type { ToroTask } from './client.js';
 import type { TaskJob } from './job.js';
-import type { EventSubscriptionInfo, SyncJobPayload, SyncJobReturn, TaskJobOptions } from './types/index.js';
+import type { EventQueueOptions, EventSubscriptionInfo, SyncJobPayload, SyncJobReturn, TaskJobOptions } from './types/index.js';
 import { EventSubscriptions } from './event-subscriptions.js';
 import { TaskWorkerQueue } from './worker-queue.js';
 
@@ -19,6 +19,10 @@ export class EventManager extends TaskWorkerQueue<PayloadType, ReturnType> {
   // Store reference to the repository for persistence operations
   public readonly subscriptions: EventSubscriptions;
   public readonly prefix: string;
+  /** Default job options for sync jobs */
+  public readonly eventDefaultJobOptions: Partial<JobsOptions>;
+  /** Worker options for this queue */
+  public readonly eventWorkerOptions: Partial<WorkerOptions>;
 
   // Update constructor signature to accept ToroTask
   constructor(
@@ -27,14 +31,23 @@ export class EventManager extends TaskWorkerQueue<PayloadType, ReturnType> {
     name: string = SYNC_QUEUE_NAME,
     prefix?: string,
     subscriptions?: EventSubscriptions, // Allow injecting subscriptions
+    eventQueueOptions?: EventQueueOptions, // New: accept event queue options
   ) {
     const logger = parentLogger.child({ service: 'EventManager', queue: name });
     prefix = prefix || taskClient.queuePrefix;
-    super(taskClient, name, { logger, prefix });
+    // Merge queueOptions into the super constructor options
+    super(taskClient, name, {
+      logger,
+      prefix,
+      ...eventQueueOptions?.queueOptions,
+    });
 
     this.prefix = prefix;
     // Instantiate repository if not provided, passing Redis client and prefix from ToroTask
     this.subscriptions = subscriptions || new EventSubscriptions(taskClient.redis, prefix, logger);
+    // Store default job options and worker options
+    this.eventDefaultJobOptions = eventQueueOptions?.defaultJobOptions ?? {};
+    this.eventWorkerOptions = eventQueueOptions?.workerOptions ?? {};
   }
 
   /**
@@ -43,6 +56,7 @@ export class EventManager extends TaskWorkerQueue<PayloadType, ReturnType> {
   getWorkerOptions(): Partial<WorkerOptions> {
     return {
       concurrency: 1, // Ensure only one sync job runs at a time globally
+      ...this.eventWorkerOptions,
     };
   }
 
@@ -71,10 +85,11 @@ export class EventManager extends TaskWorkerQueue<PayloadType, ReturnType> {
       `Requesting event trigger sync job.`,
     );
 
-    // Add job, preventing duplicates if one is already active or waiting
+    // Add job, merging defaultJobOptions with per-job options
     const job = await this.add(this.name, payload, {
       removeOnComplete: 500,
       removeOnFail: 100,
+      ...this.eventDefaultJobOptions,
       ...(options ?? {}),
     });
 
