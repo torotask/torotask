@@ -1,9 +1,9 @@
-import type { WorkerOptions } from 'bullmq'; // Added missing imports
+import type { JobsOptions, WorkerOptions } from 'bullmq';
 import type { Logger } from 'pino';
 import type { ToroTask } from './client.js'; // Assuming client path
 import type { TaskJob } from './job.js';
 import type { Task } from './task.js'; // Assuming task path
-import type { EventSubscriptionInfo, SyncJobReturn, TaskJobOptions } from './types/index.js';
+import type { EventQueueOptions, EventSubscriptionInfo, SyncJobReturn, TaskJobOptions } from './types/index.js';
 import { EventManager } from './event-manager.js';
 import { TaskWorkerQueue } from './worker-queue.js';
 
@@ -15,6 +15,16 @@ type PayloadType = any;
 type ReturnType = any;
 
 /**
+ * Options for configuring the EventDispatcher
+ */
+export interface EventDispatcherOptions {
+  /** Options for the dispatcher queue itself */
+  dispatcherOptions?: EventQueueOptions;
+  /** Options passed to the underlying EventManager */
+  managerOptions?: EventQueueOptions;
+}
+
+/**
  * Manages the registration and dispatching of events to subscribed Tasks.
  * It uses its own BullMQ queue to process published events.
  * Maintains a local cache (`activeEvents`) of events presumed to have subscribers.
@@ -24,13 +34,36 @@ export class EventDispatcher extends TaskWorkerQueue<PayloadType, ReturnType> {
   public activeEvents: Set<string> = new Set(); // Use Set for efficient lookups
   public subscribedToActiveEvents = false; // Track if we are subscribed to active events
   public disableSubscription = false; // Flag to disable subscription to active events
+  /** Default job options for dispatch jobs */
+  public readonly eventDefaultJobOptions: Partial<JobsOptions>;
+  /** Worker options for this queue */
+  public readonly eventWorkerOptions: Partial<WorkerOptions>;
   private setActiveEventsDebounced: () => void;
   private setActiveEventsTimeout: NodeJS.Timeout | null = null;
 
-  constructor(taskClient: ToroTask, parentLogger: Logger, name: string = DEFAULT_EVENT_QUEUE_NAME) {
+  constructor(
+    taskClient: ToroTask,
+    parentLogger: Logger,
+    name: string = DEFAULT_EVENT_QUEUE_NAME,
+    eventOptions?: EventDispatcherOptions,
+  ) {
     const logger = parentLogger.child({ service: 'EventDispatcher', queue: name });
-    super(taskClient, name, { logger });
-    this.manager = new EventManager(taskClient, parentLogger);
+    // Merge queueOptions into the super constructor options
+    super(taskClient, name, {
+      logger,
+      ...eventOptions?.dispatcherOptions?.queueOptions,
+    });
+    this.manager = new EventManager(
+      taskClient,
+      parentLogger,
+      undefined,
+      undefined,
+      undefined,
+      eventOptions?.managerOptions,
+    );
+    // Store default job options and worker options from dispatcherOptions
+    this.eventDefaultJobOptions = eventOptions?.dispatcherOptions?.defaultJobOptions ?? {};
+    this.eventWorkerOptions = eventOptions?.dispatcherOptions?.workerOptions ?? {};
 
     // Simple debounce implementation
     this.setActiveEventsDebounced = () => {
@@ -74,6 +107,16 @@ export class EventDispatcher extends TaskWorkerQueue<PayloadType, ReturnType> {
     });
 
     this.subscribedToActiveEvents = true;
+  }
+
+  /**
+   * Returns worker options, merging any provided eventWorkerOptions
+   */
+  getWorkerOptions(): Partial<WorkerOptions> {
+    return {
+      ...super.getWorkerOptions(),
+      ...this.eventWorkerOptions,
+    };
   }
 
   /**
@@ -184,8 +227,11 @@ export class EventDispatcher extends TaskWorkerQueue<PayloadType, ReturnType> {
       { eventName: jobName, hasData: data !== undefined },
       'Publishing event (subscribers likely exist in cache)',
     );
-    // Use the queue inherited from BaseQueue to add the job
-    return this.add(jobName, data, options);
+    // Use the queue inherited from BaseQueue to add the job, merging defaultJobOptions
+    return this.add(jobName, data, {
+      ...this.eventDefaultJobOptions,
+      ...options,
+    });
   }
 
   /**

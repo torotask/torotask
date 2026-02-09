@@ -1,6 +1,7 @@
 import type { ConnectionOptions, Job } from 'bullmq';
 import type { RedisOptions } from 'ioredis';
 import type { Logger } from 'pino';
+import type { EventDispatcherOptions } from './event-dispatcher.js';
 import type { TaskJob } from './job.js';
 import type { Task } from './task.js';
 import type {
@@ -52,6 +53,7 @@ export class ToroTask<
   public readonly taskGroups: TGroups;
   private readonly _isTyped: boolean;
   private readonly _allowNonExistingQueues: boolean;
+  private readonly _eventOptions?: EventDispatcherOptions;
 
   // Redis connection reusing properties
   private readonly _reuseConnections: boolean;
@@ -77,6 +79,7 @@ export class ToroTask<
       allowNonExistingQueues,
       reuseConnections,
       enableQueueDiscovery,
+      eventOptions,
       ...connectionOpts
     } = options || {};
 
@@ -99,6 +102,7 @@ export class ToroTask<
     this._isTyped = !!taskGroupDefs;
     this._allowNonExistingQueues = allowNonExistingQueues ?? false;
     this._reuseConnections = reuseConnections ?? false;
+    this._eventOptions = eventOptions;
 
     // Initialize task groups from definitions if provided
     if (taskGroupDefs) {
@@ -157,7 +161,7 @@ export class ToroTask<
     if (!this._eventDispatcher) {
       this.logger.debug('Initializing EventDispatcher...');
       // Pass 'this' (the client instance) and its logger
-      this._eventDispatcher = new EventDispatcher(this, this.logger);
+      this._eventDispatcher = new EventDispatcher(this, this.logger, undefined, this._eventOptions);
       this.logger.debug('EventDispatcher initialized successfully.');
     }
     return this._eventDispatcher;
