@@ -27,16 +27,14 @@ export const batchTask = defineTask({
   handler: async (_options, context) => {
     const { job, logger } = context;
 
-    const messages: string[] = [];
-
     if (job.isBatch) {
       for (const item of job.getBatch()) {
         const itemPayload = item.payload;
         logger.debug(`Job ID: ${item.id}`);
         logger.debug(`Handler batch received job data: ${JSON.stringify(itemPayload)}`);
-        const message = `Hello, ${itemPayload.name}!`; // No more 'as any'
+        const message = `Hello, ${itemPayload.name}!`;
         logger.debug(`Processed batch message: ${message}`);
-        messages.push(message);
+        item.setResult(message); // Persisted to Redis when the batch completes
       }
     }
 
