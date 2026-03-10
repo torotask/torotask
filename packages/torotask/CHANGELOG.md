@@ -1,5 +1,11 @@
 # torotask
 
+## 0.16.1
+
+### Patch Changes
+
+- feat: add support for setting batch job result and completing early ([#35](https://github.com/torotask/torotask/pull/35)) ([`14a55da`](https://github.com/torotask/torotask/commit/14a55da23ac69bfbd501d9834fbdaaa869b363d6))
+
 ## 0.16.0
 
 ### Minor Changes
