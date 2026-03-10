@@ -141,7 +141,7 @@ export class TaskWorker<
    * The processor function used by BullMQ Worker when batching is enabled.
    * Collects jobs into a batch and triggers processing.
    */
-  private async batchJobCollector(job: JobType, _token?: string): Promise<void> {
+  private async batchJobCollector(job: JobType, _token?: string): Promise<ResultType> {
     const jobLogger = this.logger.child({ jobId: job.id, jobName: job.name });
     jobLogger.info(`Received job ${job.id}. Adding to current batch.`);
 
@@ -167,8 +167,6 @@ export class TaskWorker<
     if (this.batchLock) {
       jobLogger.warn(`Batch lock still held after ${waitAttempts} attempts. Proceeding with caution.`);
     }
-
-    // if (this.options.)
 
     this.jobBatch.push(job);
     try {
@@ -212,6 +210,7 @@ export class TaskWorker<
     try {
       await currentBatchPromise;
       jobLogger.info(`Batch containing job ${job.id} completed successfully.`);
+      return job.returnvalue;
     }
     catch (batchError) {
       jobLogger.warn({ err: batchError }, `Batch containing job ${job.id} failed.`);

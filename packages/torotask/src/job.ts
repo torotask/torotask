@@ -20,6 +20,11 @@ export class TaskJob<
    * The array of real TaskJob instances that constitute a batch.
    */
   private batch: (typeof this)[];
+  /**
+   * Whether this job has already been completed early within a batch.
+   * When true, the moveToCompleted override will no-op to prevent double-completion.
+   */
+  private _batchCompleted = false;
   public payload: PayloadType;
   public state: StateType;
   /*
@@ -140,6 +145,71 @@ export class TaskJob<
       await this.log(`[UNRECOVERABLE] ${message}`);
     }
     throw new UnrecoverableError(message);
+  }
+
+  /**
+   * Sets the return value for this job in memory.
+   * When used inside a batch handler, this value will be persisted to Redis
+   * when the batch completes and BullMQ's normal completion flow runs.
+   *
+   * For immediate persistence, use {@link complete} instead.
+   *
+   * @param value - The return value to set.
+   */
+  setResult(value: ReturnType): void {
+    this.returnvalue = value;
+  }
+
+  /**
+   * Completes this individual job immediately, persisting the return value to Redis.
+   * The job will be skipped during the batch's final completion step to avoid double-completion.
+   *
+   * Use this when you want to complete a job early within a batch loop,
+   * for example when a job can be resolved without waiting for the entire batch to finish.
+   *
+   * @param value - The return value to persist.
+   * @throws Error if the job is missing its lock token.
+   *
+   * @example
+   * ```ts
+   * for (const item of job.getBatch()) {
+   *   const result = await processItem(item.payload);
+   *   await item.complete(result); // Persisted to Redis immediately
+   * }
+   * ```
+   */
+  async complete(value: ReturnType): Promise<void> {
+    if (!this.token) {
+      throw new Error(`Job ${this.id} missing token for completion.`);
+    }
+    this._batchCompleted = true;
+    await super.moveToCompleted(value, this.token, false);
+  }
+
+  /**
+   * Whether this job has already been completed early within a batch.
+   */
+  get isBatchCompleted(): boolean {
+    return this._batchCompleted;
+  }
+
+  /**
+   * Override moveToCompleted to prevent double-completion of batch jobs.
+   * When a job has been completed early via {@link complete}, this returns
+   * an empty array (no-op) instead of calling the parent implementation.
+   *
+   * BullMQ's Worker calls this after the processor returns. Returning `[]`
+   * tells the Worker there is no next job to fetch from this call.
+   */
+  async moveToCompleted(
+    returnValue: ReturnType,
+    token: string,
+    fetchNext?: boolean,
+  ): Promise<any> {
+    if (this._batchCompleted) {
+      return [];
+    }
+    return super.moveToCompleted(returnValue, token, fetchNext);
   }
 
   /**
