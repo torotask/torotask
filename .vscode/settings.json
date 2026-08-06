@@ -47,5 +47,8 @@
     "scss",
     "pcss",
     "postcss"
-  ]
+  ],
+  "debug.javascript.defaultRuntimeExecutable": {
+    "pwa-node": "${workspaceFolder}/.vscode/mise-tools/node"
+  }
 }
