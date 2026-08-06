@@ -3,7 +3,6 @@
     "composite": true,
     "target": "ES2022",
     "lib": ["ES2022"],
-    "baseUrl": ".",
     "module": "NodeNext",
     "moduleResolution": "NodeNext",
     "types": ["node"],
