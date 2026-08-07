@@ -21,6 +21,16 @@ async function main() {
   const client = new ToroTask({
     logger,
     enableQueueDiscovery: true,
+    stepStateStore: {
+      namespace: 'state',
+    },
+    dataStore: {
+      enabled: true,
+      mode: 'large',
+      thresholdBytes: 2 * 1024,
+      compress: 'auto',
+      namespace: 'data',
+    },
   });
 
   const serverAdapter = new ExpressAdapter();

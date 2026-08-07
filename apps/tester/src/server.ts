@@ -21,6 +21,16 @@ export const logger = pino({
 export const server = new TaskServer(
   {
     logger,
+    stepStateStore: {
+      namespace: 'state',
+    },
+    dataStore: {
+      enabled: true,
+      mode: 'large',
+      thresholdBytes: 2 * 1024,
+      compress: 'auto',
+      namespace: 'data',
+    },
   },
   taskGroups,
 );
