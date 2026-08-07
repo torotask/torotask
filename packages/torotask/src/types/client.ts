@@ -61,6 +61,15 @@ export type ToroTaskOptions = Partial<BullMQConnectionOptions> & {
    * Controls job options and worker settings for event queues.
    */
   eventOptions?: EventDispatcherOptions;
+
+  /**
+   * Optional orphan TTL (seconds) for step-state hashes when a worker crashes mid-job.
+   * When unset, keys persist until the job record is removed from BullMQ.
+   * Sleeping steps always extend expiry to their wake time plus a one-day buffer.
+   *
+   * @default undefined (no orphan TTL)
+   */
+  stepStateTTL?: number;
 };
 
 /**

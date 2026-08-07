@@ -22,6 +22,7 @@ import { pino } from 'pino';
 import { LRU } from 'tiny-lru';
 import { EventDispatcher } from './event-dispatcher.js';
 import { TaskQueue } from './queue.js';
+import { RedisStepStateStore } from './redis-step-state-store.js';
 import { TaskGroup } from './task-group.js';
 import { getConfigFromEnv } from './utils/get-config-from-env.js';
 import { TaskWorkflow } from './workflow.js';
@@ -65,6 +66,8 @@ export class ToroTask<
   private _queueDiscoverySubscriber: Redis | null = null;
   private _isQueueDiscoveryActive: boolean = false;
   private _knownQueues: Set<string> = new Set();
+  private _stepStateStore: RedisStepStateStore | null = null;
+  private readonly _stepStateTTL?: number;
 
   constructor(options?: ToroTaskOptions, taskGroupDefs?: TAllTaskGroupsDefs) {
     super(); // Call EventEmitter constructor
@@ -80,6 +83,7 @@ export class ToroTask<
       reuseConnections,
       enableQueueDiscovery,
       eventOptions,
+      stepStateTTL,
       ...connectionOpts
     } = options || {};
 
@@ -103,6 +107,7 @@ export class ToroTask<
     this._allowNonExistingQueues = allowNonExistingQueues ?? false;
     this._reuseConnections = reuseConnections ?? false;
     this._eventOptions = eventOptions;
+    this._stepStateTTL = stepStateTTL;
 
     // Initialize task groups from definitions if provided
     if (taskGroupDefs) {
@@ -185,6 +190,20 @@ export class ToroTask<
    */
   public getConnectionOptions(): ConnectionOptions {
     return this.connectionOptions;
+  }
+
+  /**
+   * Redis-backed store for per-step job state (Track A: outside BullMQ job.data).
+   */
+  public getStepStateStore(): RedisStepStateStore {
+    if (!this._stepStateStore) {
+      this._stepStateStore = new RedisStepStateStore(
+        this.redis,
+        this.prefix,
+        this._stepStateTTL,
+      );
+    }
+    return this._stepStateStore;
   }
 
   /**

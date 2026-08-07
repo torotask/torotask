@@ -37,6 +37,31 @@ export class TaskQueue<
 
     super(name, options as QueueOptions);
     this.logger = options.logger || taskClient.logger.child({ taskQueue: name });
+    this.setupStepStateCleanupListeners();
+  }
+
+  /**
+   * Clears external step-state when BullMQ removes jobs (manual delete, queue.remove, clean).
+   */
+  private setupStepStateCleanupListeners(): void {
+    const clearForJobId = (jobId: string) => {
+      this.taskClient.getStepStateStore().clear(this.name, jobId).catch((err) => {
+        this.logger.warn({ err, jobId }, 'Failed to clear step state after job removal');
+      });
+    };
+
+    this.on('removed', (jobOrId: string | Job) => {
+      const jobId = typeof jobOrId === 'string' ? jobOrId : jobOrId.id;
+      if (jobId) {
+        clearForJobId(jobId);
+      }
+    });
+
+    this.on('cleaned', (jobIds: string[]) => {
+      for (const jobId of jobIds) {
+        clearForJobId(jobId);
+      }
+    });
   }
 
   /**

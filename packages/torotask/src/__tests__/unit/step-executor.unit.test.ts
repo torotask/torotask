@@ -51,6 +51,20 @@ describe('stepExecutor - Unit Tests', () => {
       expect(mockHandler).toHaveBeenCalledTimes(1);
     });
 
+    it('should persist step state via saveStepState', async () => {
+      const mockHandler = jest.fn().mockResolvedValue('test-result');
+
+      await stepExecutor.do('test-step', mockHandler);
+
+      expect(mockJob.saveStepState).toHaveBeenCalledWith(
+        'test-step_0',
+        expect.objectContaining({
+          status: 'completed',
+          data: 'test-result',
+        }),
+      );
+    });
+
     it('should handle errors in step handler', async () => {
       const mockHandler = jest.fn().mockRejectedValue(new Error('Test error'));
 

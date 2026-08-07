@@ -50,11 +50,11 @@ export class StepExecutor<
     this.job.state.stepState = this.job.state.stepState || {};
   }
 
-  private async persistState(): Promise<void> {
-    const stateToUpdate: Partial<TaskJobState> = {
-      stepState: this.job.state.stepState,
-    };
-    await this.job.updateState(stateToUpdate);
+  private async persistStepState(internalStepId: string): Promise<void> {
+    const stepResult = this.job.state.stepState?.[internalStepId];
+    if (stepResult !== undefined) {
+      await this.job.saveStepState(internalStepId, stepResult);
+    }
   }
 
   /**
@@ -305,7 +305,7 @@ export class StepExecutor<
         childQueueName,
         data: result,
       };
-      await this.persistState();
+      await this.persistStepState(internalStepId);
 
       return result as T;
     }
@@ -328,7 +328,7 @@ export class StepExecutor<
       childQueueName,
       data: result,
     };
-    await this.persistState();
+    await this.persistStepState(internalStepId);
 
     return result as T;
   }
@@ -340,7 +340,7 @@ export class StepExecutor<
    * @param coreLogic The async function that performs the actual work of the step.
    *                  If it initiates a pending state (e.g., sleep, wait), it should:
    *                  1. Update \`this.job.state.stepState\` with the new status (e.g., 'sleeping').
-   *                  2. Call \`await this.persistState()\`.
+   *                  2. Call \`await this.persistStepState(internalStepId)\`.
    *                  3. Throw a \`WorkflowPendingError\` (e.g., \`DelayedError\`).
    *                  If it completes successfully, it returns the result.
    *                  If it fails with an unexpected error, it throws that error.
@@ -428,7 +428,7 @@ export class StepExecutor<
         status: 'completed',
         data: processedResult,
       };
-      await this.persistState();
+      await this.persistStepState(internalStepId);
       return result;
     }
     catch (error: any) {
@@ -474,7 +474,7 @@ export class StepExecutor<
           status: 'sleeping',
           sleepUntil: newSleepUntil,
         };
-        await this.persistState();
+        await this.persistStepState(internalStepId);
         await this.job.moveToDelayed(newSleepUntil, this.job.token);
         throw new DelayedError(`Step "${internalStepId}" is sleeping.`);
       },
@@ -483,7 +483,7 @@ export class StepExecutor<
           const sleepUntil = memoizedResult.sleepUntil!;
           if (Date.now() >= sleepUntil) {
             this.job.state.stepState![internalStepId] = { status: 'completed' };
-            await this.persistState();
+            await this.persistStepState(internalStepId);
             return { processed: true, result: undefined };
           }
           else {
@@ -516,11 +516,11 @@ export class StepExecutor<
             `Timestamp for sleepUntil step '${userStepId}' (id: ${internalStepId}) is in the past. Completing immediately.`,
           );
           this.job.state.stepState![internalStepId] = { status: 'completed' };
-          await this.persistState();
+          await this.persistStepState(internalStepId);
           return;
         }
         this.job.state.stepState![internalStepId] = { status: 'sleeping', sleepUntil: timestampMs };
-        await this.persistState();
+        await this.persistStepState(internalStepId);
         await this.job.moveToDelayed(timestampMs, this.job.token);
         throw new DelayedError(`Step "${internalStepId}" is sleeping until specific time.`);
       },
@@ -529,7 +529,7 @@ export class StepExecutor<
           const sleepUntilTime = memoizedResult.sleepUntil!;
           if (Date.now() >= sleepUntilTime) {
             this.job.state.stepState![internalStepId] = { status: 'completed' };
-            await this.persistState();
+            await this.persistStepState(internalStepId);
             return { processed: true, result: undefined };
           }
           else {
@@ -641,7 +641,7 @@ export class StepExecutor<
         childJobId: job.id,
         childQueueName: job.queueName,
       };
-      await this.persistState();
+      await this.persistStepState(internalStepId);
 
       // Wait for result - if it fails, _executeStep will preserve our state
       return await job.waitForResult();
@@ -784,7 +784,7 @@ export class StepExecutor<
         childJobId: job.id,
         childQueueName: job.queueName,
       };
-      await this.persistState();
+      await this.persistStepState(internalStepId);
 
       // Wait for result - if it fails, _executeStep will preserve our state
       return await job.waitForResult();
@@ -924,7 +924,7 @@ export class StepExecutor<
           `waitForChildTasks called for step '${userStepId}' (id: ${internalStepId}).`,
         );
         this.job.state.stepState![internalStepId] = { status: 'waiting_for_children' };
-        await this.persistState();
+        await this.persistStepState(internalStepId);
         const token = this.job.token || '';
         const shouldWait = await this.job.moveToWaitingChildren(token);
         if (shouldWait) {
@@ -968,7 +968,7 @@ export class StepExecutor<
               `Children for step '${userStepId}' (id: ${internalStepId}) are now complete. Marking step as completed.`,
             );
             this.job.state.stepState![internalStepId] = { status: 'completed', data: [] };
-            await this.persistState();
+            await this.persistStepState(internalStepId);
             return { processed: true, result: [] };
           }
         }

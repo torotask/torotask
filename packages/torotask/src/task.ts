@@ -236,6 +236,8 @@ export class Task<
 
     const validatedPayload = await this.validateJob(job, effectiveJobLogger);
 
+    await job.hydrateStepState();
+
     const handlerOptions: TaskHandlerOptions<
       EffectivePayloadType<PayloadExplicit, ResolvedSchemaType<SchemaInputVal>>
     > = {

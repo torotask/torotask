@@ -2,6 +2,7 @@ import type { JobsOptions, MinimalQueue, QueueEvents } from 'bullmq';
 import type { Logger } from 'pino';
 import type { ToroTask } from './client.js';
 import type { TaskJobData, TaskJobOptions, TaskJobState } from './types/index.js';
+import type { StepResult } from './types/step.js';
 import { Job, UnrecoverableError } from 'bullmq';
 import { TaskQueue } from './queue.js';
 import { convertJobOptions } from './utils/convert-job-options.js';
@@ -25,6 +26,7 @@ export class TaskJob<
    * When true, the moveToCompleted override will no-op to prevent double-completion.
    */
   private _batchCompleted = false;
+  private _stepStateHydrated = false;
   public payload: PayloadType;
   public state: StateType;
   /*
@@ -62,13 +64,157 @@ export class TaskJob<
     this.payload = this.data.payload as PayloadType;
     this.state = this.data.state as StateType;
 
-    // Check if the queue is an instance of TaskQueue
     if (queue instanceof TaskQueue) {
       this.taskQueue = queue;
       this.logger = queue.logger.child({ taskRun: this.name, taskId: this.id });
       this.taskClient = queue.taskClient;
     }
+    else {
+      // BullMQ workers pass the Worker instance as the queue when hydrating jobs.
+      const workerLike = queue as { taskClient?: ToroTask; logger?: Logger };
+      if (workerLike.taskClient) {
+        this.taskClient = workerLike.taskClient;
+        this.logger = workerLike.logger?.child({ taskRun: this.name, taskId: this.id });
+      }
+    }
     this.batch = [];
+  }
+
+  /**
+   * State fields persisted inside BullMQ job.data (stepState is kept in Redis separately).
+   */
+  private getStateAsTaskJobState(): TaskJobState {
+    return this.state as TaskJobState;
+  }
+
+  private stateForPersistence(): Omit<StateType, 'stepState'> {
+    const { stepState: _stepState, ...persisted } = this.getStateAsTaskJobState();
+    return persisted as Omit<StateType, 'stepState'>;
+  }
+
+  /**
+   * Loads step state from Redis (or migrates legacy inline stepState from job.data).
+   * Call before StepExecutor runs so memoized steps are available on resume/retry.
+   */
+  async hydrateStepState(): Promise<void> {
+    if (this._stepStateHydrated) {
+      return;
+    }
+    this._stepStateHydrated = true;
+
+    if (typeof this.state !== 'object' || this.state === null) {
+      this.state = {} as StateType;
+    }
+
+    const legacyStepState = (this.data.state as TaskJobState | undefined)?.stepState;
+    const hasLegacy = legacyStepState && Object.keys(legacyStepState).length > 0;
+
+    if (hasLegacy) {
+      this.state = {
+        ...this.state,
+        stepState: { ...legacyStepState },
+      } as StateType;
+
+      if (this.taskClient && this.id) {
+        const store = this.taskClient.getStepStateStore();
+        for (const [stepId, stepResult] of Object.entries(legacyStepState)) {
+          await store.saveStep(this.queueName, this.id, stepId, stepResult);
+        }
+        await this.stripLegacyStepStateFromJobData();
+      }
+      return;
+    }
+
+    if (!this.taskClient || !this.id) {
+      const currentState = this.getStateAsTaskJobState();
+      this.state = {
+        ...this.state,
+        stepState: currentState.stepState ?? {},
+      } as StateType;
+      return;
+    }
+
+    const store = this.taskClient.getStepStateStore();
+    const keyExists = await store.exists(this.queueName, this.id);
+    if (!keyExists) {
+      this.state = {
+        ...this.state,
+        stepState: {},
+      } as StateType;
+      return;
+    }
+
+    const loaded = await store.loadSteps(this.queueName, this.id);
+    this.state = {
+      ...this.state,
+      stepState: loaded,
+    } as StateType;
+  }
+
+  /**
+   * Persists a single step's state to the per-step Redis hash.
+   * Falls back to inline job.data when no ToroTask client is available (e.g. bull-board).
+   */
+  async saveStepState(stepId: string, stepResult: StepResult): Promise<void> {
+    if (typeof this.state !== 'object' || this.state === null) {
+      this.state = {} as StateType;
+    }
+
+    const stepState = this.getStateAsTaskJobState().stepState ?? {};
+    stepState[stepId] = stepResult;
+    this.state = {
+      ...this.state,
+      stepState,
+    } as StateType;
+
+    if (this.taskClient && this.id) {
+      await this.taskClient.getStepStateStore().saveStep(
+        this.queueName,
+        this.id,
+        stepId,
+        stepResult,
+      );
+      return;
+    }
+
+    await this.updateState({ stepState } as unknown as Partial<StateType>);
+  }
+
+  /**
+   * Removes the per-step Redis hash for this job.
+   */
+  async clearStepState(): Promise<void> {
+    if (this.taskClient && this.id) {
+      await this.taskClient.getStepStateStore().clear(this.queueName, this.id);
+    }
+
+    if (typeof this.state === 'object' && this.state !== null) {
+      this.state = {
+        ...this.state,
+        stepState: {},
+      };
+    }
+  }
+
+  /**
+   * Removes the job from BullMQ and clears external step state.
+   */
+  async remove(opts?: { removeChildren?: boolean }): Promise<void> {
+    await this.clearStepState();
+    await super.remove(opts);
+  }
+
+  private async stripLegacyStepStateFromJobData(): Promise<void> {
+    const dataState = this.data.state as TaskJobState | undefined;
+    if (!dataState?.stepState) {
+      return;
+    }
+
+    const { stepState: _removed, ...stateWithoutSteps } = dataState;
+    await this.updateData({
+      ...this.data,
+      state: stateWithoutSteps,
+    });
   }
 
   /**
@@ -107,7 +253,7 @@ export class TaskJob<
     this.state = state;
     const data = {
       ...this.data,
-      state: this.state,
+      state: this.stateForPersistence(),
     };
     return this.updateData(data);
   }
@@ -118,11 +264,17 @@ export class TaskJob<
    * @param state - the state that will merge with the current jobs state.
    */
   async updateState(state: Partial<StateType>): Promise<void> {
+    const { stepState, ...rest } = state as Partial<TaskJobState>;
     const newState = {
       ...this.state,
-      ...state,
-    };
-    return this.setState(newState as StateType);
+      ...rest,
+    } as StateType;
+
+    if (stepState !== undefined) {
+      (newState as TaskJobState).stepState = stepState;
+    }
+
+    return this.setState(newState);
   }
 
   /**
