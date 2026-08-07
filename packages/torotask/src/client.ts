@@ -16,6 +16,7 @@ import type {
   TaskRegistry,
   ToroTaskOptions,
 } from './types/index.js';
+import type { TaskQueueOptions } from './types/queue.js';
 import { EventEmitter } from 'node:events';
 import { Redis } from 'ioredis';
 import { pino } from 'pino';
@@ -343,6 +344,19 @@ export class ToroTask<
   }
 
   /**
+   * Creates a read-only queue for consumers (dashboard, API clients, getJobById).
+   * BullMQ writes queue metadata (including streams.events.maxLen) on every Queue
+   * construction unless skipMetasUpdate is set — consumer queues do not have task
+   * queueOptions, so they must not overwrite metadata set by the worker.
+   */
+  private createReadOnlyQueue<PayloadType = any, ResultType = any>(
+    queueName: string,
+  ): TaskQueue<PayloadType, ResultType> {
+    const options: Partial<TaskQueueOptions> = { skipMetasUpdate: true };
+    return new TaskQueue<PayloadType, ResultType>(this, queueName, options);
+  }
+
+  /**
    * Retrieves a consumer queue, creating it if it doesn't exist.
    *
    * @param group The group id of the task.
@@ -361,7 +375,7 @@ export class ToroTask<
       return null;
     }
 
-    const queue = new TaskQueue<PayloadType, ResultType>(this, key);
+    const queue = this.createReadOnlyQueue<PayloadType, ResultType>(key);
     this._consumerQueues.set(key, queue as any);
     return queue;
   }
@@ -376,7 +390,7 @@ export class ToroTask<
     // If not cached, create and cache it (needed for job reconstruction after handler restarts)
     if (!queue) {
       this.logger.debug({ queueName, jobId }, 'Queue not in cache for getJobById, creating it');
-      queue = new TaskQueue<PayloadType, ResultType>(this, queueName);
+      queue = this.createReadOnlyQueue<PayloadType, ResultType>(queueName);
       this._consumerQueues.set(queueName, queue as any);
     }
 
@@ -606,7 +620,7 @@ export class ToroTask<
     for (const queueName of queueNames) {
       this.logger.debug({ queueName }, 'Creating Queue instance');
       // Use the client's connection options to instantiate each queue
-      queueInstances[queueName] = new TaskQueue(this, queueName);
+      queueInstances[queueName] = this.createReadOnlyQueue(queueName);
     }
 
     this.logger.info({ count: queueNames.length }, 'Finished creating Queue instances for all found queues.');
