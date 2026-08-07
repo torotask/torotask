@@ -1,6 +1,6 @@
 import type { JobStatus, QueueAdapterOptions } from '@bull-board/api/typings/app';
 import type { Job, Queue } from 'bullmq';
-import type { TaskJobData, TaskJobState, ToroTask } from 'torotask';
+import type { StepResult, TaskJobData, TaskJobState, ToroTask } from 'torotask';
 import { BullMQAdapter } from '@bull-board/api/bullMQAdapter';
 
 /**
@@ -41,16 +41,35 @@ export class ToroTaskBullMQAdapter extends BullMQAdapter {
       return job;
     }
 
+    const data = job.data as TaskJobData;
+    const dataStore = this.taskClient.getDataStore?.();
+    if (dataStore) {
+      if (data.payload !== undefined) {
+        data.payload = await dataStore.resolveDeep(data.payload);
+      }
+      if (job.returnvalue !== undefined) {
+        job.returnvalue = await dataStore.resolveDeep(job.returnvalue);
+      }
+    }
+
     const stepState = await this.taskClient.getStepStateStore().loadSteps(
       this.queueName,
       job.id,
     );
 
-    if (Object.keys(stepState).length === 0) {
+    if (dataStore) {
+      for (const [stepId, result] of Object.entries(stepState) as Array<[string, StepResult]>) {
+        if (result.data !== undefined) {
+          result.data = await dataStore.resolveDeep(result.data);
+        }
+        stepState[stepId] = result;
+      }
+    }
+
+    if (Object.keys(stepState).length === 0 && !dataStore) {
       return job;
     }
 
-    const data = job.data as TaskJobData;
     job.data = {
       ...data,
       state: {
