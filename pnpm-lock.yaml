@@ -207,6 +207,9 @@ importers:
       '@bull-board/express':
         specifier: 'catalog:'
         version: 8.6.0
+      '@torotask/bull-board':
+        specifier: workspace:*
+        version: link:../../packages/bull-board
       express:
         specifier: 'catalog:'
         version: 4.21.2
@@ -1855,6 +1858,7 @@ packages:
   cron-parser@4.9.0:
     resolution: {integrity: sha512-p0SaNjrHOnQeR8/VnfGbmg9te2kfyYSQ7Sc/j/6DtPL3JQvKxmjO9TSjNFpujqV3vEYYBvNNvXSxzyksBWAx1Q==}
     engines: {node: '>=12.0.0'}
+    deprecated: v4 is no longer maintained, upgrade to v5
 
   cronstrue@2.59.0:
     resolution: {integrity: sha512-YKGmAy84hKH+hHIIER07VCAHf9u0Ldelx1uU6EBxsRPDXIA1m5fsKmJfyC3xBhw6cVC/1i83VdbL4PvepTrt8A==}

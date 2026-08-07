@@ -1,6 +1,6 @@
 import { createBullBoard } from '@bull-board/api';
-import { BullMQAdapter } from '@bull-board/api/bullMQAdapter';
 import { ExpressAdapter } from '@bull-board/express';
+import { ToroTaskBullMQAdapter } from '@torotask/bull-board';
 import express from 'express';
 import { pino } from 'pino';
 import { ToroTask } from 'torotask';
@@ -31,12 +31,14 @@ async function main() {
     logger.info('Refreshing queue list...');
     try {
       const queueInstances = await client.getAllQueueInstances();
-      // Use BullMQAdapter type for the Map value
-      const queueAdaptersMap = new Map<string, BullMQAdapter>();
+      const queueAdaptersMap = new Map<string, ToroTaskBullMQAdapter>();
       for (const queueName in queueInstances) {
         if (Object.prototype.hasOwnProperty.call(queueInstances, queueName)) {
           const queue = queueInstances[queueName];
-          queueAdaptersMap.set(queueName, new BullMQAdapter(queue, { delimiter: '.' }));
+          queueAdaptersMap.set(
+            queueName,
+            new ToroTaskBullMQAdapter(client, queue, { delimiter: '.' }),
+          );
         }
       }
       // Use type assertion as any to bypass strict type check

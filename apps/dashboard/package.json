@@ -18,6 +18,7 @@
   "dependencies": {
     "@bull-board/api": "catalog:",
     "@bull-board/express": "catalog:",
+    "@torotask/bull-board": "workspace:*",
     "express": "catalog:",
     "pino": "catalog:",
     "pino-pretty": "catalog:",
