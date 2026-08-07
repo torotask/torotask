@@ -1,0 +1,51 @@
+{
+  "name": "@torotask/bull-board",
+  "type": "module",
+  "version": "0.1.0",
+  "description": "Bull Board adapter for ToroTask that hydrates external step state in the job UI",
+  "author": "Ben Osman",
+  "license": "MIT",
+  "publishConfig": {
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/torotask/torotask.git",
+    "directory": "packages/bull-board"
+  },
+  "keywords": [
+    "torotask",
+    "bullmq",
+    "bull-board",
+    "bullboard",
+    "dashboard"
+  ],
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc --build",
+    "clean": "tsc --build --clean",
+    "dev": "tsc --build --watch"
+  },
+  "peerDependencies": {
+    "@bull-board/api": ">=6.0.0",
+    "bullmq": ">=5.0.0",
+    "torotask": ">=0.16.0"
+  },
+  "devDependencies": {
+    "@bull-board/api": "catalog:",
+    "bullmq": "catalog:",
+    "torotask": "workspace:*",
+    "typescript": "catalog:"
+  }
+}

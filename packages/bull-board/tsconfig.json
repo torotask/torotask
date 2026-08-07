@@ -1,0 +1,11 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "tsBuildInfoFile": ".tsbuildinfo",
+    "rootDir": "./src",
+    "outDir": "./dist"
+  },
+  "references": [{ "path": "../torotask" }],
+  "include": ["src/**/*"],
+  "exclude": ["node_modules", "dist"]
+}

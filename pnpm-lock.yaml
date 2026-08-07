@@ -255,6 +255,21 @@ importers:
         specifier: 'catalog:'
         version: 5.9.3
 
+  packages/bull-board:
+    devDependencies:
+      '@bull-board/api':
+        specifier: 'catalog:'
+        version: 8.6.0(@bull-board/ui@8.6.0(bullmq@5.63.0))(bullmq@5.63.0)
+      bullmq:
+        specifier: 'catalog:'
+        version: 5.63.0
+      torotask:
+        specifier: workspace:*
+        version: link:../torotask
+      typescript:
+        specifier: 'catalog:'
+        version: 5.9.3
+
   packages/torotask:
     dependencies:
       '@sindresorhus/slugify':
