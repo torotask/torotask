@@ -1,11 +1,11 @@
 import type { Redis } from 'ioredis';
 import {
-  buildStepStateKey,
+  buildStepStateJobKey,
   computeStepStateTtlSeconds,
   DEFAULT_ORPHAN_STEP_STATE_TTL_SECONDS,
   RedisStepStateStore,
   STEP_STATE_WAKE_BUFFER_SECONDS,
-} from '../../redis-step-state-store.js';
+} from '../../stores/index.js';
 
 function createMockRedis() {
   const storage: Record<string, Record<string, string>> = {};
@@ -66,7 +66,7 @@ describe('redisStepStateStore', () => {
   const jobId = 'job-123';
 
   it('builds keys under the torotask prefix', () => {
-    expect(buildStepStateKey(prefix, queueName, jobId)).toBe(
+    expect(buildStepStateJobKey(prefix, 'state', queueName, jobId)).toBe(
       'torotask:state:exampleGroup.sayHello:job-123',
     );
   });
@@ -118,13 +118,13 @@ describe('redisStepStateStore', () => {
       (sleepUntil + STEP_STATE_WAKE_BUFFER_SECONDS * 1000 - Date.now()) / 1000,
     );
     expect(expireCalls[0].ttl).toBeGreaterThanOrEqual(expectedMinTtl - 2);
-    expect(expireCalls[0].key).toBe(buildStepStateKey(prefix, queueName, jobId));
+    expect(expireCalls[0].key).toBe(buildStepStateJobKey(prefix, 'state', queueName, jobId));
   });
 
   it('uses orphan TTL as a floor when configured', async () => {
     const { redis, expireCalls } = createMockRedis();
     const orphanTtl = 3600;
-    const store = new RedisStepStateStore(redis, prefix, orphanTtl);
+    const store = new RedisStepStateStore(redis, prefix, { orphanTtlSeconds: orphanTtl });
 
     await store.saveStep(queueName, jobId, 'step1_0', { status: 'completed' });
 

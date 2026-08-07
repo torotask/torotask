@@ -380,7 +380,8 @@ export class StepExecutor<
 
         // Check if the memoized result is a job that needs reconstruction
         const result = await this.reconstructJobIfNeeded(memoizedResult.data, userStepId);
-        return result as T;
+        const dataStore = this.client.getDataStore?.();
+        return (dataStore ? dataStore.resolveDeep(result) : result) as T;
       }
       else if (memoizedResult.status === 'errored') {
         // Legacy: step previously errored, but we now allow re-execution on retry
@@ -424,9 +425,23 @@ export class StepExecutor<
         ? await memoizeStepResult(result, stepKind)
         : await this.memoizeStepResult(result, stepKind);
 
+      let storedResult = processedResult;
+      const dataStore = this.client.getDataStore?.();
+      if (dataStore && this.job.id) {
+        storedResult = await dataStore.externalize(
+          {
+            queueName: this.job.queueName,
+            jobId: this.job.id,
+            kind: 'stepData',
+            stepId: internalStepId,
+          },
+          processedResult,
+        );
+      }
+
       this.job.state.stepState![internalStepId] = {
         status: 'completed',
-        data: processedResult,
+        data: storedResult,
       };
       await this.persistStepState(internalStepId);
       return result;

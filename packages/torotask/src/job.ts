@@ -145,6 +145,15 @@ export class TaskJob<
     }
 
     const loaded = await store.loadSteps(this.queueName, this.id);
+    const dataStore = this.taskClient.getDataStore();
+    if (dataStore) {
+      for (const [stepId, result] of Object.entries(loaded)) {
+        if (result.data !== undefined) {
+          result.data = await dataStore.resolveDeep(result.data);
+        }
+        loaded[stepId] = result;
+      }
+    }
     this.state = {
       ...this.state,
       stepState: loaded,
@@ -197,10 +206,29 @@ export class TaskJob<
   }
 
   /**
+   * Resolves external data refs in payload and return value (when present).
+   * Called automatically before job processing and when fetching jobs via the client.
+   */
+  async hydrateStoredData(): Promise<void> {
+    const store = this.taskClient?.getDataStore();
+    if (!store) {
+      return;
+    }
+
+    this.payload = await store.resolveDeep(this.payload) as PayloadType;
+    if (this.returnvalue !== undefined) {
+      this.returnvalue = await store.resolveDeep(this.returnvalue) as ReturnType;
+    }
+  }
+
+  /**
    * Removes the job from BullMQ and clears external step state.
    */
   async remove(opts?: { removeChildren?: boolean }): Promise<void> {
     await this.clearStepState();
+    if (this.taskClient && this.id) {
+      await this.taskClient.getDataStore()?.clearJob(this.queueName, this.id);
+    }
     await super.remove(opts);
   }
 
@@ -223,7 +251,16 @@ export class TaskJob<
    * @param payload - the payload that will replace the current jobs payload.
    */
   async setPayload(payload: PayloadType): Promise<void> {
-    this.payload = payload;
+    let storedPayload: PayloadType = payload;
+    const store = this.taskClient?.getDataStore();
+    if (store && this.id) {
+      storedPayload = await store.externalize(
+        { queueName: this.queueName, jobId: this.id, kind: 'payload' },
+        payload,
+      ) as PayloadType;
+    }
+
+    this.payload = storedPayload;
     const data = {
       ...this.data,
       payload: this.payload,
@@ -361,7 +398,17 @@ export class TaskJob<
     if (this._batchCompleted) {
       return [];
     }
-    return super.moveToCompleted(returnValue, token, fetchNext);
+
+    let storedReturnValue = returnValue;
+    const store = this.taskClient?.getDataStore();
+    if (store && this.id) {
+      storedReturnValue = await store.externalize(
+        { queueName: this.queueName, jobId: this.id, kind: 'returnValue' },
+        returnValue,
+      ) as ReturnType;
+    }
+
+    return super.moveToCompleted(storedReturnValue, token, fetchNext);
   }
 
   /**
@@ -586,6 +633,8 @@ export class TaskJob<
       throw new Error(`Failed to refetch job ${this.id} after completion.`);
     }
 
+    await (finishedJob as unknown as TaskJob<PayloadType, ReturnType>).hydrateStoredData();
+
     this.logger?.debug(
       { jobId: this.id, returnValue: finishedJob.returnvalue },
       'Job completed, returning result',
@@ -615,6 +664,10 @@ export class TaskJob<
       this.queue as any,
       this.id,
     );
+
+    if (job) {
+      await (job as unknown as TaskJob<PayloadType, ReturnType>).hydrateStoredData();
+    }
 
     return job?.returnvalue;
   }

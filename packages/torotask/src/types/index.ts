@@ -1,11 +1,13 @@
 export * from './bulk.js';
 export * from './client.js';
+export * from './data-store.js';
 export * from './events.js';
 export * from './flow.js';
 export * from './job.js'; // Export the renamed interface TaskRun';
 export * from './queue.js';
 export * from './schema.js';
 export * from './server.js';
+export * from './step-state-store.js';
 export * from './step.js';
 export * from './sub-task.js';
 export * from './task-group.js';

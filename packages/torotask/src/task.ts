@@ -234,6 +234,8 @@ export class Task<
     const effectiveJobLogger = jobLogger ?? this.getJobLogger(job);
     // Use CurrentPayloadType which is derived from the local EffectivePayloadType
 
+    await job.hydrateStoredData();
+
     const validatedPayload = await this.validateJob(job, effectiveJobLogger);
 
     await job.hydrateStepState();

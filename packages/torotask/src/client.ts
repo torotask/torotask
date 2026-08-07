@@ -4,6 +4,7 @@ import type { Logger } from 'pino';
 import type { EventDispatcherOptions } from './event-dispatcher.js';
 import type { TaskJob } from './job.js';
 import type { Task } from './task.js';
+import type { ToroTaskDataStoreOptions } from './types/data-store.js';
 import type {
   SchemaHandler,
   TaskDefinitionRegistry,
@@ -17,13 +18,15 @@ import type {
   ToroTaskOptions,
 } from './types/index.js';
 import type { TaskQueueOptions } from './types/queue.js';
+import type { ToroTaskStepStateStoreConfig } from './types/step-state-store.js';
 import { EventEmitter } from 'node:events';
 import { Redis } from 'ioredis';
 import { pino } from 'pino';
 import { LRU } from 'tiny-lru';
+import { RedisDataStore, ToroTaskDataStore } from './data-store/index.js';
 import { EventDispatcher } from './event-dispatcher.js';
 import { TaskQueue } from './queue.js';
-import { RedisStepStateStore } from './redis-step-state-store.js';
+import { RedisStepStateStore, ToroTaskStepStateStore } from './stores/index.js';
 import { TaskGroup } from './task-group.js';
 import { getConfigFromEnv } from './utils/get-config-from-env.js';
 import { TaskWorkflow } from './workflow.js';
@@ -67,8 +70,11 @@ export class ToroTask<
   private _queueDiscoverySubscriber: Redis | null = null;
   private _isQueueDiscoveryActive: boolean = false;
   private _knownQueues: Set<string> = new Set();
-  private _stepStateStore: RedisStepStateStore | null = null;
+  private _stepStateStore: ToroTaskStepStateStore | null = null;
   private readonly _stepStateTTL?: number;
+  private readonly _stepStateStoreConfig?: ToroTaskStepStateStoreConfig;
+  private _dataStore: ToroTaskDataStore | null = null;
+  private readonly _dataStoreConfig?: ToroTaskDataStoreOptions | ToroTaskDataStore;
 
   constructor(options?: ToroTaskOptions, taskGroupDefs?: TAllTaskGroupsDefs) {
     super(); // Call EventEmitter constructor
@@ -85,6 +91,8 @@ export class ToroTask<
       enableQueueDiscovery,
       eventOptions,
       stepStateTTL,
+      stepStateStore,
+      dataStore,
       ...connectionOpts
     } = options || {};
 
@@ -109,6 +117,16 @@ export class ToroTask<
     this._reuseConnections = reuseConnections ?? false;
     this._eventOptions = eventOptions;
     this._stepStateTTL = stepStateTTL;
+    this._stepStateStoreConfig = stepStateStore;
+    this._dataStoreConfig = dataStore;
+
+    if (dataStore instanceof ToroTaskDataStore) {
+      this._dataStore = dataStore;
+    }
+
+    if (stepStateStore instanceof ToroTaskStepStateStore) {
+      this._stepStateStore = stepStateStore;
+    }
 
     // Initialize task groups from definitions if provided
     if (taskGroupDefs) {
@@ -121,6 +139,7 @@ export class ToroTask<
         allowNonExistingQueues: this._allowNonExistingQueues,
         reuseConnections: this._reuseConnections,
         queueDiscoveryEnabled: enableQueueDiscovery ?? false,
+        dataStoreEnabled: this.getDataStore()?.isEnabled ?? false,
       },
       'ToroTask initialized',
     );
@@ -196,15 +215,43 @@ export class ToroTask<
   /**
    * Redis-backed store for per-step job state (Track A: outside BullMQ job.data).
    */
-  public getStepStateStore(): RedisStepStateStore {
+  public getStepStateStore(): ToroTaskStepStateStore {
     if (!this._stepStateStore) {
-      this._stepStateStore = new RedisStepStateStore(
-        this.redis,
-        this.prefix,
-        this._stepStateTTL,
-      );
+      const config = this._stepStateStoreConfig;
+      if (config instanceof ToroTaskStepStateStore) {
+        this._stepStateStore = config;
+      }
+      else {
+        const orphanTtlSeconds = config?.orphanTtlSeconds ?? this._stepStateTTL;
+        this._stepStateStore = new RedisStepStateStore(
+          this.redis,
+          this.prefix,
+          { ...config, orphanTtlSeconds },
+        );
+      }
     }
     return this._stepStateStore;
+  }
+
+  /**
+   * Optional external store for large payloads, return values, and step results.
+   */
+  public getDataStore(): ToroTaskDataStore | undefined {
+    if (this._dataStore) {
+      return this._dataStore;
+    }
+
+    const config = this._dataStoreConfig;
+    if (!config || config instanceof ToroTaskDataStore) {
+      return undefined;
+    }
+
+    if (!config.enabled) {
+      return undefined;
+    }
+
+    this._dataStore = new RedisDataStore(this.redis, this.prefix, config);
+    return this._dataStore;
   }
 
   /**
@@ -395,6 +442,9 @@ export class ToroTask<
     }
 
     const job = await queue.getJob(jobId);
+    if (job) {
+      await (job as TaskJob).hydrateStoredData();
+    }
     return job as TaskJob<PayloadType, ResultType>;
   }
 
