@@ -44,9 +44,12 @@ export function createMockTaskHandler<T = any, R = any>(
 export function createMockJob(overrides: any = {}): any {
   return {
     id: 'test-job-id',
+    queueName: 'test-queue',
     state: {
       stepState: {},
     },
+    hydrateStepState: jest.fn().mockResolvedValue(undefined),
+    saveStepState: jest.fn().mockResolvedValue(undefined),
     updateState: jest.fn().mockResolvedValue(undefined),
     ...overrides,
   };

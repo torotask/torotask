@@ -3,7 +3,6 @@
     "composite": true,
     "target": "ES2022",
     "lib": ["ES2022"],
-    "baseUrl": ".",
     "module": "NodeNext",
     "moduleResolution": "NodeNext",
     "types": ["node"],
@@ -18,9 +17,10 @@
     "skipLibCheck": true
   },
   "references": [
-    { "path": "./packages/client/tsconfig.json" },
-    { "path": "./packages/server/tsconfig.json" },
-    { "path": "./apps/tester/tsconfig.json" }
+    { "path": "./packages/torotask/tsconfig.json" },
+    { "path": "./packages/bull-board/tsconfig.json" },
+    { "path": "./apps/tester/tsconfig.json" },
+    { "path": "./apps/dashboard/tsconfig.json" }
   ],
   "include": [],
   "exclude": ["node_modules", "dist"]

@@ -1,7 +1,10 @@
 import type { ConnectionOptions as BullMQConnectionOptions } from 'bullmq';
 import type { Redis } from 'ioredis';
 import type { Logger } from 'pino';
+import type { ToroTaskDataStore } from '../data-store/base-data-store.js';
 import type { EventDispatcherOptions } from '../event-dispatcher.js';
+import type { ToroTaskDataStoreOptions } from './data-store.js';
+import type { ToroTaskStepStateStoreConfig } from './step-state-store.js';
 
 /** BullMQ Client Options using intersection */
 export type ToroTaskOptions = Partial<BullMQConnectionOptions> & {
@@ -61,6 +64,27 @@ export type ToroTaskOptions = Partial<BullMQConnectionOptions> & {
    * Controls job options and worker settings for event queues.
    */
   eventOptions?: EventDispatcherOptions;
+
+  /**
+   * Optional orphan TTL (seconds) for step-state hashes when a worker crashes mid-job.
+   * Shorthand for `stepStateStore.orphanTtlSeconds`.
+   *
+   * @default undefined (no orphan TTL)
+   */
+  stepStateTTL?: number;
+
+  /**
+   * Pluggable store for per-step execution state (outside BullMQ job.data).
+   * Defaults to {@link RedisStepStateStore} on the client's Redis connection.
+   */
+  stepStateStore?: ToroTaskStepStateStoreConfig;
+
+  /**
+   * External store for large job payloads, return values, and step result data.
+   * When enabled, values are replaced with compact refs in BullMQ job data and
+   * events — reducing memory use for child-job processed sets and completed events.
+   */
+  dataStore?: ToroTaskDataStoreOptions | ToroTaskDataStore;
 };
 
 /**

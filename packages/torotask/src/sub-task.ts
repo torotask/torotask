@@ -70,6 +70,8 @@ export class SubTask<
   }
 
   async processSubJob(job: TaskJob<PayloadType, ResultType>, jobName: string, jobLogger: Logger): Promise<any> {
+    await job.hydrateStepState();
+
     const stepExecutor = new StepExecutor<TaskJob<PayloadType, ResultType>>(job, this.parentTask);
     const handlerOptions: SubTaskHandlerOptions<PayloadType> = { id: job.id, name: jobName, payload: job.payload };
     const handlerContext: SubTaskHandlerContext<PayloadType, ResultType> = {

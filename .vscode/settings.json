@@ -2,6 +2,26 @@
   // Disable the default formatter, use eslint instead
   "prettier.enable": false,
   "editor.formatOnSave": true,
+  "editor.insertSpaces": true,
+  "editor.tabSize": 2,
+  "editor.detectIndentation": false,
+
+  // Override user-level Prettier / Red Hat YAML formatters for this repo
+  "[javascript]": {
+    "editor.defaultFormatter": "dbaeumer.vscode-eslint"
+  },
+  "[typescript]": {
+    "editor.defaultFormatter": "dbaeumer.vscode-eslint"
+  },
+  "[json]": {
+    "editor.defaultFormatter": "dbaeumer.vscode-eslint"
+  },
+  "[jsonc]": {
+    "editor.defaultFormatter": "dbaeumer.vscode-eslint"
+  },
+  "[yaml]": {
+    "editor.defaultFormatter": "dbaeumer.vscode-eslint"
+  },
 
   // Auto fix
   "editor.codeActionsOnSave": {
@@ -14,6 +34,7 @@
     { "rule": "style/*", "severity": "off", "fixable": true },
     { "rule": "format/*", "severity": "off", "fixable": true },
     { "rule": "*-indent", "severity": "off", "fixable": true },
+    { "rule": "*no-tabs", "severity": "off", "fixable": true },
     { "rule": "*-spacing", "severity": "off", "fixable": true },
     { "rule": "*-spaces", "severity": "off", "fixable": true },
     { "rule": "*-order", "severity": "off", "fixable": true },
@@ -47,5 +68,8 @@
     "scss",
     "pcss",
     "postcss"
-  ]
+  ],
+  "debug.javascript.defaultRuntimeExecutable": {
+    "pwa-node": "${workspaceFolder}/.vscode/mise-tools/node"
+  }
 }

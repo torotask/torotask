@@ -4,6 +4,7 @@ import type { Logger } from 'pino';
 import type { EventDispatcherOptions } from './event-dispatcher.js';
 import type { TaskJob } from './job.js';
 import type { Task } from './task.js';
+import type { ToroTaskDataStoreOptions } from './types/data-store.js';
 import type {
   SchemaHandler,
   TaskDefinitionRegistry,
@@ -16,12 +17,16 @@ import type {
   TaskRegistry,
   ToroTaskOptions,
 } from './types/index.js';
+import type { TaskQueueOptions } from './types/queue.js';
+import type { ToroTaskStepStateStoreConfig } from './types/step-state-store.js';
 import { EventEmitter } from 'node:events';
 import { Redis } from 'ioredis';
 import { pino } from 'pino';
 import { LRU } from 'tiny-lru';
+import { RedisDataStore, ToroTaskDataStore } from './data-store/index.js';
 import { EventDispatcher } from './event-dispatcher.js';
 import { TaskQueue } from './queue.js';
+import { RedisStepStateStore, ToroTaskStepStateStore } from './stores/index.js';
 import { TaskGroup } from './task-group.js';
 import { getConfigFromEnv } from './utils/get-config-from-env.js';
 import { TaskWorkflow } from './workflow.js';
@@ -65,6 +70,11 @@ export class ToroTask<
   private _queueDiscoverySubscriber: Redis | null = null;
   private _isQueueDiscoveryActive: boolean = false;
   private _knownQueues: Set<string> = new Set();
+  private _stepStateStore: ToroTaskStepStateStore | null = null;
+  private readonly _stepStateTTL?: number;
+  private readonly _stepStateStoreConfig?: ToroTaskStepStateStoreConfig;
+  private _dataStore: ToroTaskDataStore | null = null;
+  private readonly _dataStoreConfig?: ToroTaskDataStoreOptions | ToroTaskDataStore;
 
   constructor(options?: ToroTaskOptions, taskGroupDefs?: TAllTaskGroupsDefs) {
     super(); // Call EventEmitter constructor
@@ -80,6 +90,9 @@ export class ToroTask<
       reuseConnections,
       enableQueueDiscovery,
       eventOptions,
+      stepStateTTL,
+      stepStateStore,
+      dataStore,
       ...connectionOpts
     } = options || {};
 
@@ -103,6 +116,17 @@ export class ToroTask<
     this._allowNonExistingQueues = allowNonExistingQueues ?? false;
     this._reuseConnections = reuseConnections ?? false;
     this._eventOptions = eventOptions;
+    this._stepStateTTL = stepStateTTL;
+    this._stepStateStoreConfig = stepStateStore;
+    this._dataStoreConfig = dataStore;
+
+    if (dataStore instanceof ToroTaskDataStore) {
+      this._dataStore = dataStore;
+    }
+
+    if (stepStateStore instanceof ToroTaskStepStateStore) {
+      this._stepStateStore = stepStateStore;
+    }
 
     // Initialize task groups from definitions if provided
     if (taskGroupDefs) {
@@ -115,6 +139,7 @@ export class ToroTask<
         allowNonExistingQueues: this._allowNonExistingQueues,
         reuseConnections: this._reuseConnections,
         queueDiscoveryEnabled: enableQueueDiscovery ?? false,
+        dataStoreEnabled: this.getDataStore()?.isEnabled ?? false,
       },
       'ToroTask initialized',
     );
@@ -185,6 +210,48 @@ export class ToroTask<
    */
   public getConnectionOptions(): ConnectionOptions {
     return this.connectionOptions;
+  }
+
+  /**
+   * Redis-backed store for per-step job state (Track A: outside BullMQ job.data).
+   */
+  public getStepStateStore(): ToroTaskStepStateStore {
+    if (!this._stepStateStore) {
+      const config = this._stepStateStoreConfig;
+      if (config instanceof ToroTaskStepStateStore) {
+        this._stepStateStore = config;
+      }
+      else {
+        const orphanTtlSeconds = config?.orphanTtlSeconds ?? this._stepStateTTL;
+        this._stepStateStore = new RedisStepStateStore(
+          this.redis,
+          this.prefix,
+          { ...config, orphanTtlSeconds },
+        );
+      }
+    }
+    return this._stepStateStore;
+  }
+
+  /**
+   * Optional external store for large payloads, return values, and step results.
+   */
+  public getDataStore(): ToroTaskDataStore | undefined {
+    if (this._dataStore) {
+      return this._dataStore;
+    }
+
+    const config = this._dataStoreConfig;
+    if (!config || config instanceof ToroTaskDataStore) {
+      return undefined;
+    }
+
+    if (!config.enabled) {
+      return undefined;
+    }
+
+    this._dataStore = new RedisDataStore(this.redis, this.prefix, config);
+    return this._dataStore;
   }
 
   /**
@@ -324,6 +391,19 @@ export class ToroTask<
   }
 
   /**
+   * Creates a read-only queue for consumers (dashboard, API clients, getJobById).
+   * BullMQ writes queue metadata (including streams.events.maxLen) on every Queue
+   * construction unless skipMetasUpdate is set — consumer queues do not have task
+   * queueOptions, so they must not overwrite metadata set by the worker.
+   */
+  private createReadOnlyQueue<PayloadType = any, ResultType = any>(
+    queueName: string,
+  ): TaskQueue<PayloadType, ResultType> {
+    const options: Partial<TaskQueueOptions> = { skipMetasUpdate: true };
+    return new TaskQueue<PayloadType, ResultType>(this, queueName, options);
+  }
+
+  /**
    * Retrieves a consumer queue, creating it if it doesn't exist.
    *
    * @param group The group id of the task.
@@ -342,7 +422,7 @@ export class ToroTask<
       return null;
     }
 
-    const queue = new TaskQueue<PayloadType, ResultType>(this, key);
+    const queue = this.createReadOnlyQueue<PayloadType, ResultType>(key);
     this._consumerQueues.set(key, queue as any);
     return queue;
   }
@@ -357,11 +437,14 @@ export class ToroTask<
     // If not cached, create and cache it (needed for job reconstruction after handler restarts)
     if (!queue) {
       this.logger.debug({ queueName, jobId }, 'Queue not in cache for getJobById, creating it');
-      queue = new TaskQueue<PayloadType, ResultType>(this, queueName);
+      queue = this.createReadOnlyQueue<PayloadType, ResultType>(queueName);
       this._consumerQueues.set(queueName, queue as any);
     }
 
     const job = await queue.getJob(jobId);
+    if (job) {
+      await (job as TaskJob).hydrateStoredData();
+    }
     return job as TaskJob<PayloadType, ResultType>;
   }
 
@@ -587,7 +670,7 @@ export class ToroTask<
     for (const queueName of queueNames) {
       this.logger.debug({ queueName }, 'Creating Queue instance');
       // Use the client's connection options to instantiate each queue
-      queueInstances[queueName] = new TaskQueue(this, queueName);
+      queueInstances[queueName] = this.createReadOnlyQueue(queueName);
     }
 
     this.logger.info({ count: queueNames.length }, 'Finished creating Queue instances for all found queues.');

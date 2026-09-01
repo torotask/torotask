@@ -36,7 +36,7 @@
     "clean": "tsc --build --clean",
     "dev": "tsc --build --watch",
     "test": "jest",
-    "test:integration": "jest --testPathPattern=integration",
+    "test:integration": "TEST_TYPE=integration jest --testPathPattern=integration",
     "test:unit": "jest --testPathPattern=unit",
     "test:watch": "jest --watch"
   },

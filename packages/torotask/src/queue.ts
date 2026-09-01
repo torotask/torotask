@@ -37,6 +37,34 @@ export class TaskQueue<
 
     super(name, options as QueueOptions);
     this.logger = options.logger || taskClient.logger.child({ taskQueue: name });
+    this.setupStepStateCleanupListeners();
+  }
+
+  /**
+   * Clears external step-state when BullMQ removes jobs (manual delete, queue.remove, clean).
+   */
+  private setupStepStateCleanupListeners(): void {
+    const clearForJobId = (jobId: string) => {
+      this.taskClient.getStepStateStore().clear(this.name, jobId).catch((err) => {
+        this.logger.warn({ err, jobId }, 'Failed to clear step state after job removal');
+      });
+      this.taskClient.getDataStore()?.clearJob(this.name, jobId).catch((err) => {
+        this.logger.warn({ err, jobId }, 'Failed to clear external job data after job removal');
+      });
+    };
+
+    this.on('removed', (jobOrId: string | Job) => {
+      const jobId = typeof jobOrId === 'string' ? jobOrId : jobOrId.id;
+      if (jobId) {
+        clearForJobId(jobId);
+      }
+    });
+
+    this.on('cleaned', (jobIds: string[]) => {
+      for (const jobId of jobIds) {
+        clearForJobId(jobId);
+      }
+    });
   }
 
   /**
@@ -81,7 +109,20 @@ export class TaskQueue<
     const convertedOptions = convertJobOptions(options, payload);
     const job = await super.add(name, data, convertedOptions);
     // Cast the result from the base Job to the specific TaskJob
-    return job as TaskJob<PayloadType, ResultType, NameType>;
+    const taskJob = job as TaskJob<PayloadType, ResultType, NameType>;
+
+    const dataStore = this.taskClient.getDataStore();
+    if (dataStore && taskJob.id) {
+      const externalized = await dataStore.externalize(
+        { queueName: this.name, jobId: taskJob.id, kind: 'payload' },
+        payload,
+      );
+      if (externalized !== payload) {
+        await taskJob.setPayload(externalized as PayloadType);
+      }
+    }
+
+    return taskJob;
   }
 
   /**

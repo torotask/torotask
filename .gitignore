@@ -1,3 +1,6 @@
+# Local environment
+.env
+
 # Dependencies
 node_modules/
 
@@ -38,3 +41,4 @@ Thumbs.db
 .nx/workspace-data
 .turbo
 .eslintcache
+/.vscode/mise-tools

@@ -12,12 +12,13 @@
   "scripts": {
     "build": "tsc --build",
     "clean": "tsc --build --clean",
-    "dev": "tsx watch src/index.ts",
-    "start": "node dist/index.js"
+    "dev": "node --env-file-if-exists=../../.env node_modules/tsx/dist/cli.mjs watch src/index.ts",
+    "start": "node --env-file-if-exists=../../.env dist/index.js"
   },
   "dependencies": {
     "@bull-board/api": "catalog:",
     "@bull-board/express": "catalog:",
+    "@torotask/bull-board": "workspace:*",
     "express": "catalog:",
     "pino": "catalog:",
     "pino-pretty": "catalog:",

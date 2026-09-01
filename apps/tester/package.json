@@ -13,8 +13,8 @@
     "build": "tsc --build",
     "build:dev": "tsc --build",
     "clean": "tsc --build --clean",
-    "dev": "tsx watch --clear-screen=false src/index.ts",
-    "start": "node dist/index.js"
+    "dev": "node --env-file-if-exists=../../.env node_modules/tsx/dist/cli.mjs watch --clear-screen=false src/index.ts",
+    "start": "node --env-file-if-exists=../../.env dist/index.js"
   },
   "dependencies": {
     "bullmq": "catalog:",

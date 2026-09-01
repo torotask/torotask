@@ -19,7 +19,7 @@ export const batchTask = defineTask({
   },
   triggers: {
     type: 'every',
-    every: 10000,
+    every: 1000000,
     payload: {
       name: 'Batch Task Trigger',
     },

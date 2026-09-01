@@ -38,6 +38,9 @@ export const parentOverrideTestChild = defineTask({
  */
 export const parentOverrideTestRunner = defineTask({
   id: 'parent-override-test-runner',
+  options: {
+    queueOptions: { streams: { events: { maxLen: 50 } } },
+  },
   schema: createSchema(z => z.object({
     testName: z.string().default('parent-override-test'),
   })),
