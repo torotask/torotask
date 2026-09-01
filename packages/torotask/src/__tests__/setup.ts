@@ -25,18 +25,19 @@ let globalRedisServer: TestRedisServer | null = null;
 
 // Setup global Redis server before all tests
 beforeAll(async () => {
-  // Only start Redis for integration tests
-  if (process.env.TEST_TYPE === 'integration' || process.env.NODE_ENV === 'test') {
-    globalRedisServer = new TestRedisServer();
-    await globalRedisServer.start();
-
-    // Set environment variable for Redis connection
-    process.env.REDIS_URL = await globalRedisServer.getRedisUrl();
-
-    // Store globally for access in tests
-    globalThis.__REDIS_SERVER__ = globalRedisServer;
+  if (process.env.TEST_TYPE !== 'integration') {
+    return;
   }
-});
+
+  globalRedisServer = new TestRedisServer();
+  await globalRedisServer.start();
+
+  // Set environment variable for Redis connection
+  process.env.REDIS_URL = await globalRedisServer.getRedisUrl();
+
+  // Store globally for access in tests
+  globalThis.__REDIS_SERVER__ = globalRedisServer;
+}, 120_000);
 
 // Cleanup global Redis server after all tests
 afterAll(async () => {
