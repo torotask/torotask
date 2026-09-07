@@ -1,9 +1,22 @@
 import type { FormatterField, JobStatus } from '@bull-board/api/typings/app';
-import type { Job, Queue } from 'bullmq';
+import type { FlowProducer, Job, Queue } from 'bullmq';
 import type { StepResult, TaskJobData, TaskJobState, ToroTask, ToroTaskDataRef } from 'torotask';
 import type { ToroTaskBullMQAdapterOptions } from './adapter-options.js';
+import type { QueueRateLimit } from './bull-board-adapter-compat.js';
 import { BullMQAdapter } from '@bull-board/api/bullMQAdapter';
 import { isToroTaskDataRef } from 'torotask';
+import {
+  bullBoardAdapterCapabilities,
+  bullMqAdapterPrototype,
+  callAdapterMethod,
+  clearConfiguredRateLimit,
+  queueSupportsGlobalRateLimit,
+  readActiveRateLimitTtl,
+  readConfiguredRateLimit,
+  releaseQueueActiveRateLimit,
+  writeConfiguredRateLimit,
+} from './bull-board-adapter-compat.js';
+import { patchFlowProducerForMultiSegmentPrefix } from './patch-flow-producer.js';
 import { createTruncateFormatter } from './truncate-formatter.js';
 
 interface EnrichJobOptions {
@@ -97,6 +110,7 @@ export { annotateDataRefs, formatJobDataForBoard, formatRefLabel, formatReturnVa
  */
 export class ToroTaskBullMQAdapter extends BullMQAdapter {
   private readonly queueName: string;
+  private readonly bullQueue: Queue;
   private readonly customFormatters = new Map<string, (value: unknown) => unknown>();
 
   constructor(
@@ -106,6 +120,7 @@ export class ToroTaskBullMQAdapter extends BullMQAdapter {
   ) {
     const { truncate, ...boardOptions } = options ?? {};
     super(queue, boardOptions);
+    this.bullQueue = queue;
     this.queueName = queue.name;
     this.installDataRefFormatters();
 
@@ -162,6 +177,72 @@ export class ToroTaskBullMQAdapter extends BullMQAdapter {
     return Promise.all(
       jobs.map(job => this.enrichJob(job, { resolveDataRefs: false, includeStepState: false })),
     );
+  }
+
+  /**
+   * Bull Board 8.x/9.x differ in optional queue APIs (rate limits, etc.). Define
+   * them on this class so the adapter works even when multiple @bull-board/api
+   * copies are resolved at runtime.
+   */
+  override async getActiveRateLimitTtl(): Promise<number> {
+    return callAdapterMethod(this, 'getActiveRateLimitTtl', () => readActiveRateLimitTtl(this.bullQueue));
+  }
+
+  override get supportsGlobalRateLimit(): boolean {
+    if (bullBoardAdapterCapabilities.supportsGlobalRateLimitGetter) {
+      return super.supportsGlobalRateLimit;
+    }
+
+    return queueSupportsGlobalRateLimit(this.bullQueue);
+  }
+
+  override async getConfiguredRateLimit(): Promise<QueueRateLimit | null> {
+    return callAdapterMethod(this, 'getConfiguredRateLimit', () => readConfiguredRateLimit(this.bullQueue));
+  }
+
+  override async setConfiguredRateLimit(limit: QueueRateLimit): Promise<void> {
+    if (typeof bullMqAdapterPrototype.setConfiguredRateLimit === 'function') {
+      try {
+        await bullMqAdapterPrototype.setConfiguredRateLimit.call(this, limit);
+        return;
+      }
+      catch {
+        // Fall back to direct BullMQ queue calls below.
+      }
+    }
+
+    await writeConfiguredRateLimit(this.bullQueue, limit);
+  }
+
+  override async removeConfiguredRateLimit(): Promise<void> {
+    await callAdapterMethod(this, 'removeConfiguredRateLimit', async () => {
+      await clearConfiguredRateLimit(this.bullQueue);
+    });
+  }
+
+  override async releaseActiveRateLimit(): Promise<void> {
+    await callAdapterMethod(this, 'releaseActiveRateLimit', async () => {
+      await releaseQueueActiveRateLimit(this.bullQueue);
+    });
+  }
+
+  /**
+   * BullMQ's FlowProducer cannot traverse child keys when the queue prefix contains
+   * colons (ToroTask uses `torotask:tasks`). Patch the shared producer so Bull Board
+   * flow visualization works.
+   */
+  override async getFlowProducer(): Promise<FlowProducer | null> {
+    const producer = await super.getFlowProducer();
+    if (!producer) {
+      return producer;
+    }
+
+    const queuePrefix = this.taskClient.queuePrefix ?? this.getQueuePrefix();
+    if (!queuePrefix) {
+      return producer;
+    }
+
+    return patchFlowProducerForMultiSegmentPrefix(producer, queuePrefix);
   }
 
   private async enrichJob(job: Job, options: EnrichJobOptions): Promise<Job> {
