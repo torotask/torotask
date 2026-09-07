@@ -1,7 +1,7 @@
 {
   "name": "@torotask/bull-board",
   "type": "module",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Bull Board adapter for ToroTask that hydrates external step state in the job UI",
   "author": "Ben Osman",
   "license": "MIT",

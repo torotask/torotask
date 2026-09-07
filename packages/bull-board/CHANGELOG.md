@@ -1,5 +1,15 @@
 # @torotask/bull-board
 
+## 1.0.1
+
+### Patch Changes
+
+- ### Bull Board 9.x compatibility and flow visualization ([#39](https://github.com/torotask/torotask/pull/39)) ([`b53ad1c`](https://github.com/torotask/torotask/commit/b53ad1cc3eabe13e33a22841c1ebd424af3f4bdd))
+
+- Add version-compat shims for Bull Board 8.x/9.x adapter APIs (rate limits, queue listing) so the adapter works when the host app upgrades Bull Board without duplicate `@bull-board/api` resolution issues
+- Patch `FlowProducer` child-key parsing so Bull Board flow trees work with ToroTask's multi-segment queue prefix (`torotask:tasks`)
+- Bump peer dependency to `@bull-board/api` `>=8.6.0 <10`
+
 ## 1.0.0
 
 ### Minor Changes
