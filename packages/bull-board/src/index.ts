@@ -1,4 +1,9 @@
 export type { ToroTaskBullMQAdapterOptions } from './adapter-options.js';
+export type { QueueRateLimit } from './bull-board-adapter-compat.js';
+export { bullBoardAdapterCapabilities } from './bull-board-adapter-compat.js';
+export type { ParsedFlowDependencyKey } from './parse-flow-dependency-key.js';
+export { parseFlowDependencyKey } from './parse-flow-dependency-key.js';
+export { patchFlowProducerForMultiSegmentPrefix } from './patch-flow-producer.js';
 export { ToroTaskBullMQAdapter } from './torotask-bullmq-adapter.js';
 export {
   annotateDataRefs,

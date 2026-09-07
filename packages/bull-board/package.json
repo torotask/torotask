@@ -6,7 +6,8 @@
   "author": "Ben Osman",
   "license": "MIT",
   "publishConfig": {
-    "access": "public"
+    "access": "public",
+    "provenance": true
   },
   "repository": {
     "type": "git",
@@ -39,7 +40,7 @@
     "test:unit": "jest --config jest.config.mjs"
   },
   "peerDependencies": {
-    "@bull-board/api": ">=6.0.0",
+    "@bull-board/api": ">=8.6.0 <10",
     "bullmq": ">=5.0.0",
     "torotask": ">=0.16.0"
   },

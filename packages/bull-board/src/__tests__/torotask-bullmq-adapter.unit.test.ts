@@ -44,6 +44,7 @@ describe('toroTaskBullMQAdapter', () => {
   };
 
   const taskClient = {
+    queuePrefix: 'torotask:tasks',
     getDataStore: () => dataStore,
     getStepStateStore: () => stepStateStore,
   } as unknown as ToroTask;
@@ -127,5 +128,40 @@ describe('toroTaskBullMQAdapter', () => {
     expect(adapter.format('returnValue', createRef(1024))).toBe(
       'custom:[ToroTask external data] 1.0 KiB, compressed — open job to load',
     );
+  });
+
+  it('exposes getActiveRateLimitTtl for Bull Board 9.x queue listings', async () => {
+    const adapter = new ToroTaskBullMQAdapter(taskClient, queue);
+    await expect(adapter.getActiveRateLimitTtl()).resolves.toBe(0);
+  });
+
+  it('patches the flow producer for multi-segment queue prefixes', async () => {
+    const originalGetChildren = jest.fn();
+    const producer = {
+      getNode: jest.fn(),
+      getChildren: originalGetChildren,
+    };
+    const adapter = new ToroTaskBullMQAdapter(taskClient, queue);
+    jest
+      .spyOn(Object.getPrototypeOf(Object.getPrototypeOf(adapter)), 'getFlowProducer')
+      .mockResolvedValue(producer);
+
+    const result = await adapter.getFlowProducer();
+
+    expect(result).toBe(producer);
+    expect(producer.getChildren).not.toBe(originalGetChildren);
+    await (producer as any).getChildren(
+      {},
+      ['torotask:tasks:ai.embedding:child-1'],
+      3,
+      10,
+    );
+    expect(producer.getNode).toHaveBeenCalledWith({}, {
+      id: 'child-1',
+      queueName: 'ai.embedding',
+      prefix: 'torotask:tasks',
+      depth: 3,
+      maxChildren: 10,
+    });
   });
 });

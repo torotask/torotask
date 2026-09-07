@@ -10,11 +10,11 @@ catalogs:
       specifier: ^7.0.1
       version: 7.0.1
     '@bull-board/api':
-      specifier: ^8.6.0
-      version: 8.6.0
+      specifier: ^9.8.0
+      version: 9.8.0
     '@bull-board/express':
-      specifier: ^8.6.0
-      version: 8.6.0
+      specifier: ^9.8.0
+      version: 9.8.0
     '@changesets/changelog-github':
       specifier: ^0.5.2
       version: 0.5.2
@@ -203,10 +203,10 @@ importers:
     dependencies:
       '@bull-board/api':
         specifier: 'catalog:'
-        version: 8.6.0(@bull-board/ui@8.6.0)
+        version: 9.8.0(@bull-board/ui@9.8.0(bullmq@5.63.0))(bullmq@5.63.0)
       '@bull-board/express':
         specifier: 'catalog:'
-        version: 8.6.0
+        version: 9.8.0(bullmq@5.63.0)
       '@torotask/bull-board':
         specifier: workspace:*
         version: link:../../packages/bull-board
@@ -262,7 +262,7 @@ importers:
     devDependencies:
       '@bull-board/api':
         specifier: 'catalog:'
-        version: 8.6.0(@bull-board/ui@8.6.0(bullmq@5.63.0))(bullmq@5.63.0)
+        version: 9.8.0(@bull-board/ui@9.8.0(bullmq@5.63.0))(bullmq@5.63.0)
       '@types/jest':
         specifier: 'catalog:'
         version: 29.5.14
@@ -326,7 +326,7 @@ importers:
     devDependencies:
       '@bull-board/express':
         specifier: 'catalog:'
-        version: 8.6.0(bullmq@5.63.0)
+        version: 9.8.0(bullmq@5.63.0)
       '@types/glob':
         specifier: 'catalog:'
         version: 8.1.0
@@ -584,23 +584,23 @@ packages:
   '@bcoe/v8-coverage@0.2.3':
     resolution: {integrity: sha512-0hYQ8SB4Db5zvZB4axdMHGwEaQjkZzFjQiN9LVYvIFB2nSUHW9tYpxWriPrWDASIxiaXax83REcLxuSdnGPZtw==}
 
-  '@bull-board/api@8.6.0':
-    resolution: {integrity: sha512-tJLkYszUJhvDzTexLT+6/OEUYCWrR5QBKXk+SNlNsxHw8WClSRFEirXMrKwrei3LlMVxPV5lvbBOC7LNNymibQ==}
+  '@bull-board/api@9.8.0':
+    resolution: {integrity: sha512-+qmJ19pBrOSZCPLbN93IijoPEpx5DZBWkwqUBk/FgQObvSyHB2OJvuwvvi/TaujTCbRH1eiYPc4USp9dTlNEug==}
     peerDependencies:
-      '@bull-board/ui': 8.6.0
+      '@bull-board/ui': 9.8.0
       bull: ^4.16.5
-      bullmq: ^5.79.2 || ^6.0.0
+      bullmq: ^5.56.0 || ^6.0.0
     peerDependenciesMeta:
       bull:
         optional: true
       bullmq:
         optional: true
 
-  '@bull-board/express@8.6.0':
-    resolution: {integrity: sha512-R2regQ3HOEOm5rtEmzy67qZsJ8burOaxIBUOiOhkzwuy8LVFQ4dFk0SpmYtUv+d/8m/YQVsL1b/6zCn3AyrpSg==}
+  '@bull-board/express@9.8.0':
+    resolution: {integrity: sha512-nYywx44PHHq7ybgQZySrDiM9B2Yc1NSywWm+zdjP8UyVGrvgooZ0UsT+F58ZF4wQ2QGqYRCTNb+YbPvBAWWjBg==}
 
-  '@bull-board/ui@8.6.0':
-    resolution: {integrity: sha512-Qb/HYNU2JhRYKoyeJhXgeu1ZL4VK5RANmLC/cpzbtZPz5b9b260d0J0Af0L0zGdP6ORYg2XpPQKwrIy7n96AwQ==}
+  '@bull-board/ui@9.8.0':
+    resolution: {integrity: sha512-WE6imvISwGDI/E1i7H1M4mQ/NI99sj9u/XIUT5QgbQlWAbys1N4/YdfPktwK6eyKynPMPHJqcAqwRDJDzlceOA==}
 
   '@changesets/apply-release-plan@7.0.14':
     resolution: {integrity: sha512-ddBvf9PHdy2YY0OUiEl3TV78mH9sckndJR14QAt87KLEbIov81XO0q0QAmvooBxXlqRRP8I9B7XOzZwQG7JkWA==}
@@ -3933,6 +3933,7 @@ packages:
   tar@6.2.1:
     resolution: {integrity: sha512-DZ4yORTwrbTj/7MZYq2w+/ZFdI6OZ/f9SFHR+71gIVUZhOQPHzVCLpvRnPgyaMpfWxxk/4ONva3GQSyNIKRv6A==}
     engines: {node: '>=10'}
+    deprecated: Old versions of tar are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
 
   term-size@2.2.1:
     resolution: {integrity: sha512-wK0Ri4fOGjv/XPy8SBHZChl8CM7uMc5VML7SqiQ0zG7+J5Vr+RMQDoHa2CNT6KHUnTGIXH34UDMkPzAUyapBZg==}
@@ -4158,6 +4159,7 @@ packages:
 
   uuid@8.3.2:
     resolution: {integrity: sha512-+NYs2QeMWy+GWFOEm9xnn6HCDp0l7QBD7ml8zLUmJ+93Q5NF0NocErnwkTkXVFNiX3/fpC6afS8Dhb/gz7R7eg==}
+    deprecated: uuid@10 and below is no longer supported.  For ESM codebases, update to uuid@latest.  For CommonJS codebases, use uuid@11 (but be aware this version will likely be deprecated in 2028).
     hasBin: true
 
   v8-compile-cache-lib@3.0.1:
@@ -4516,22 +4518,17 @@ snapshots:
 
   '@bcoe/v8-coverage@0.2.3': {}
 
-  '@bull-board/api@8.6.0(@bull-board/ui@8.6.0(bullmq@5.63.0))(bullmq@5.63.0)':
+  '@bull-board/api@9.8.0(@bull-board/ui@9.8.0(bullmq@5.63.0))(bullmq@5.63.0)':
     dependencies:
-      '@bull-board/ui': 8.6.0(bullmq@5.63.0)
+      '@bull-board/ui': 9.8.0(bullmq@5.63.0)
       redis-info: 3.1.0
     optionalDependencies:
       bullmq: 5.63.0
 
-  '@bull-board/api@8.6.0(@bull-board/ui@8.6.0)':
+  '@bull-board/express@9.8.0(bullmq@5.63.0)':
     dependencies:
-      '@bull-board/ui': 8.6.0
-      redis-info: 3.1.0
-
-  '@bull-board/express@8.6.0':
-    dependencies:
-      '@bull-board/api': 8.6.0(@bull-board/ui@8.6.0)
-      '@bull-board/ui': 8.6.0
+      '@bull-board/api': 9.8.0(@bull-board/ui@9.8.0(bullmq@5.63.0))(bullmq@5.63.0)
+      '@bull-board/ui': 9.8.0(bullmq@5.63.0)
       ejs: 6.0.1
       express: 5.2.1
     transitivePeerDependencies:
@@ -4539,27 +4536,9 @@ snapshots:
       - bullmq
       - supports-color
 
-  '@bull-board/express@8.6.0(bullmq@5.63.0)':
+  '@bull-board/ui@9.8.0(bullmq@5.63.0)':
     dependencies:
-      '@bull-board/api': 8.6.0(@bull-board/ui@8.6.0(bullmq@5.63.0))(bullmq@5.63.0)
-      '@bull-board/ui': 8.6.0(bullmq@5.63.0)
-      ejs: 6.0.1
-      express: 5.2.1
-    transitivePeerDependencies:
-      - bull
-      - bullmq
-      - supports-color
-
-  '@bull-board/ui@8.6.0':
-    dependencies:
-      '@bull-board/api': 8.6.0(@bull-board/ui@8.6.0)
-    transitivePeerDependencies:
-      - bull
-      - bullmq
-
-  '@bull-board/ui@8.6.0(bullmq@5.63.0)':
-    dependencies:
-      '@bull-board/api': 8.6.0(@bull-board/ui@8.6.0(bullmq@5.63.0))(bullmq@5.63.0)
+      '@bull-board/api': 9.8.0(@bull-board/ui@9.8.0(bullmq@5.63.0))(bullmq@5.63.0)
     transitivePeerDependencies:
       - bull
       - bullmq
