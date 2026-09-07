@@ -20,6 +20,9 @@ jobs:
     steps:
       - name: Checkout Repo
         uses: actions/checkout@v4
+        with:
+          # Changesets uses git tags to decide what is already published.
+          fetch-depth: 0
 
       - name: Prepare
         uses: ./.github/actions/prepare
