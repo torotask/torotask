@@ -27,6 +27,16 @@ export abstract class ToroTaskDataStore extends ToroTaskStoreBase {
     return this.options.enabled;
   }
 
+  /** Prefix for all per-job index keys, e.g. `torotask:data-index:`. */
+  indexKeysPrefix(): string {
+    return `${this.prefix}:${this.namespace}-index:`;
+  }
+
+  /** Prefix for per-job index keys in a queue, excluding the job id (trailing `:`). */
+  jobIndexKeysPrefix(queueName: string): string {
+    return `${this.indexKeysPrefix()}${queueName}:`;
+  }
+
   /** Builds the backend-specific storage key for a logical ref key. */
   protected abstract buildStorageKey(refKey: string): string;
 

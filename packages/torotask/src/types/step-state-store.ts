@@ -9,10 +9,23 @@ export interface ToroTaskStepStateStoreOptions {
 
   /**
    * Optional orphan TTL (seconds) when a worker crashes mid-job.
-   * When unset, keys persist until the job record is removed from BullMQ.
+   * Acts as a backstop only; step state is normally removed when the job
+   * succeeds or when its BullMQ job record is deleted.
    * Sleeping steps always extend expiry to their wake time plus a one-day buffer.
    */
   orphanTtlSeconds?: number;
+
+  /**
+   * Delete a job's step state as soon as it completes successfully, instead of
+   * keeping it until the BullMQ job record is removed.
+   *
+   * Step state is execution scratch, so retaining it for every job kept by
+   * `removeOnComplete` is usually just Redis memory. Set to `false` to keep it
+   * for post-run inspection (e.g. step-level history in Bull Board).
+   *
+   * @default true
+   */
+  clearOnComplete?: boolean;
 }
 
 export type ToroTaskStepStateStoreConfig

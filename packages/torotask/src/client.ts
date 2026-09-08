@@ -6,6 +6,7 @@ import type { TaskJob } from './job.js';
 import type { Task } from './task.js';
 import type { ToroTaskDataStoreOptions } from './types/data-store.js';
 import type {
+  ResolvedToroTaskOrphanCleanupOptions,
   SchemaHandler,
   TaskDefinitionRegistry,
   TaskFlowRun,
@@ -28,7 +29,9 @@ import { EventDispatcher } from './event-dispatcher.js';
 import { TaskQueue } from './queue.js';
 import { RedisStepStateStore, ToroTaskStepStateStore } from './stores/index.js';
 import { TaskGroup } from './task-group.js';
+import { resolveOrphanCleanupOptions } from './types/client.js';
 import { getConfigFromEnv } from './utils/get-config-from-env.js';
+import { cancelOrphanedArtifactCleanup, cleanupOrphanedJobArtifacts } from './utils/job-artifact-cleanup.js';
 import { TaskWorkflow } from './workflow.js';
 
 const LOGGER_NAME = 'ToroTask';
@@ -75,6 +78,7 @@ export class ToroTask<
   private readonly _stepStateStoreConfig?: ToroTaskStepStateStoreConfig;
   private _dataStore: ToroTaskDataStore | null = null;
   private readonly _dataStoreConfig?: ToroTaskDataStoreOptions | ToroTaskDataStore;
+  private readonly _orphanCleanupOptions: ResolvedToroTaskOrphanCleanupOptions;
 
   constructor(options?: ToroTaskOptions, taskGroupDefs?: TAllTaskGroupsDefs) {
     super(); // Call EventEmitter constructor
@@ -93,6 +97,7 @@ export class ToroTask<
       stepStateTTL,
       stepStateStore,
       dataStore,
+      orphanCleanup,
       ...connectionOpts
     } = options || {};
 
@@ -119,6 +124,7 @@ export class ToroTask<
     this._stepStateTTL = stepStateTTL;
     this._stepStateStoreConfig = stepStateStore;
     this._dataStoreConfig = dataStore;
+    this._orphanCleanupOptions = resolveOrphanCleanupOptions(orphanCleanup);
 
     if (dataStore instanceof ToroTaskDataStore) {
       this._dataStore = dataStore;
@@ -252,6 +258,26 @@ export class ToroTask<
 
     this._dataStore = new RedisDataStore(this.redis, this.prefix, config);
     return this._dataStore;
+  }
+
+  /** Resolved settings for the background orphan sweep. */
+  public getOrphanCleanupOptions(): ResolvedToroTaskOrphanCleanupOptions {
+    return this._orphanCleanupOptions;
+  }
+
+  /**
+   * Removes step-state and data-store keys whose BullMQ job record no longer exists.
+   * Pass a queue name to limit the sweep, or omit it to clean every queue.
+   *
+   * Always runs regardless of the `orphanCleanup.enabled` setting, so it can be
+   * driven from a cron/ops job when the automatic sweep is turned off.
+   */
+  async cleanupOrphanedJobArtifacts(queueName?: string): Promise<number> {
+    const removed = await cleanupOrphanedJobArtifacts(this, queueName);
+    if (removed > 0) {
+      this.logger.info({ queueName, removed }, 'Cleaned up orphaned job artifacts');
+    }
+    return removed;
   }
 
   /**
@@ -683,6 +709,8 @@ export class ToroTask<
   async close(): Promise<void> {
     this.logger.info('Closing ToroTask resources (Tasks, TaskGroups, EventDispatcher, Queue Discovery)...');
     const closePromises: Promise<void>[] = [];
+
+    cancelOrphanedArtifactCleanup(this);
 
     // Stop queue discovery if active
     if (this._isQueueDiscoveryActive) {

@@ -85,7 +85,51 @@ export type ToroTaskOptions = Partial<BullMQConnectionOptions> & {
    * events — reducing memory use for child-job processed sets and completed events.
    */
   dataStore?: ToroTaskDataStoreOptions | ToroTaskDataStore;
+
+  /**
+   * Background sweep that removes step-state and data-store keys whose BullMQ job
+   * record is gone. Needed because `removeOnComplete` / `removeOnFail` trim jobs
+   * inside Lua without emitting a `removed` event.
+   */
+  orphanCleanup?: ToroTaskOrphanCleanupOptions;
 };
+
+export interface ToroTaskOrphanCleanupOptions {
+  /**
+   * Run the sweep automatically after jobs finish.
+   *
+   * The sweep uses Redis `SCAN`, whose cost is proportional to the whole keyspace
+   * even with a `MATCH` filter. Disable it on very large Redis instances and call
+   * {@link ToroTask.cleanupOrphanedJobArtifacts} from a cron/ops job instead.
+   *
+   * @default true
+   */
+  enabled?: boolean;
+
+  /**
+   * Minimum milliseconds between automatic sweeps. Also acts as the debounce
+   * window, so a burst of completions triggers at most one sweep.
+   *
+   * @default 30000
+   */
+  intervalMs?: number;
+}
+
+export interface ResolvedToroTaskOrphanCleanupOptions {
+  enabled: boolean;
+  intervalMs: number;
+}
+
+export const DEFAULT_ORPHAN_CLEANUP_INTERVAL_MS = 30_000;
+
+export function resolveOrphanCleanupOptions(
+  options?: ToroTaskOrphanCleanupOptions,
+): ResolvedToroTaskOrphanCleanupOptions {
+  return {
+    enabled: options?.enabled ?? true,
+    intervalMs: Math.max(1000, options?.intervalMs ?? DEFAULT_ORPHAN_CLEANUP_INTERVAL_MS),
+  };
+}
 
 /**
  * Connection types used by BullMQ queues

@@ -38,9 +38,13 @@ export function computeStepStateTtlSeconds(
 export abstract class ToroTaskStepStateStore extends ToroTaskStoreBase {
   protected readonly orphanTtlSeconds?: number;
 
+  /** Whether a job's step state is dropped as soon as it completes successfully. */
+  readonly clearOnComplete: boolean;
+
   constructor(prefix: string, options?: ToroTaskStepStateStoreOptions) {
     super(prefix, options?.namespace ?? 'state');
     this.orphanTtlSeconds = options?.orphanTtlSeconds;
+    this.clearOnComplete = options?.clearOnComplete ?? true;
   }
 
   protected buildJobKey(queueName: string, jobId: string): string {

@@ -6,6 +6,11 @@ import type { StepResult } from './types/step.js';
 import { Job, UnrecoverableError } from 'bullmq';
 import { TaskQueue } from './queue.js';
 import { convertJobOptions } from './utils/convert-job-options.js';
+import {
+  clearJobArtifacts,
+  readJobRecordState,
+  scheduleOrphanedArtifactCleanup,
+} from './utils/job-artifact-cleanup.js';
 
 export class TaskJob<
   PayloadType = any,
@@ -373,6 +378,7 @@ export class TaskJob<
     }
     this._batchCompleted = true;
     await super.moveToCompleted(value, this.token, false);
+    await this.cleanupAfterSuccessfulCompletion();
   }
 
   /**
@@ -408,7 +414,55 @@ export class TaskJob<
       ) as ReturnType;
     }
 
-    return super.moveToCompleted(storedReturnValue, token, fetchNext);
+    const result = await super.moveToCompleted(storedReturnValue, token, fetchNext);
+    await this.cleanupAfterSuccessfulCompletion();
+    return result;
+  }
+
+  /**
+   * Step state is execution scratch, so it is dropped once the job succeeds.
+   * External data is only dropped when BullMQ also dropped the job record, since
+   * a retained job's return value may still hold refs into the data store.
+   */
+  private async cleanupAfterSuccessfulCompletion(): Promise<void> {
+    await this.cleanupFinishedJobArtifacts('completion');
+  }
+
+  /**
+   * When removeOnFail drops the job record, clear leftover external artifacts.
+   * Retained failed jobs keep step state so a failure can still be inspected.
+   */
+  private async cleanupAfterFailedCompletion(): Promise<void> {
+    await this.cleanupFinishedJobArtifacts('failure');
+  }
+
+  private async cleanupFinishedJobArtifacts(reason: 'completion' | 'failure'): Promise<void> {
+    const taskClient = this.taskClient;
+    if (!taskClient || !this.id) {
+      return;
+    }
+
+    try {
+      const jobState = await readJobRecordState(taskClient, this.queueName, this.id);
+
+      // A `restarted` record means another run already reused this job id, so its
+      // artifacts belong to that run and must not be deleted here.
+      if (jobState === 'missing') {
+        await clearJobArtifacts(taskClient, this.queueName, this.id);
+      }
+      else if (
+        jobState === 'finished'
+        && reason === 'completion'
+        && taskClient.getStepStateStore().clearOnComplete
+      ) {
+        await this.clearStepState();
+      }
+
+      scheduleOrphanedArtifactCleanup(taskClient, this.logger);
+    }
+    catch (err) {
+      this.logger?.warn({ err, jobId: this.id, reason }, 'Failed to clean job artifacts after job finished');
+    }
   }
 
   /**
@@ -570,7 +624,9 @@ export class TaskJob<
 
   async moveToFailed(error: Error, token: string, fetchNext = false) {
     if (!this.isBatch) {
-      return super.moveToFailed(error, token, fetchNext);
+      const result = await super.moveToFailed(error, token, fetchNext);
+      await this.cleanupAfterFailedCompletion();
+      return result;
     }
     this.logger?.warn(
       `Attempting to move ${this.batchLength} jobs in batch ${this.id} to failed state due to error: ${error.message}`,
