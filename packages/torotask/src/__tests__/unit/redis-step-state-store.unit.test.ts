@@ -65,15 +65,6 @@ describe('redisStepStateStore', () => {
   const queueName = 'exampleGroup.sayHello';
   const jobId = 'job-123';
 
-  it('clears step state on completion by default, and honours opting out', () => {
-    const { redis } = createMockRedis();
-
-    expect(new RedisStepStateStore(redis, prefix).clearOnComplete).toBe(true);
-    expect(
-      new RedisStepStateStore(redis, prefix, { clearOnComplete: false }).clearOnComplete,
-    ).toBe(false);
-  });
-
   it('builds keys under the torotask prefix', () => {
     expect(buildStepStateJobKey(prefix, 'state', queueName, jobId)).toBe(
       'torotask:state:exampleGroup.sayHello:job-123',

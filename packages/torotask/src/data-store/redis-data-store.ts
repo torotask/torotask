@@ -17,6 +17,23 @@ export function buildDataJobIndexKey(
 }
 
 /**
+ * Per-job cleanup metadata (currently the referrer job key). Deliberately under its
+ * own `-index-meta` namespace rather than a `:meta` suffix on the index key, so the
+ * orphan sweep's SCAN over `-index:` never has to disambiguate it from a job id
+ * (job ids may legitimately contain colons).
+ */
+export function buildDataJobIndexMetaKey(
+  prefix: string,
+  namespace: string,
+  queueName: string,
+  jobId: string,
+): string {
+  return `${prefix}:${namespace}-index-meta:${queueName}:${jobId}`;
+}
+
+const REFERRER_FIELD = 'referrer';
+
+/**
  * Redis-backed {@link ToroTaskDataStore}. Uses the ToroTask client's Redis connection
  * by default; pass a dedicated Redis instance for a separate embeddings cache later.
  */
@@ -37,6 +54,10 @@ export class RedisDataStore extends ToroTaskDataStore {
     return buildDataJobIndexKey(this.prefix, this.options.namespace, queueName, jobId);
   }
 
+  private buildJobIndexMetaKey(queueName: string, jobId: string): string {
+    return buildDataJobIndexMetaKey(this.prefix, this.options.namespace, queueName, jobId);
+  }
+
   protected async putRaw(storageKey: string, data: Buffer): Promise<void> {
     await this.redis.set(storageKey, data);
   }
@@ -54,17 +75,30 @@ export class RedisDataStore extends ToroTaskDataStore {
     queueName: string,
     jobId: string,
     storageKey: string,
+    referrerJobKey?: string,
   ): Promise<void> {
-    await this.redis.sadd(this.buildJobIndexKey(queueName, jobId), storageKey);
+    const indexKey = this.buildJobIndexKey(queueName, jobId);
+    if (!referrerJobKey) {
+      await this.redis.sadd(indexKey, storageKey);
+      return;
+    }
+
+    await this.redis
+      .multi()
+      .sadd(indexKey, storageKey)
+      .hset(this.buildJobIndexMetaKey(queueName, jobId), REFERRER_FIELD, referrerJobKey)
+      .exec();
+  }
+
+  override async readJobReferrer(queueName: string, jobId: string): Promise<string | undefined> {
+    const referrer = await this.redis.hget(this.buildJobIndexMetaKey(queueName, jobId), REFERRER_FIELD);
+    return referrer ?? undefined;
   }
 
   async clearJob(queueName: string, jobId: string): Promise<void> {
     const indexKey = this.buildJobIndexKey(queueName, jobId);
+    const metaKey = this.buildJobIndexMetaKey(queueName, jobId);
     const storageKeys = await this.redis.smembers(indexKey);
-    if (storageKeys.length > 0) {
-      await this.redis.del(...storageKeys, indexKey);
-      return;
-    }
-    await this.redis.del(indexKey);
+    await this.redis.del(...storageKeys, indexKey, metaKey);
   }
 }

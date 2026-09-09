@@ -51,7 +51,19 @@ export abstract class ToroTaskDataStore extends ToroTaskStoreBase {
     queueName: string,
     jobId: string,
     storageKey: string,
+    referrerJobKey?: string,
   ): Promise<void>;
+
+  /**
+   * Job hash key of a still-live referrer recorded via {@link trackJobKey}, if any.
+   *
+   * Orphan cleanup uses this to avoid deleting a blob that a surviving parent job
+   * still references. Backends that do not track referrers return `undefined`,
+   * which means "no known referrer" and allows cleanup to proceed.
+   */
+  async readJobReferrer(_queueName: string, _jobId: string): Promise<string | undefined> {
+    return undefined;
+  }
 
   /** Removes all blobs tracked for a job. */
   abstract clearJob(queueName: string, jobId: string): Promise<void>;
@@ -120,7 +132,7 @@ export abstract class ToroTaskDataStore extends ToroTaskStoreBase {
     const { buffer, compressed } = this.prepareBuffer(json, byteLength);
 
     await this.putRaw(storageKey, buffer);
-    await this.trackJobKey(context.queueName, context.jobId, storageKey);
+    await this.trackJobKey(context.queueName, context.jobId, storageKey, context.referrerJobKey);
 
     return createToroTaskDataRef(refKey, compressed, byteLength);
   }

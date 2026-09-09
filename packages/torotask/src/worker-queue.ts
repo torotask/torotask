@@ -9,7 +9,6 @@ import type {
 } from './types/index.js';
 import { TaskQueueEvents } from './queue-events.js';
 import { TaskQueue } from './queue.js';
-import { setupJobArtifactCleanupListeners } from './utils/job-artifact-cleanup.js';
 import { TaskWorker } from './worker.js';
 
 export class TaskWorkerQueue<PayloadType = any, ResultType = any, NameType extends string = string> extends TaskQueue<
@@ -32,9 +31,6 @@ export class TaskWorkerQueue<PayloadType = any, ResultType = any, NameType exten
     super(taskClient, name, queueOptions);
 
     this.queueEvents = new TaskQueueEvents(taskClient, this.name);
-    setupJobArtifactCleanupListeners(taskClient, this.name, this.logger, {
-      queueEvents: this.queueEvents,
-    });
     this.workerOptions = workerOptions;
   }
 

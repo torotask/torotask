@@ -20,18 +20,24 @@ import type {
 } from './types/index.js';
 import type { TaskQueueOptions } from './types/queue.js';
 import type { ToroTaskStepStateStoreConfig } from './types/step-state-store.js';
+import type { OrphanSweepOptions, OrphanSweepResult } from './utils/job-artifact-cleanup.js';
 import { EventEmitter } from 'node:events';
 import { Redis } from 'ioredis';
 import { pino } from 'pino';
 import { LRU } from 'tiny-lru';
 import { RedisDataStore, ToroTaskDataStore } from './data-store/index.js';
 import { EventDispatcher } from './event-dispatcher.js';
+import {
+  createOrphanCleanupTaskDefinition,
+  MAINTENANCE_GROUP_ID,
+  ORPHAN_CLEANUP_TASK_ID,
+} from './maintenance.js';
 import { TaskQueue } from './queue.js';
 import { RedisStepStateStore, ToroTaskStepStateStore } from './stores/index.js';
 import { TaskGroup } from './task-group.js';
 import { resolveOrphanCleanupOptions } from './types/client.js';
 import { getConfigFromEnv } from './utils/get-config-from-env.js';
-import { cancelOrphanedArtifactCleanup, cleanupOrphanedJobArtifacts } from './utils/job-artifact-cleanup.js';
+import { cleanupOrphanedJobArtifacts } from './utils/job-artifact-cleanup.js';
 import { TaskWorkflow } from './workflow.js';
 
 const LOGGER_NAME = 'ToroTask';
@@ -97,7 +103,7 @@ export class ToroTask<
       stepStateTTL,
       stepStateStore,
       dataStore,
-      orphanCleanup,
+      maintenance,
       ...connectionOpts
     } = options || {};
 
@@ -124,7 +130,7 @@ export class ToroTask<
     this._stepStateTTL = stepStateTTL;
     this._stepStateStoreConfig = stepStateStore;
     this._dataStoreConfig = dataStore;
-    this._orphanCleanupOptions = resolveOrphanCleanupOptions(orphanCleanup);
+    this._orphanCleanupOptions = resolveOrphanCleanupOptions(maintenance?.orphanCleanup);
 
     if (dataStore instanceof ToroTaskDataStore) {
       this._dataStore = dataStore;
@@ -156,6 +162,32 @@ export class ToroTask<
         this.logger.error({ error }, 'Failed to start queue discovery during initialization');
       });
     }
+  }
+
+  /**
+   * Registers ToroTask's own housekeeping tasks as an ordinary task group, so they are
+   * scheduled, observed and shut down through the same machinery as user tasks.
+   *
+   * Deliberately *not* called from the constructor. Constructing a task builds a
+   * `TaskWorkerQueue`, which opens Redis connections, and read-only clients (dashboards,
+   * one-shot producers) should not pay for a worker they will never run. `TaskServer.start()`
+   * calls this instead. Clients that drive workers by hand should call
+   * {@link cleanupOrphanedJobArtifacts} on their own schedule.
+   *
+   * @returns The maintenance group, or `undefined` when cleanup is disabled.
+   */
+  protected registerMaintenanceTasks(): TaskGroup | undefined {
+    const orphanCleanup = this._orphanCleanupOptions;
+    if (!orphanCleanup.enabled) {
+      this.logger.debug('Maintenance orphan cleanup disabled; call cleanupOrphanedJobArtifacts() manually');
+      return undefined;
+    }
+
+    const group = this.createTaskGroup(MAINTENANCE_GROUP_ID, {
+      [ORPHAN_CLEANUP_TASK_ID]: createOrphanCleanupTaskDefinition(orphanCleanup),
+    });
+    this.logger.debug({ cron: orphanCleanup.cron }, 'Registered orphan cleanup maintenance task');
+    return group;
   }
 
   /**
@@ -260,7 +292,7 @@ export class ToroTask<
     return this._dataStore;
   }
 
-  /** Resolved settings for the background orphan sweep. */
+  /** Resolved settings for the scheduled orphan sweep. */
   public getOrphanCleanupOptions(): ResolvedToroTaskOrphanCleanupOptions {
     return this._orphanCleanupOptions;
   }
@@ -269,15 +301,18 @@ export class ToroTask<
    * Removes step-state and data-store keys whose BullMQ job record no longer exists.
    * Pass a queue name to limit the sweep, or omit it to clean every queue.
    *
-   * Always runs regardless of the `orphanCleanup.enabled` setting, so it can be
-   * driven from a cron/ops job when the automatic sweep is turned off.
+   * Always runs regardless of `maintenance.orphanCleanup.enabled`, so it can be driven
+   * from a cron/ops job when the built-in scheduled sweep is turned off.
+   *
+   * The sweep uses Redis `SCAN`, whose cost scales with the whole keyspace even with a
+   * `MATCH` filter, so it is budgeted: see {@link OrphanSweepOptions}.
    */
-  async cleanupOrphanedJobArtifacts(queueName?: string): Promise<number> {
-    const removed = await cleanupOrphanedJobArtifacts(this, queueName);
-    if (removed > 0) {
-      this.logger.info({ queueName, removed }, 'Cleaned up orphaned job artifacts');
+  async cleanupOrphanedJobArtifacts(options?: OrphanSweepOptions): Promise<OrphanSweepResult> {
+    const result = await cleanupOrphanedJobArtifacts(this, { logger: this.logger, ...options });
+    if (result.removed > 0 || result.truncated) {
+      this.logger.info({ queueName: options?.queueName, ...result }, 'Orphaned job artifact sweep finished');
     }
-    return removed;
+    return result;
   }
 
   /**
@@ -709,8 +744,6 @@ export class ToroTask<
   async close(): Promise<void> {
     this.logger.info('Closing ToroTask resources (Tasks, TaskGroups, EventDispatcher, Queue Discovery)...');
     const closePromises: Promise<void>[] = [];
-
-    cancelOrphanedArtifactCleanup(this);
 
     // Stop queue discovery if active
     if (this._isQueueDiscoveryActive) {

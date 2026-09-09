@@ -87,8 +87,6 @@ describe('dataStore integration', () => {
         },
         stepStateStore: {
           namespace: 'state',
-          // Keep step state after completion so these tests can assert on it.
-          clearOnComplete: false,
         },
       },
       groups,

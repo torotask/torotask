@@ -58,16 +58,25 @@ export class TaskServer<
 
     const groupsToProcess = filterGroups(this, filter, 'starting workers');
 
-    if (groupsToProcess.length === 0) {
-      this.logger.info('No groups to start workers for based on the filter.');
-      return;
-    }
-
     const mergedOptions: WorkerOptions = {
       prefix: this.queuePrefix,
       connection: this.connectionOptions,
       ...workerOptions,
     };
+
+    // Registered after the filter is resolved, and started regardless of it: deployments
+    // commonly shard workers by group, and that must not leave the cluster with nobody
+    // reclaiming orphaned artifacts. The underlying cron scheduler is idempotent across
+    // processes, so the sweep still runs once per cluster per interval.
+    const maintenanceGroup = this.registerMaintenanceTasks();
+    if (maintenanceGroup) {
+      await maintenanceGroup.startWorkers(undefined, mergedOptions);
+    }
+
+    if (groupsToProcess.length === 0) {
+      this.logger.info('No groups to start workers for based on the filter.');
+      return;
+    }
 
     await Promise.allSettled(
       groupsToProcess.map(async (group) => {

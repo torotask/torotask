@@ -1,23 +1,39 @@
 import type { Redis } from 'ioredis';
 import type { ToroTask } from '../../client.js';
-import { EventEmitter } from 'node:events';
 import { RedisDataStore } from '../../data-store/redis-data-store.js';
 import { RedisStepStateStore } from '../../stores/redis-step-state-store.js';
 import {
-  cancelOrphanedArtifactCleanup,
   cleanupOrphanedJobArtifacts,
   clearJobArtifacts,
   escapeRedisGlob,
-  readJobRecordState,
-  scheduleOrphanedArtifactCleanup,
+  jobPresence,
 } from '../../utils/job-artifact-cleanup.js';
 
-function createMockRedis() {
+type PipelineMode = 'ok' | 'commandError' | 'nullReply' | 'throws';
+
+function createMockRedis(options?: { pipelineMode?: PipelineMode }) {
+  const mode: PipelineMode = options?.pipelineMode ?? 'ok';
   const strings = new Map<string, string>();
   const hashes = new Map<string, Map<string, string>>();
   const sets = new Map<string, Set<string>>();
 
   const existsCount = (key: string) => (strings.has(key) || hashes.has(key) || sets.has(key) ? 1 : 0);
+
+  const hsetImpl = (key: string, field: string, value: string) => {
+    if (!hashes.has(key)) {
+      hashes.set(key, new Map());
+    }
+    hashes.get(key)!.set(field, value);
+    return 1;
+  };
+
+  const saddImpl = (key: string, member: string) => {
+    if (!sets.has(key)) {
+      sets.set(key, new Set());
+    }
+    sets.get(key)!.add(member);
+    return 1;
+  };
 
   const redis = {
     exists: jest.fn(async (key: string) => existsCount(key)),
@@ -36,29 +52,33 @@ function createMockRedis() {
       }
       return removed;
     }),
-    hset: jest.fn(async (key: string, field: string, value: string) => {
-      if (!hashes.has(key)) {
-        hashes.set(key, new Map());
-      }
-      hashes.get(key)!.set(field, value);
-      return 1;
-    }),
-    sadd: jest.fn(async (key: string, member: string) => {
-      if (!sets.has(key)) {
-        sets.set(key, new Set());
-      }
-      sets.get(key)!.add(member);
-      return 1;
-    }),
+    hset: jest.fn(async (key: string, field: string, value: string) => hsetImpl(key, field, value)),
+    sadd: jest.fn(async (key: string, member: string) => saddImpl(key, member)),
     smembers: jest.fn(async (key: string) => Array.from(sets.get(key) ?? [])),
     set: jest.fn(async (key: string, value: string) => {
       strings.set(key, value);
       return 'OK';
     }),
     hget: jest.fn(async (key: string, field: string) => hashes.get(key)?.get(field) ?? null),
+    expire: jest.fn(async () => 1),
+    multi: jest.fn(() => {
+      const queued: Array<() => unknown> = [];
+      const chain: any = {
+        sadd(key: string, member: string) {
+          queued.push(() => saddImpl(key, member));
+          return chain;
+        },
+        hset(key: string, field: string, value: string) {
+          queued.push(() => hsetImpl(key, field, value));
+          return chain;
+        },
+        exec: jest.fn(async () => queued.map(run => [null, run()] as [null, unknown])),
+      };
+      return chain;
+    }),
     pipeline: jest.fn(() => {
       const queued: Array<() => unknown> = [];
-      const chain = {
+      const chain: any = {
         exists(key: string) {
           queued.push(() => existsCount(key));
           return chain;
@@ -67,7 +87,18 @@ function createMockRedis() {
           queued.push(() => hashes.get(key)?.get(field) ?? null);
           return chain;
         },
-        exec: jest.fn(async () => queued.map(run => [null, run()] as [null, unknown])),
+        exec: jest.fn(async () => {
+          switch (mode) {
+            case 'throws':
+              throw new Error('connection lost');
+            case 'nullReply':
+              return null;
+            case 'commandError':
+              return queued.map(() => [new Error('READONLY'), null] as [Error, null]);
+            default:
+              return queued.map(run => [null, run()] as [null, unknown]);
+          }
+        }),
       };
       return chain;
     }),
@@ -79,18 +110,22 @@ function createMockRedis() {
         ...sets.keys(),
       ].filter(key => key.startsWith(prefix));
 
-      const stream = new EventEmitter();
-      queueMicrotask(() => {
-        if (matchingKeys.length > 0) {
-          stream.emit('data', matchingKeys);
-        }
-        stream.emit('end');
-      });
-      return stream;
+      let destroyed = false;
+      return {
+        destroy: () => {
+          destroyed = true;
+        },
+        // Deliberately yields in small batches so budget/backpressure paths are exercised.
+        async* [Symbol.asyncIterator]() {
+          for (let i = 0; i < matchingKeys.length; i += 2) {
+            if (destroyed) {
+              return;
+            }
+            yield matchingKeys.slice(i, i + 2);
+          }
+        },
+      };
     }),
-    _strings: strings,
-    _hashes: hashes,
-    _sets: sets,
   };
 
   return {
@@ -101,42 +136,36 @@ function createMockRedis() {
   };
 }
 
-function createMockTaskClient(
-  redis: Redis,
-  orphanCleanup: { enabled: boolean; intervalMs: number } = { enabled: true, intervalMs: 30_000 },
-): ToroTask {
-  const prefix = 'torotask';
-  const queuePrefix = 'torotask:tasks';
-  const stepStore = new RedisStepStateStore(redis, prefix, { namespace: 'state' });
-  const dataStore = new RedisDataStore(redis, prefix, { enabled: true, namespace: 'data', mode: 'all' });
+const PREFIX = 'torotask';
+const QUEUE_PREFIX = 'torotask:tasks';
+
+function createMockTaskClient(redis: Redis): ToroTask {
+  const stepStore = new RedisStepStateStore(redis, PREFIX, { namespace: 'state' });
+  const dataStore = new RedisDataStore(redis, PREFIX, { enabled: true, namespace: 'data', mode: 'all' });
 
   return {
-    prefix,
-    queuePrefix,
+    prefix: PREFIX,
+    queuePrefix: QUEUE_PREFIX,
     redis,
     getStepStateStore: () => stepStore,
     getDataStore: () => dataStore,
-    getOrphanCleanupOptions: () => orphanCleanup,
   } as unknown as ToroTask;
 }
 
 describe('jobArtifactCleanup', () => {
   const queueName = 'lexonis.competenciesCharacteristics';
-  const clients: ToroTask[] = [];
 
-  function trackedClient(
-    redis: Redis,
-    orphanCleanup?: { enabled: boolean; intervalMs: number },
-  ): ToroTask {
-    const client = createMockTaskClient(redis, orphanCleanup);
-    clients.push(client);
-    return client;
+  /**
+   * The sweep refuses to touch a queue until it has confirmed the queue's job hashes
+   * really live under the client's prefix, which it does by probing the `meta` key.
+   */
+  function seedQueueMeta(strings: Map<string, string>, queue: string = queueName): void {
+    strings.set(`${QUEUE_PREFIX}:${queue}:meta`, '1');
   }
 
-  afterEach(() => {
-    clients.splice(0).forEach(cancelOrphanedArtifactCleanup);
-    jest.useRealTimers();
-  });
+  function jobKey(queue: string, jobId: string): string {
+    return `${QUEUE_PREFIX}:${queue}:${jobId}`;
+  }
 
   it('escapes Redis SCAN glob metacharacters', () => {
     expect(escapeRedisGlob('lexonis.competenciesCharacteristics')).toBe(
@@ -145,245 +174,259 @@ describe('jobArtifactCleanup', () => {
     expect(escapeRedisGlob('foo*bar?[x]')).toBe('foo\\*bar\\?\\[x\\]');
   });
 
-  it('clearJobArtifacts removes step state and data blobs', async () => {
-    const { redis, hashes, strings, sets } = createMockRedis();
-    const taskClient = trackedClient(redis);
-    const jobId = '42';
+  describe('jobPresence', () => {
+    it('classifies existing and missing keys', async () => {
+      const { redis, strings } = createMockRedis();
+      strings.set('present-key', '1');
 
-    await taskClient.getStepStateStore().saveStep(queueName, jobId, 'step-1', {
-      status: 'completed',
-      data: { ok: true },
+      const presence = await jobPresence(redis as any, ['present-key', 'missing-key']);
+
+      expect(presence.get('present-key')).toBe('present');
+      expect(presence.get('missing-key')).toBe('absent');
     });
-    await taskClient.getDataStore()!.externalize(
-      { queueName, jobId, kind: 'returnValue' },
-      { large: 'payload' },
-    );
 
-    const stepKey = `torotask:state:${queueName}:${jobId}`;
-    const dataKey = `torotask:data:${queueName}:${jobId}:returnValue`;
-    const indexKey = `torotask:data-index:${queueName}:${jobId}`;
+    it.each<[string, PipelineMode]>([
+      ['a per-command error', 'commandError'],
+      ['a null pipeline reply', 'nullReply'],
+      ['a thrown pipeline error', 'throws'],
+    ])('fails closed on %s', async (_label, pipelineMode) => {
+      const { redis } = createMockRedis({ pipelineMode });
 
-    expect(hashes.has(stepKey)).toBe(true);
-    expect(strings.has(dataKey)).toBe(true);
-    expect(sets.has(indexKey)).toBe(true);
+      const presence = await jobPresence(redis as any, ['some-key']);
 
-    await clearJobArtifacts(taskClient, queueName, jobId);
-
-    expect(hashes.has(stepKey)).toBe(false);
-    expect(strings.has(dataKey)).toBe(false);
-    expect(sets.has(indexKey)).toBe(false);
+      // Never 'absent': an unreadable reply must not authorise a delete.
+      expect(presence.get('some-key')).toBe('unknown');
+    });
   });
 
-  it('cleanupOrphanedJobArtifacts removes artifacts when the BullMQ job hash is gone', async () => {
-    const { redis, hashes, strings } = createMockRedis();
-    const taskClient = trackedClient(redis);
+  describe('clearJobArtifacts', () => {
+    it('removes step state and data blobs', async () => {
+      const { redis, hashes, strings, sets } = createMockRedis();
+      const taskClient = createMockTaskClient(redis);
+      const jobId = '42';
 
-    await taskClient.getStepStateStore().saveStep(queueName, 'orphan-1', 'step-1', {
-      status: 'completed',
-      data: {},
+      await taskClient.getStepStateStore().saveStep(queueName, jobId, 'step-1', {
+        status: 'completed',
+        data: { ok: true },
+      });
+      await taskClient.getDataStore()!.externalize(
+        { queueName, jobId, kind: 'returnValue' },
+        { large: 'payload' },
+      );
+
+      const stepKey = `torotask:state:${queueName}:${jobId}`;
+      const dataKey = `torotask:data:${queueName}:${jobId}:returnValue`;
+      const indexKey = `torotask:data-index:${queueName}:${jobId}`;
+
+      expect(hashes.has(stepKey)).toBe(true);
+      expect(strings.has(dataKey)).toBe(true);
+      expect(sets.has(indexKey)).toBe(true);
+
+      await expect(clearJobArtifacts(taskClient, queueName, jobId)).resolves.toBe(2);
+
+      expect(hashes.has(stepKey)).toBe(false);
+      expect(strings.has(dataKey)).toBe(false);
+      expect(sets.has(indexKey)).toBe(false);
     });
-    await taskClient.getDataStore()!.externalize(
-      { queueName, jobId: 'orphan-2', kind: 'payload' },
-      { kept: false },
-    );
-    await taskClient.getStepStateStore().saveStep(queueName, 'kept-1', 'step-1', {
-      status: 'completed',
-      data: {},
+
+    it('clears step state but defers blobs while a referrer job is still alive', async () => {
+      const { redis, hashes, strings } = createMockRedis();
+      const taskClient = createMockTaskClient(redis);
+      const jobId = 'child-1';
+      const parentKey = jobKey('parent.queue', 'parent-1');
+
+      strings.set(parentKey, 'live-parent');
+      await taskClient.getStepStateStore().saveStep(queueName, jobId, 'step-1', {
+        status: 'completed',
+        data: {},
+      });
+      await taskClient.getDataStore()!.externalize(
+        { queueName, jobId, kind: 'returnValue', referrerJobKey: parentKey },
+        { large: 'payload' },
+      );
+
+      const cleared = await clearJobArtifacts(taskClient, queueName, jobId, { respectReferrer: true });
+
+      expect(cleared).toBe(1);
+      expect(hashes.has(`torotask:state:${queueName}:${jobId}`)).toBe(false);
+      // The parent's `processed` hash still holds this ref, so the blob must survive.
+      expect(strings.has(`torotask:data:${queueName}:${jobId}:returnValue`)).toBe(true);
     });
-    await taskClient.getStepStateStore().saveStep('other.queue', 'orphan-other', 'step-1', {
-      status: 'completed',
-      data: {},
+
+    it('clears blobs once the referrer job is gone', async () => {
+      const { redis, strings } = createMockRedis();
+      const taskClient = createMockTaskClient(redis);
+      const jobId = 'child-1';
+      const parentKey = jobKey('parent.queue', 'parent-1');
+
+      await taskClient.getDataStore()!.externalize(
+        { queueName, jobId, kind: 'returnValue', referrerJobKey: parentKey },
+        { large: 'payload' },
+      );
+
+      await clearJobArtifacts(taskClient, queueName, jobId, { respectReferrer: true });
+
+      expect(strings.has(`torotask:data:${queueName}:${jobId}:returnValue`)).toBe(false);
     });
-
-    strings.set(`torotask:tasks:${queueName}:kept-1`, 'job-record');
-
-    const removed = await cleanupOrphanedJobArtifacts(taskClient, queueName);
-
-    expect(removed).toBe(2);
-    expect(hashes.has(`torotask:state:${queueName}:orphan-1`)).toBe(false);
-    expect(strings.has(`torotask:data:${queueName}:orphan-2:payload`)).toBe(false);
-    expect(hashes.has(`torotask:state:${queueName}:kept-1`)).toBe(true);
-    expect(hashes.has('torotask:state:other.queue:orphan-other')).toBe(true);
   });
 
-  it('cleanupOrphanedJobArtifacts without a queue name sweeps every queue', async () => {
-    const { redis, hashes } = createMockRedis();
-    const taskClient = trackedClient(redis);
+  describe('cleanupOrphanedJobArtifacts', () => {
+    it('removes artifacts when the BullMQ job hash is gone', async () => {
+      const { redis, hashes, strings } = createMockRedis();
+      const taskClient = createMockTaskClient(redis);
+      seedQueueMeta(strings);
 
-    await taskClient.getStepStateStore().saveStep(queueName, 'orphan-1', 'step-1', {
-      status: 'completed',
-      data: {},
-    });
-    await taskClient.getStepStateStore().saveStep('other.queue', 'orphan-other', 'step-1', {
-      status: 'completed',
-      data: {},
-    });
+      await taskClient.getStepStateStore().saveStep(queueName, 'orphan-1', 'step-1', {
+        status: 'completed',
+        data: {},
+      });
+      await taskClient.getDataStore()!.externalize(
+        { queueName, jobId: 'orphan-2', kind: 'payload' },
+        { kept: false },
+      );
+      await taskClient.getStepStateStore().saveStep(queueName, 'kept-1', 'step-1', {
+        status: 'completed',
+        data: {},
+      });
+      await taskClient.getStepStateStore().saveStep('other.queue', 'orphan-other', 'step-1', {
+        status: 'completed',
+        data: {},
+      });
 
-    const removed = await cleanupOrphanedJobArtifacts(taskClient);
+      strings.set(jobKey(queueName, 'kept-1'), 'job-record');
 
-    expect(removed).toBe(2);
-    expect(hashes.has(`torotask:state:${queueName}:orphan-1`)).toBe(false);
-    expect(hashes.has('torotask:state:other.queue:orphan-other')).toBe(false);
-  });
+      const result = await cleanupOrphanedJobArtifacts(taskClient, { queueName });
 
-  it('preserves artifacts for custom job ids that contain colons', async () => {
-    const { redis, hashes, strings } = createMockRedis();
-    const taskClient = trackedClient(redis);
-    const jobId = 'repeat:abc123:1710000000000';
-
-    await taskClient.getStepStateStore().saveStep(queueName, jobId, 'step-1', {
-      status: 'completed',
-      data: {},
-    });
-    strings.set(`torotask:tasks:${queueName}:${jobId}`, 'job-record');
-
-    const removed = await cleanupOrphanedJobArtifacts(taskClient);
-
-    expect(removed).toBe(0);
-    expect(hashes.has(`torotask:state:${queueName}:${jobId}`)).toBe(true);
-  });
-
-  it('schedules a trailing sweep instead of scanning on every completion', async () => {
-    jest.useFakeTimers();
-    const { redis, hashes } = createMockRedis();
-    const taskClient = trackedClient(redis);
-
-    await taskClient.getStepStateStore().saveStep(queueName, 'orphan-1', 'step-1', {
-      status: 'completed',
-      data: {},
+      expect(result.removed).toBe(2);
+      expect(result.truncated).toBe(false);
+      expect(hashes.has(`torotask:state:${queueName}:orphan-1`)).toBe(false);
+      expect(strings.has(`torotask:data:${queueName}:orphan-2:payload`)).toBe(false);
+      expect(hashes.has(`torotask:state:${queueName}:kept-1`)).toBe(true);
+      expect(hashes.has('torotask:state:other.queue:orphan-other')).toBe(true);
     });
 
-    scheduleOrphanedArtifactCleanup(taskClient);
-    expect(hashes.has(`torotask:state:${queueName}:orphan-1`)).toBe(true);
+    it('sweeps every queue when no queue name is given', async () => {
+      const { redis, hashes, strings } = createMockRedis();
+      const taskClient = createMockTaskClient(redis);
+      seedQueueMeta(strings);
+      seedQueueMeta(strings, 'other.queue');
 
-    await jest.advanceTimersByTimeAsync(29_000);
-    expect(hashes.has(`torotask:state:${queueName}:orphan-1`)).toBe(true);
+      await taskClient.getStepStateStore().saveStep(queueName, 'orphan-1', 'step-1', {
+        status: 'completed',
+        data: {},
+      });
+      await taskClient.getStepStateStore().saveStep('other.queue', 'orphan-other', 'step-1', {
+        status: 'completed',
+        data: {},
+      });
 
-    await jest.advanceTimersByTimeAsync(1_000);
-    expect(hashes.has(`torotask:state:${queueName}:orphan-1`)).toBe(false);
-  });
+      const result = await cleanupOrphanedJobArtifacts(taskClient);
 
-  it('still sweeps within the debounce window while completions keep arriving', async () => {
-    jest.useFakeTimers();
-    const { redis, hashes } = createMockRedis();
-    const taskClient = trackedClient(redis);
-
-    await taskClient.getStepStateStore().saveStep(queueName, 'orphan-1', 'step-1', {
-      status: 'completed',
-      data: {},
+      expect(result.removed).toBe(2);
+      expect(hashes.has(`torotask:state:${queueName}:orphan-1`)).toBe(false);
+      expect(hashes.has('torotask:state:other.queue:orphan-other')).toBe(false);
     });
 
-    // A steady stream of completions must not postpone the sweep indefinitely.
-    for (let i = 0; i < 6; i++) {
-      scheduleOrphanedArtifactCleanup(taskClient);
-      await jest.advanceTimersByTimeAsync(5_000);
-    }
+    it('preserves artifacts for job ids that contain colons', async () => {
+      const { redis, hashes, strings } = createMockRedis();
+      const taskClient = createMockTaskClient(redis);
+      seedQueueMeta(strings);
+      const jobId = 'repeat:abc123:1710000000000';
 
-    expect(hashes.has(`torotask:state:${queueName}:orphan-1`)).toBe(false);
-  });
+      await taskClient.getStepStateStore().saveStep(queueName, jobId, 'step-1', {
+        status: 'completed',
+        data: {},
+      });
+      strings.set(jobKey(queueName, jobId), 'job-record');
 
-  it('does not sweep when orphan cleanup is disabled', async () => {
-    jest.useFakeTimers();
-    const { redis, hashes } = createMockRedis();
-    const taskClient = trackedClient(redis, { enabled: false, intervalMs: 30_000 });
+      const result = await cleanupOrphanedJobArtifacts(taskClient);
 
-    await taskClient.getStepStateStore().saveStep(queueName, 'orphan-1', 'step-1', {
-      status: 'completed',
-      data: {},
+      expect(result.removed).toBe(0);
+      expect(hashes.has(`torotask:state:${queueName}:${jobId}`)).toBe(true);
     });
 
-    scheduleOrphanedArtifactCleanup(taskClient);
-    await jest.advanceTimersByTimeAsync(120_000);
+    it('refuses to sweep a queue whose key prefix cannot be confirmed', async () => {
+      const { redis, hashes } = createMockRedis();
+      const taskClient = createMockTaskClient(redis);
+      // No `meta` key seeded: the queue may live under a caller-supplied prefix, so its
+      // job hashes are not where we would look and "absent" would be a false positive.
+      await taskClient.getStepStateStore().saveStep(queueName, 'orphan-1', 'step-1', {
+        status: 'completed',
+        data: {},
+      });
 
-    expect(hashes.has(`torotask:state:${queueName}:orphan-1`)).toBe(true);
-    expect(redis.scanStream).not.toHaveBeenCalled();
-  });
+      const result = await cleanupOrphanedJobArtifacts(taskClient);
 
-  it('honours a custom sweep interval', async () => {
-    jest.useFakeTimers();
-    const { redis, hashes } = createMockRedis();
-    const taskClient = trackedClient(redis, { enabled: true, intervalMs: 5_000 });
-
-    await taskClient.getStepStateStore().saveStep(queueName, 'orphan-1', 'step-1', {
-      status: 'completed',
-      data: {},
+      expect(result.removed).toBe(0);
+      expect(result.skipped).toBeGreaterThan(0);
+      expect(hashes.has(`torotask:state:${queueName}:orphan-1`)).toBe(true);
     });
 
-    scheduleOrphanedArtifactCleanup(taskClient);
+    it('deletes nothing when Redis cannot answer EXISTS', async () => {
+      const { redis, hashes } = createMockRedis({ pipelineMode: 'commandError' });
+      const taskClient = createMockTaskClient(redis);
 
-    await jest.advanceTimersByTimeAsync(4_000);
-    expect(hashes.has(`torotask:state:${queueName}:orphan-1`)).toBe(true);
+      await taskClient.getStepStateStore().saveStep(queueName, 'orphan-1', 'step-1', {
+        status: 'completed',
+        data: {},
+      });
 
-    await jest.advanceTimersByTimeAsync(1_500);
-    expect(hashes.has(`torotask:state:${queueName}:orphan-1`)).toBe(false);
-  });
+      const result = await cleanupOrphanedJobArtifacts(taskClient);
 
-  it('cancelOrphanedArtifactCleanup prevents a pending sweep from running', async () => {
-    jest.useFakeTimers();
-    const { redis, hashes } = createMockRedis();
-    const taskClient = trackedClient(redis);
-
-    await taskClient.getStepStateStore().saveStep(queueName, 'orphan-1', 'step-1', {
-      status: 'completed',
-      data: {},
+      expect(result.removed).toBe(0);
+      expect(hashes.has(`torotask:state:${queueName}:orphan-1`)).toBe(true);
     });
 
-    scheduleOrphanedArtifactCleanup(taskClient);
-    cancelOrphanedArtifactCleanup(taskClient);
+    it('defers orphaned blobs whose referrer job is still present', async () => {
+      const { redis, strings } = createMockRedis();
+      const taskClient = createMockTaskClient(redis);
+      seedQueueMeta(strings);
+      const parentKey = jobKey('parent.queue', 'parent-1');
+      strings.set(parentKey, 'live-parent');
 
-    await jest.advanceTimersByTimeAsync(60_000);
-    expect(hashes.has(`torotask:state:${queueName}:orphan-1`)).toBe(true);
-  });
+      await taskClient.getDataStore()!.externalize(
+        { queueName, jobId: 'child-1', kind: 'returnValue', referrerJobKey: parentKey },
+        { large: 'payload' },
+      );
+      await taskClient.getDataStore()!.externalize(
+        { queueName, jobId: 'child-2', kind: 'returnValue' },
+        { large: 'payload' },
+      );
 
-  it('keeps sweeps isolated per client', async () => {
-    jest.useFakeTimers();
-    const first = createMockRedis();
-    const second = createMockRedis();
-    const clientA = trackedClient(first.redis);
-    const clientB = trackedClient(second.redis);
+      const deferred = await cleanupOrphanedJobArtifacts(taskClient, { queueName });
 
-    await clientA.getStepStateStore().saveStep(queueName, 'orphan-a', 'step-1', {
-      status: 'completed',
-      data: {},
-    });
-    await clientB.getStepStateStore().saveStep(queueName, 'orphan-b', 'step-1', {
-      status: 'completed',
-      data: {},
-    });
+      expect(deferred.removed).toBe(1);
+      expect(strings.has(`torotask:data:${queueName}:child-1:returnValue`)).toBe(true);
+      expect(strings.has(`torotask:data:${queueName}:child-2:returnValue`)).toBe(false);
 
-    scheduleOrphanedArtifactCleanup(clientA);
-    scheduleOrphanedArtifactCleanup(clientB);
-    await jest.advanceTimersByTimeAsync(31_000);
+      // Once the parent is trimmed, a later sweep reclaims the deferred blob.
+      strings.delete(parentKey);
+      const reclaimed = await cleanupOrphanedJobArtifacts(taskClient, { queueName });
 
-    expect(first.hashes.has(`torotask:state:${queueName}:orphan-a`)).toBe(false);
-    expect(second.hashes.has(`torotask:state:${queueName}:orphan-b`)).toBe(false);
-  });
-
-  describe('readJobRecordState', () => {
-    it('reports missing when removeOnComplete dropped the job hash', async () => {
-      const { redis } = createMockRedis();
-      const taskClient = trackedClient(redis);
-
-      await expect(readJobRecordState(taskClient, queueName, 'gone')).resolves.toBe('missing');
+      expect(reclaimed.removed).toBe(1);
+      expect(strings.has(`torotask:data:${queueName}:child-1:returnValue`)).toBe(false);
     });
 
-    it('reports finished for a retained completed job', async () => {
-      const { redis } = createMockRedis();
-      const taskClient = trackedClient(redis);
+    it('stops at maxDeletions and reports the sweep as truncated', async () => {
+      const { redis, strings } = createMockRedis();
+      const taskClient = createMockTaskClient(redis);
+      seedQueueMeta(strings);
 
-      await redis.hset(`torotask:tasks:${queueName}:kept`, 'finishedOn', '1710000000000');
+      for (let i = 0; i < 6; i++) {
+        await taskClient.getStepStateStore().saveStep(queueName, `orphan-${i}`, 'step-1', {
+          status: 'completed',
+          data: {},
+        });
+      }
 
-      await expect(readJobRecordState(taskClient, queueName, 'kept')).resolves.toBe('finished');
-    });
+      const result = await cleanupOrphanedJobArtifacts(taskClient, { queueName, maxDeletions: 2 });
 
-    it('reports restarted when a new run reused the same job id', async () => {
-      const { redis } = createMockRedis();
-      const taskClient = trackedClient(redis);
+      expect(result.removed).toBe(2);
+      expect(result.truncated).toBe(true);
 
-      // Re-added job: hash exists again but has not finished.
-      await redis.hset(`torotask:tasks:${queueName}:dedup-id`, 'name', 'task');
-
-      await expect(readJobRecordState(taskClient, queueName, 'dedup-id')).resolves.toBe('restarted');
+      // Idempotent: the remainder is picked up by the next run.
+      const rest = await cleanupOrphanedJobArtifacts(taskClient, { queueName });
+      expect(rest.removed).toBe(4);
     });
   });
 });

@@ -4,26 +4,43 @@ import type { ToroTask } from '../client.js';
 const EXISTS_PIPELINE_CHUNK = 100;
 const SCAN_COUNT = 200;
 
-interface OrphanCleanupState {
-  timer?: ReturnType<typeof setTimeout>;
-  firstScheduledAt: number;
-  inFlight?: Promise<void>;
+/** Default cap on artifacts removed per sweep, so one run cannot monopolise Redis. */
+export const DEFAULT_SWEEP_MAX_DELETIONS = 10_000;
+/** Default wall-clock cap for a sweep. */
+export const DEFAULT_SWEEP_MAX_DURATION_MS = 60_000;
+
+/**
+ * Whether a job hash exists.
+ *
+ * `unknown` is returned whenever Redis did not give us a definitive answer (command
+ * error, dropped connection, malformed pipeline reply). Cleanup treats `unknown`
+ * exactly like `present`: it never deletes on a guess.
+ */
+export type Presence = 'present' | 'absent' | 'unknown';
+
+interface PipelineLike {
+  exists: (key: string) => unknown;
+  exec: () => Promise<Array<[Error | null, unknown]> | null>;
 }
 
-/** Per-client so multiple ToroTask instances (tests, multi-tenant) do not clobber each other. */
-const orphanCleanupState = new WeakMap<ToroTask, OrphanCleanupState>();
-
-function getCleanupState(taskClient: ToroTask): OrphanCleanupState {
-  let state = orphanCleanupState.get(taskClient);
-  if (!state) {
-    state = { firstScheduledAt: 0 };
-    orphanCleanupState.set(taskClient, state);
-  }
-  return state;
+interface ScanStreamLike extends AsyncIterable<string[]> {
+  destroy?: () => void;
 }
 
-export function jobHashKey(taskClient: ToroTask, queueName: string, jobId: string): string {
-  return `${taskClient.queuePrefix}:${queueName}:${jobId}`;
+/** Minimal Redis surface used by cleanup, so tests can supply a fake. */
+export interface RedisCleanupClient {
+  pipeline: () => PipelineLike;
+  scanStream: (opts: { match: string; count: number }) => ScanStreamLike;
+}
+
+export interface JobRef {
+  queueName: string;
+  jobId: string;
+}
+
+/** BullMQ job hash key. */
+export function jobHashKey(queuePrefix: string, queueName: string, jobId: string): string {
+  return `${queuePrefix}:${queueName}:${jobId}`;
 }
 
 /** Escapes Redis SCAN MATCH glob metacharacters. */
@@ -31,7 +48,7 @@ export function escapeRedisGlob(value: string): string {
   return value.replace(/[\\*?[\]]/g, '\\$&');
 }
 
-function parseQueueJobId(prefix: string, key: string): { queueName: string; jobId: string } | undefined {
+function parseQueueJobId(prefix: string, key: string): JobRef | undefined {
   if (!key.startsWith(prefix)) {
     return undefined;
   }
@@ -46,14 +63,13 @@ function parseQueueJobId(prefix: string, key: string): { queueName: string; jobI
   };
 }
 
-function collectJobEntries(
-  keys: string[],
-  prefix: string,
-  queueName?: string,
-): Array<{ queueName: string; jobId: string }> {
-  const entries: Array<{ queueName: string; jobId: string }> = [];
+export function collectJobEntries(keys: string[], prefix: string, queueName?: string): JobRef[] {
+  const entries: JobRef[] = [];
   for (const key of keys) {
     if (queueName) {
+      if (!key.startsWith(prefix)) {
+        continue;
+      }
       const jobId = key.slice(prefix.length);
       if (jobId) {
         entries.push({ queueName, jobId });
@@ -68,295 +84,415 @@ function collectJobEntries(
   return entries;
 }
 
-interface RedisScanClient {
-  exists: (key: string) => Promise<number>;
-  hget?: (key: string, field: string) => Promise<string | null>;
-  pipeline?: () => {
-    exists: (key: string) => unknown;
-    hget?: (key: string, field: string) => unknown;
-    exec: () => Promise<Array<[Error | null, unknown]> | null>;
-  };
-  scanStream: (opts: { match: string; count: number }) => {
-    on: (event: string, listener: (...args: any[]) => void) => void;
-  };
-}
-
-async function scanKeys(redis: RedisScanClient, pattern: string): Promise<string[]> {
-  const keys: string[] = [];
-  const stream = redis.scanStream({ match: pattern, count: SCAN_COUNT });
-
-  return new Promise((resolve, reject) => {
-    stream.on('data', (batch: string[]) => {
-      keys.push(...batch);
-    });
-    stream.on('end', () => resolve(keys));
-    stream.on('error', (err: Error) => reject(err));
-  });
-}
-
-async function missingJobHashKeys(
-  redis: RedisScanClient,
+/**
+ * Batched `EXISTS`, failing closed.
+ *
+ * ioredis pipeline replies are `[error, value]` tuples; the error slot must be
+ * inspected, otherwise a transient command failure reads as "key absent" and cleanup
+ * happily deletes live artifacts. Any reply we cannot positively interpret maps to
+ * `unknown`, which is never safe to delete on.
+ */
+export async function jobPresence(
+  redis: RedisCleanupClient,
   jobKeys: string[],
-): Promise<Set<string>> {
-  const missing = new Set<string>();
+): Promise<Map<string, Presence>> {
+  const presence = new Map<string, Presence>();
+  const unique = [...new Set(jobKeys)];
 
-  for (let i = 0; i < jobKeys.length; i += EXISTS_PIPELINE_CHUNK) {
-    const chunk = jobKeys.slice(i, i + EXISTS_PIPELINE_CHUNK);
-    if (typeof redis.pipeline === 'function') {
-      const pipeline = redis.pipeline()!;
+  for (let i = 0; i < unique.length; i += EXISTS_PIPELINE_CHUNK) {
+    const chunk = unique.slice(i, i + EXISTS_PIPELINE_CHUNK);
+
+    let results: Array<[Error | null, unknown]> | null = null;
+    try {
+      const pipeline = redis.pipeline();
       for (const key of chunk) {
         pipeline.exists(key);
       }
-      const results = await pipeline.exec();
-      results?.forEach((result, index) => {
-        const count = Array.isArray(result) ? result[1] : 0;
-        if (!count) {
-          missing.add(chunk[index]!);
-        }
-      });
+      results = await pipeline.exec();
     }
-    else {
-      for (const key of chunk) {
-        if (!(await redis.exists(key))) {
-          missing.add(key);
-        }
+    catch {
+      results = null;
+    }
+
+    chunk.forEach((key, index) => {
+      const entry = results?.[index];
+      if (!Array.isArray(entry) || entry[0]) {
+        presence.set(key, 'unknown');
+        return;
       }
-    }
+      presence.set(key, Number(entry[1]) > 0 ? 'present' : 'absent');
+    });
   }
 
-  return missing;
+  return presence;
 }
 
 /**
- * State of a BullMQ job hash right after we finished it.
+ * Clears external step state and, when permitted, data-store blobs for a job.
  *
- * - `missing`  – trimmed by removeOnComplete/removeOnFail; all artifacts are safe to drop.
- * - `finished` – retained with a `finishedOn` timestamp; execution scratch is safe to drop.
- * - `restarted` – the hash exists but has no `finishedOn`, meaning a *different* run reused
- *   this job id (deterministic ids via `idFromPayload`). Its artifacts must be left alone.
- */
-export type JobRecordState = 'missing' | 'finished' | 'restarted';
-
-/**
- * Reads job existence and `finishedOn` in a single round trip so cleanup cannot
- * delete artifacts belonging to a re-added job that reused the same id.
- */
-export async function readJobRecordState(
-  taskClient: ToroTask,
-  queueName: string,
-  jobId: string,
-): Promise<JobRecordState> {
-  const redis = taskClient.redis as unknown as RedisScanClient;
-  const key = jobHashKey(taskClient, queueName, jobId);
-
-  if (typeof redis.pipeline === 'function' && typeof redis.hget === 'function') {
-    const pipeline = redis.pipeline()!;
-    pipeline.exists(key);
-    pipeline.hget!(key, 'finishedOn');
-    const results = await pipeline.exec();
-    const exists = Array.isArray(results?.[0]) ? results![0]![1] : 0;
-    const finishedOn = Array.isArray(results?.[1]) ? results![1]![1] : null;
-    if (!exists) {
-      return 'missing';
-    }
-    return finishedOn ? 'finished' : 'restarted';
-  }
-
-  if (!(await redis.exists(key))) {
-    return 'missing';
-  }
-  const finishedOn = redis.hget ? await redis.hget(key, 'finishedOn') : 'unknown';
-  return finishedOn ? 'finished' : 'restarted';
-}
-
-/**
- * Clears external step state and data-store blobs for a job.
+ * Both stores are cleared independently via `allSettled` so a failure in one does
+ * not silently skip the other, and so a single bad key cannot abort a sweep.
+ *
+ * @returns the number of stores actually cleared.
  */
 export async function clearJobArtifacts(
   taskClient: ToroTask,
   queueName: string,
   jobId: string,
+  options?: { logger?: Logger; respectReferrer?: boolean },
+): Promise<number> {
+  const logger = options?.logger;
+  const dataStore = taskClient.getDataStore();
+
+  const tasks: Array<Promise<boolean>> = [
+    taskClient
+      .getStepStateStore()
+      .clearJob(queueName, jobId)
+      .then(() => true),
+  ];
+
+  if (dataStore) {
+    tasks.push(
+      (async () => {
+        if (options?.respectReferrer) {
+          const referrer = await dataStore.readJobReferrer(queueName, jobId);
+          if (referrer) {
+            const presence = (
+              await jobPresence(taskClient.redis as unknown as RedisCleanupClient, [referrer])
+            ).get(referrer);
+            if (presence !== 'absent') {
+              logger?.debug(
+                { queueName, jobId, referrer, presence },
+                'Deferring data-store cleanup: referrer job still holds a ref',
+              );
+              return false;
+            }
+          }
+        }
+        await dataStore.clearJob(queueName, jobId);
+        return true;
+      })(),
+    );
+  }
+
+  const results = await Promise.allSettled(tasks);
+  let cleared = 0;
+  for (const result of results) {
+    if (result.status === 'rejected') {
+      logger?.warn({ err: result.reason, queueName, jobId }, 'Failed to clear job artifacts');
+      continue;
+    }
+    if (result.value) {
+      cleared++;
+    }
+  }
+  return cleared;
+}
+
+export interface OrphanSweepOptions {
+  /** Limit the sweep to one queue. Omit to sweep every queue. */
+  queueName?: string;
+  /** Stop after removing this many artifacts. @default 10000 */
+  maxDeletions?: number;
+  /** Stop after this many milliseconds. @default 60000 */
+  maxDurationMs?: number;
+  logger?: Logger;
+}
+
+export interface OrphanSweepResult {
+  /** Artifacts deleted (step-state hashes plus data-store job index groups). */
+  removed: number;
+  /** Candidate keys inspected. */
+  scanned: number;
+  /**
+   * Candidates deliberately left alone: job still present, presence unknown,
+   * a live referrer still holds a ref, or the queue's key prefix could not be confirmed.
+   */
+  skipped: number;
+  /** True when a budget limit stopped the sweep before the keyspace was exhausted. */
+  truncated: boolean;
+}
+
+class SweepBudget {
+  removed = 0;
+  scanned = 0;
+  skipped = 0;
+  truncated = false;
+  private readonly deadline: number;
+
+  constructor(
+    private readonly maxDeletions: number,
+    maxDurationMs: number,
+  ) {
+    this.deadline = Date.now() + maxDurationMs;
+  }
+
+  get exhausted(): boolean {
+    if (this.removed >= this.maxDeletions || Date.now() >= this.deadline) {
+      this.truncated = true;
+      return true;
+    }
+    return false;
+  }
+}
+
+async function forEachScanBatch(
+  redis: RedisCleanupClient,
+  pattern: string,
+  budget: SweepBudget,
+  handler: (keys: string[]) => Promise<void>,
 ): Promise<void> {
-  await taskClient.getStepStateStore().clear(queueName, jobId);
-  await taskClient.getDataStore()?.clearJob(queueName, jobId);
+  const stream = redis.scanStream({ match: pattern, count: SCAN_COUNT });
+  for await (const batch of stream) {
+    if (batch.length > 0) {
+      await handler(batch);
+    }
+    if (budget.exhausted) {
+      stream.destroy?.();
+      break;
+    }
+  }
+}
+
+/**
+ * Confirms which key prefix a queue's job hashes live under.
+ *
+ * `TaskQueue`/`TaskWorker` honour a caller-supplied `prefix`, so the client's
+ * `queuePrefix` is an assumption, not a fact. Probing the queue's `meta` key turns it
+ * into a fact. When the meta key is absent we cannot tell "queue lives elsewhere"
+ * from "queue was obliterated", so we decline to sweep it rather than risk deleting
+ * artifacts belonging to live jobs under a different prefix.
+ */
+async function resolveQueuePrefix(
+  taskClient: ToroTask,
+  redis: RedisCleanupClient,
+  queueName: string,
+  cache: Map<string, string | undefined>,
+): Promise<string | undefined> {
+  if (cache.has(queueName)) {
+    return cache.get(queueName);
+  }
+  const prefix = taskClient.queuePrefix;
+  const metaKey = `${prefix}:${queueName}:meta`;
+  const presence = (await jobPresence(redis, [metaKey])).get(metaKey);
+  const resolved = presence === 'present' ? prefix : undefined;
+  cache.set(queueName, resolved);
+  return resolved;
+}
+
+interface SweepContext {
+  taskClient: ToroTask;
+  redis: RedisCleanupClient;
+  queueName?: string;
+  prefixCache: Map<string, string | undefined>;
+  logger?: Logger;
+}
+
+/**
+ * Resolves each entry's job hash key and its presence, dropping entries whose queue
+ * prefix cannot be confirmed.
+ */
+async function classifyBatch(
+  ctx: SweepContext,
+  entries: JobRef[],
+  budget: SweepBudget,
+): Promise<JobRef[]> {
+  const withKeys: Array<JobRef & { jobKey: string }> = [];
+
+  for (const entry of entries) {
+    budget.scanned++;
+    const prefix = await resolveQueuePrefix(ctx.taskClient, ctx.redis, entry.queueName, ctx.prefixCache);
+    if (!prefix) {
+      budget.skipped++;
+      ctx.logger?.debug(
+        { queueName: entry.queueName },
+        'Skipping orphan cleanup: queue prefix could not be confirmed',
+      );
+      continue;
+    }
+    withKeys.push({ ...entry, jobKey: jobHashKey(prefix, entry.queueName, entry.jobId) });
+  }
+
+  if (withKeys.length === 0) {
+    return [];
+  }
+
+  const presence = await jobPresence(ctx.redis, withKeys.map(entry => entry.jobKey));
+  const absent: JobRef[] = [];
+  for (const entry of withKeys) {
+    if (presence.get(entry.jobKey) === 'absent') {
+      absent.push({ queueName: entry.queueName, jobId: entry.jobId });
+    }
+    else {
+      budget.skipped++;
+    }
+  }
+  return absent;
+}
+
+/**
+ * Step state is pure execution scratch, written only by a job that is already
+ * running. It can never predate its job hash, so "job gone" always means
+ * "state is garbage".
+ */
+async function sweepStepState(ctx: SweepContext, budget: SweepBudget): Promise<void> {
+  const stepStore = ctx.taskClient.getStepStateStore();
+  const prefix = ctx.queueName ? stepStore.jobKeysPrefix(ctx.queueName) : stepStore.keysPrefix();
+
+  await forEachScanBatch(ctx.redis, `${escapeRedisGlob(prefix)}*`, budget, async (keys) => {
+    const entries = collectJobEntries(keys, prefix, ctx.queueName);
+    const absent = await classifyBatch(ctx, entries, budget);
+
+    for (const entry of absent) {
+      try {
+        await stepStore.clearJob(entry.queueName, entry.jobId);
+        budget.removed++;
+      }
+      catch (err) {
+        budget.skipped++;
+        ctx.logger?.warn({ err, ...entry }, 'Failed to clear orphaned step state');
+      }
+      if (budget.exhausted) {
+        return;
+      }
+    }
+  });
+}
+
+/**
+ * Data blobs may outlive their own job: BullMQ copies a child's return value into
+ * `<parentKey>:processed`, so a surviving parent still holds the ref. Deletion
+ * therefore requires the job *and* any recorded referrer to be gone. Deferred blobs
+ * are reclaimed by a later sweep once the parent is trimmed.
+ */
+async function sweepDataBlobs(ctx: SweepContext, budget: SweepBudget): Promise<void> {
+  const dataStore = ctx.taskClient.getDataStore();
+  if (!dataStore) {
+    return;
+  }
+  const prefix = ctx.queueName ? dataStore.jobIndexKeysPrefix(ctx.queueName) : dataStore.indexKeysPrefix();
+
+  await forEachScanBatch(ctx.redis, `${escapeRedisGlob(prefix)}*`, budget, async (keys) => {
+    const entries = collectJobEntries(keys, prefix, ctx.queueName);
+    const absent = await classifyBatch(ctx, entries, budget);
+    if (absent.length === 0) {
+      return;
+    }
+
+    const referrers = await Promise.all(
+      absent.map(async entry => dataStore.readJobReferrer(entry.queueName, entry.jobId).catch(() => undefined)),
+    );
+    const referrerPresence = await jobPresence(
+      ctx.redis,
+      referrers.filter((key): key is string => Boolean(key)),
+    );
+
+    for (const [index, entry] of absent.entries()) {
+      const referrer = referrers[index];
+      if (referrer && referrerPresence.get(referrer) !== 'absent') {
+        budget.skipped++;
+        ctx.logger?.debug({ ...entry, referrer }, 'Deferring orphaned data blob: referrer still present');
+        continue;
+      }
+
+      try {
+        await dataStore.clearJob(entry.queueName, entry.jobId);
+        budget.removed++;
+      }
+      catch (err) {
+        budget.skipped++;
+        ctx.logger?.warn({ err, ...entry }, 'Failed to clear orphaned data blobs');
+      }
+      if (budget.exhausted) {
+        return;
+      }
+    }
+  });
 }
 
 /**
  * Removes step-state hashes and data-store blobs whose BullMQ job record no longer exists.
  *
- * This covers jobs silently dropped by `removeOnComplete` / `removeOnFail`, which do not emit
- * Queue `removed` events. When `queueName` is omitted, every queue is scanned.
+ * This is the only mechanism that covers jobs dropped by `removeOnComplete` /
+ * `removeOnFail`: BullMQ trims those inside Lua and never emits a `removed` event, so
+ * listener-based cleanup never sees them.
+ *
+ * Intended to run periodically and cluster-wide (see the built-in orphan-cleanup
+ * maintenance task) rather than on every job completion. It is idempotent and budgeted,
+ * so anything skipped is simply retried on the next run.
  */
 export async function cleanupOrphanedJobArtifacts(
   taskClient: ToroTask,
-  queueName?: string,
-): Promise<number> {
-  const redis = taskClient.redis as unknown as RedisScanClient;
-  const stepStore = taskClient.getStepStateStore();
-  const dataStore = taskClient.getDataStore();
-  let removed = 0;
-
-  const stepPrefix = queueName
-    ? stepStore.jobKeysPrefix(queueName)
-    : stepStore.keysPrefix();
-  const stepJobs = collectJobEntries(
-    await scanKeys(redis, `${escapeRedisGlob(stepPrefix)}*`),
-    stepPrefix,
-    queueName,
+  options?: OrphanSweepOptions,
+): Promise<OrphanSweepResult> {
+  const budget = new SweepBudget(
+    options?.maxDeletions ?? DEFAULT_SWEEP_MAX_DELETIONS,
+    options?.maxDurationMs ?? DEFAULT_SWEEP_MAX_DURATION_MS,
   );
 
-  const missingStepJobs = await missingJobHashKeys(
-    redis,
-    stepJobs.map(entry => jobHashKey(taskClient, entry.queueName, entry.jobId)),
-  );
+  const ctx: SweepContext = {
+    taskClient,
+    redis: taskClient.redis as unknown as RedisCleanupClient,
+    queueName: options?.queueName,
+    prefixCache: new Map(),
+    logger: options?.logger,
+  };
 
-  for (const entry of stepJobs) {
-    if (missingStepJobs.has(jobHashKey(taskClient, entry.queueName, entry.jobId))) {
-      await stepStore.clear(entry.queueName, entry.jobId);
-      removed++;
-    }
+  await sweepStepState(ctx, budget);
+  if (!budget.exhausted) {
+    await sweepDataBlobs(ctx, budget);
   }
 
-  if (dataStore) {
-    const indexPrefix = queueName
-      ? dataStore.jobIndexKeysPrefix(queueName)
-      : dataStore.indexKeysPrefix();
-    const indexJobs = collectJobEntries(
-      await scanKeys(redis, `${escapeRedisGlob(indexPrefix)}*`),
-      indexPrefix,
-      queueName,
-    );
-
-    const missingIndexJobs = await missingJobHashKeys(
-      redis,
-      indexJobs.map(entry => jobHashKey(taskClient, entry.queueName, entry.jobId)),
-    );
-
-    for (const entry of indexJobs) {
-      if (missingIndexJobs.has(jobHashKey(taskClient, entry.queueName, entry.jobId))) {
-        await dataStore.clearJob(entry.queueName, entry.jobId);
-        removed++;
-      }
-    }
-  }
-
-  return removed;
+  return {
+    removed: budget.removed,
+    scanned: budget.scanned,
+    skipped: budget.skipped,
+    truncated: budget.truncated,
+  };
 }
 
 /**
- * Debounced orphan sweep so completion bursts do not SCAN the keyspace per job.
- * A busy client still sweeps at least once per configured interval, because the
- * max-wait deadline caps how far the trailing edge can be pushed out.
+ * Wires cleanup for *explicit* job removal (`queue.remove`, `queue.clean`), which does
+ * emit local Queue events.
  *
- * No-op when `orphanCleanup.enabled` is false; use
- * {@link ToroTask.cleanupOrphanedJobArtifacts} from a cron/ops job instead.
- */
-export function scheduleOrphanedArtifactCleanup(
-  taskClient: ToroTask,
-  logger?: Logger,
-): void {
-  const { enabled, intervalMs } = taskClient.getOrphanCleanupOptions();
-  if (!enabled) {
-    return;
-  }
-
-  const state = getCleanupState(taskClient);
-  const now = Date.now();
-  if (!state.firstScheduledAt) {
-    state.firstScheduledAt = now;
-  }
-
-  const dueIn = Math.max(0, state.firstScheduledAt + intervalMs - now);
-  const delay = Math.min(intervalMs, dueIn);
-
-  if (state.timer) {
-    clearTimeout(state.timer);
-  }
-
-  state.timer = setTimeout(() => {
-    state.timer = undefined;
-    state.firstScheduledAt = 0;
-
-    const run = (): void => {
-      state.inFlight = cleanupOrphanedJobArtifacts(taskClient)
-        .then(() => undefined)
-        .catch((err) => {
-          logger?.warn({ err }, 'Failed to clean up orphaned job artifacts');
-        })
-        .finally(() => {
-          state.inFlight = undefined;
-        });
-    };
-
-    // Never overlap sweeps; a slow SCAN must not stack up behind itself.
-    if (state.inFlight) {
-      void state.inFlight.then(run, run);
-      return;
-    }
-    run();
-  }, delay);
-
-  state.timer.unref?.();
-}
-
-/** Cancels any pending sweep, e.g. during {@link ToroTask.close}. */
-export function cancelOrphanedArtifactCleanup(taskClient: ToroTask): void {
-  const state = orphanCleanupState.get(taskClient);
-  if (!state) {
-    return;
-  }
-  if (state.timer) {
-    clearTimeout(state.timer);
-    state.timer = undefined;
-  }
-  state.firstScheduledAt = 0;
-}
-
-interface RemovedEventArgs { jobId?: string }
-
-/**
- * Wires cleanup for explicit job removal (`queue.remove`, `queue.clean`) and
- * Redis stream `removed` events (deduplication, etc.).
- *
- * Note: BullMQ does **not** emit `removed` when `removeOnComplete` / `removeOnFail`
- * trims finished jobs. That path is handled by completion-time cleanup plus
- * {@link cleanupOrphanedJobArtifacts}.
+ * Deliberately not wired to `QueueEvents`: that is a Redis-stream consumer with real
+ * delivery latency, and acting on a delayed `removed` message means deleting artifacts
+ * long after the fact with no way to confirm they still belong to the removed job.
+ * Anything missed here is picked up by {@link cleanupOrphanedJobArtifacts}.
  */
 export function setupJobArtifactCleanupListeners(
   taskClient: ToroTask,
   queueName: string,
   logger: Logger,
   sources: {
-    queue?: { on: ((event: 'removed', listener: (jobOrId: string | { id?: string }) => void) => void) & ((event: 'cleaned', listener: (jobIds: string[]) => void) => void) };
-    queueEvents?: { on: (event: 'removed', listener: (args: RemovedEventArgs) => void) => void };
+    queue?: {
+      on: ((event: 'removed', listener: (jobOrId: string | { id?: string }) => void) => void)
+        & ((event: 'cleaned', listener: (jobIds: string[]) => void) => void);
+    };
   },
 ): void {
-  const clearForJobId = (jobId: string) => {
-    clearJobArtifacts(taskClient, queueName, jobId).catch((err) => {
+  const clearForJobId = (jobId: string): void => {
+    // respectReferrer: an explicitly removed child may still be referenced by a
+    // surviving parent's `processed` hash.
+    clearJobArtifacts(taskClient, queueName, jobId, { logger, respectReferrer: true }).catch((err) => {
       logger.warn({ err, jobId }, 'Failed to clear job artifacts after removal');
     });
   };
 
-  if (sources.queue) {
-    sources.queue.on('removed', (jobOrId: string | { id?: string }) => {
-      const jobId = typeof jobOrId === 'string' ? jobOrId : jobOrId.id;
-      if (jobId) {
-        clearForJobId(jobId);
-      }
-    });
-
-    sources.queue.on('cleaned', (jobIds: string[]) => {
-      for (const jobId of jobIds) {
-        clearForJobId(jobId);
-      }
-    });
+  if (!sources.queue) {
+    return;
   }
 
-  if (sources.queueEvents) {
-    sources.queueEvents.on('removed', (args: RemovedEventArgs) => {
-      if (args.jobId) {
-        clearForJobId(args.jobId);
-      }
-    });
-  }
+  sources.queue.on('removed', (jobOrId: string | { id?: string }) => {
+    const jobId = typeof jobOrId === 'string' ? jobOrId : jobOrId.id;
+    if (jobId) {
+      clearForJobId(jobId);
+    }
+  });
+
+  sources.queue.on('cleaned', (jobIds: string[]) => {
+    for (const jobId of jobIds) {
+      clearForJobId(jobId);
+    }
+  });
 }
