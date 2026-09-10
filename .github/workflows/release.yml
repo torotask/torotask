@@ -29,8 +29,9 @@ jobs:
         with:
           build: true
 
-      - name: update npm
-        run: npm update -g npm # temporary until setup-node action comes with npm version that contains oidc setup by default
+      - name: Install OIDC-compatible npm
+        # Changesets 2.29 expects `npm info --json` to return an object; npm 12 returns an array.
+        run: npm install --global npm@11.6.2
 
       - name: Create Release Pull Request or Publish to npm
         id: changesets
