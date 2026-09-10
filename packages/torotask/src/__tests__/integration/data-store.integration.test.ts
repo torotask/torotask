@@ -295,4 +295,27 @@ describe('dataStore integration', () => {
     });
     expect(isToroTaskDataRef(job.data?.payload)).toBe(false);
   });
+
+  it('completes jobs that return undefined when dataStore is enabled', async () => {
+    if (!redisServer) {
+      return;
+    }
+
+    const dsGroup = defineTaskGroup({
+      tasks: {
+        voidTask: defineTask({
+          id: 'void-task',
+          handler: async () => {
+            // No return value.
+          },
+        }),
+      } as const,
+    });
+
+    server = await createServer(defineTaskGroupRegistry({ dsGroup }));
+    const task = server.taskGroups.dsGroup.tasks.voidTask;
+
+    const job = await task.run({});
+    await expect(job.waitUntilFinished(task.queue.queueEvents)).resolves.toBeUndefined();
+  });
 });

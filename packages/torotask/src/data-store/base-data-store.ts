@@ -102,8 +102,11 @@ export abstract class ToroTaskDataStore extends ToroTaskStoreBase {
     return byteLength >= this.options.thresholdBytes;
   }
 
-  encodeValue(value: unknown): { json: string; byteLength: number } {
+  encodeValue(value: unknown): { json: string; byteLength: number } | undefined {
     const json = JSON.stringify(value);
+    if (typeof json !== 'string') {
+      return undefined;
+    }
     return { json, byteLength: Buffer.byteLength(json, 'utf8') };
   }
 
@@ -136,7 +139,12 @@ export abstract class ToroTaskDataStore extends ToroTaskStoreBase {
       return value;
     }
 
-    const { json, byteLength } = this.encodeValue(value);
+    const encoded = this.encodeValue(value);
+    if (!encoded) {
+      return value;
+    }
+
+    const { json, byteLength } = encoded;
     if (!this.shouldExternalize(byteLength)) {
       return value;
     }
