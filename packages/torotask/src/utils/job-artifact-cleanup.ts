@@ -173,14 +173,17 @@ async function dataBlobDecision(args: {
   referrerPresence?: Map<string, Presence>;
 }): Promise<BlobDecision> {
   const { redis, dataStore, queueName, jobId, minArtifactAgeMs } = args;
-  const meta = args.meta ?? (await dataStore.readJobMeta(queueName, jobId));
+  let meta = args.meta ?? (await dataStore.readJobMeta(queueName, jobId));
 
   // Written before metadata tracking existed. Stamp it now so it ages out on a later
   // run rather than being deleted immediately on the first sweep after an upgrade,
   // when its `completed` event may still be unread.
   if (meta.createdAt === undefined && minArtifactAgeMs > 0) {
     await dataStore.markJobMetaSeen(queueName, jobId);
-    return { allow: false, reason: 'metadata predates tracking; stamped for a later sweep', detail: {} };
+    meta = await dataStore.readJobMeta(queueName, jobId);
+    if (meta.createdAt !== undefined) {
+      return { allow: false, reason: 'metadata predates tracking; stamped for a later sweep', detail: {} };
+    }
   }
 
   // BullMQ also puts the externalized ref in the queue's `completed` event, so a lagging

@@ -342,6 +342,25 @@ describe('jobArtifactCleanup', () => {
       expect(cleared).toBe(1);
       expect(strings.has(`torotask:data:${queueName}:${jobId}:returnValue`)).toBe(true);
     });
+
+    it('clears blobs when a custom store cannot persist retention metadata', async () => {
+      const { redis, strings } = createMockRedis();
+      const taskClient = createMockTaskClient(redis);
+      const dataStore = taskClient.getDataStore()!;
+      const jobId = 'custom-store-1';
+
+      await dataStore.externalize(
+        { queueName, jobId, kind: 'returnValue' },
+        { large: 'payload' },
+      );
+      jest.spyOn(dataStore, 'readJobMeta').mockResolvedValue({});
+      jest.spyOn(dataStore, 'markJobMetaSeen').mockResolvedValue();
+
+      const cleared = await clearJobArtifacts(taskClient, queueName, jobId, { respectReferrer: true });
+
+      expect(cleared).toBe(2);
+      expect(strings.has(`torotask:data:${queueName}:${jobId}:returnValue`)).toBe(false);
+    });
   });
 
   describe('cleanupOrphanedJobArtifacts', () => {
