@@ -35,6 +35,16 @@ export interface ToroTaskDataStoreContext {
   referrerJobKey?: string;
 }
 
+/**
+ * Metadata recorded alongside a job's externalized blobs, used by orphan cleanup.
+ */
+export interface ToroTaskDataJobMeta {
+  /** Job hash key of another job still holding a ref to these blobs, if recorded. */
+  referrerJobKey?: string;
+  /** Epoch ms when the blobs were first tracked, if recorded. */
+  createdAt?: number;
+}
+
 export type ToroTaskDataStoreMode = 'large' | 'all';
 
 export type ToroTaskDataStoreCompress = boolean | 'auto';

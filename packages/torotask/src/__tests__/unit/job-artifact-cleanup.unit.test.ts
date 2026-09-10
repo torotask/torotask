@@ -19,6 +19,18 @@ function createMockRedis(options?: { pipelineMode?: PipelineMode }) {
 
   const existsCount = (key: string) => (strings.has(key) || hashes.has(key) || sets.has(key) ? 1 : 0);
 
+  const hsetnxImpl = (key: string, field: string, value: string) => {
+    if (!hashes.has(key)) {
+      hashes.set(key, new Map());
+    }
+    const hash = hashes.get(key)!;
+    if (hash.has(field)) {
+      return 0;
+    }
+    hash.set(field, value);
+    return 1;
+  };
+
   const hsetImpl = (key: string, field: string, value: string) => {
     if (!hashes.has(key)) {
       hashes.set(key, new Map());
@@ -60,6 +72,8 @@ function createMockRedis(options?: { pipelineMode?: PipelineMode }) {
       return 'OK';
     }),
     hget: jest.fn(async (key: string, field: string) => hashes.get(key)?.get(field) ?? null),
+    hgetall: jest.fn(async (key: string) => Object.fromEntries(hashes.get(key) ?? new Map())),
+    hsetnx: jest.fn(async (key: string, field: string, value: string) => hsetnxImpl(key, field, value)),
     expire: jest.fn(async () => 1),
     multi: jest.fn(() => {
       const queued: Array<() => unknown> = [];
@@ -70,6 +84,10 @@ function createMockRedis(options?: { pipelineMode?: PipelineMode }) {
         },
         hset(key: string, field: string, value: string) {
           queued.push(() => hsetImpl(key, field, value));
+          return chain;
+        },
+        hsetnx(key: string, field: string, value: string) {
+          queued.push(() => hsetnxImpl(key, field, value));
           return chain;
         },
         exec: jest.fn(async () => queued.map(run => [null, run()] as [null, unknown])),
@@ -295,7 +313,7 @@ describe('jobArtifactCleanup', () => {
 
       strings.set(jobKey(queueName, 'kept-1'), 'job-record');
 
-      const result = await cleanupOrphanedJobArtifacts(taskClient, { queueName });
+      const result = await cleanupOrphanedJobArtifacts(taskClient, { queueName, minArtifactAgeMs: 0 });
 
       expect(result.removed).toBe(2);
       expect(result.truncated).toBe(false);
@@ -320,7 +338,7 @@ describe('jobArtifactCleanup', () => {
         data: {},
       });
 
-      const result = await cleanupOrphanedJobArtifacts(taskClient);
+      const result = await cleanupOrphanedJobArtifacts(taskClient, { minArtifactAgeMs: 0 });
 
       expect(result.removed).toBe(2);
       expect(hashes.has(`torotask:state:${queueName}:orphan-1`)).toBe(false);
@@ -339,7 +357,7 @@ describe('jobArtifactCleanup', () => {
       });
       strings.set(jobKey(queueName, jobId), 'job-record');
 
-      const result = await cleanupOrphanedJobArtifacts(taskClient);
+      const result = await cleanupOrphanedJobArtifacts(taskClient, { minArtifactAgeMs: 0 });
 
       expect(result.removed).toBe(0);
       expect(hashes.has(`torotask:state:${queueName}:${jobId}`)).toBe(true);
@@ -355,7 +373,7 @@ describe('jobArtifactCleanup', () => {
         data: {},
       });
 
-      const result = await cleanupOrphanedJobArtifacts(taskClient);
+      const result = await cleanupOrphanedJobArtifacts(taskClient, { minArtifactAgeMs: 0 });
 
       expect(result.removed).toBe(0);
       expect(result.skipped).toBeGreaterThan(0);
@@ -371,7 +389,7 @@ describe('jobArtifactCleanup', () => {
         data: {},
       });
 
-      const result = await cleanupOrphanedJobArtifacts(taskClient);
+      const result = await cleanupOrphanedJobArtifacts(taskClient, { minArtifactAgeMs: 0 });
 
       expect(result.removed).toBe(0);
       expect(hashes.has(`torotask:state:${queueName}:orphan-1`)).toBe(true);
@@ -393,7 +411,7 @@ describe('jobArtifactCleanup', () => {
         { large: 'payload' },
       );
 
-      const deferred = await cleanupOrphanedJobArtifacts(taskClient, { queueName });
+      const deferred = await cleanupOrphanedJobArtifacts(taskClient, { queueName, minArtifactAgeMs: 0 });
 
       expect(deferred.removed).toBe(1);
       expect(strings.has(`torotask:data:${queueName}:child-1:returnValue`)).toBe(true);
@@ -401,10 +419,55 @@ describe('jobArtifactCleanup', () => {
 
       // Once the parent is trimmed, a later sweep reclaims the deferred blob.
       strings.delete(parentKey);
-      const reclaimed = await cleanupOrphanedJobArtifacts(taskClient, { queueName });
+      const reclaimed = await cleanupOrphanedJobArtifacts(taskClient, { queueName, minArtifactAgeMs: 0 });
 
       expect(reclaimed.removed).toBe(1);
       expect(strings.has(`torotask:data:${queueName}:child-1:returnValue`)).toBe(false);
+    });
+
+    it('retains orphaned blobs that are younger than the retention window', async () => {
+      const { redis, strings } = createMockRedis();
+      const taskClient = createMockTaskClient(redis);
+      seedQueueMeta(strings);
+
+      await taskClient.getDataStore()!.externalize(
+        { queueName, jobId: 'fresh-1', kind: 'returnValue' },
+        { large: 'payload' },
+      );
+
+      // The job is gone and nothing references the blob, but a lagging QueueEvents
+      // consumer may still be holding the ref from the `completed` event.
+      const held = await cleanupOrphanedJobArtifacts(taskClient, { queueName, minArtifactAgeMs: 60_000 });
+
+      expect(held.removed).toBe(0);
+      expect(held.skipped).toBeGreaterThan(0);
+      expect(strings.has(`torotask:data:${queueName}:fresh-1:returnValue`)).toBe(true);
+
+      const expired = await cleanupOrphanedJobArtifacts(taskClient, { queueName, minArtifactAgeMs: 0 });
+
+      expect(expired.removed).toBe(1);
+      expect(strings.has(`torotask:data:${queueName}:fresh-1:returnValue`)).toBe(false);
+    });
+
+    it('retains orphaned blobs when the referrer lookup fails', async () => {
+      const { redis, strings } = createMockRedis();
+      const taskClient = createMockTaskClient(redis);
+      seedQueueMeta(strings);
+
+      await taskClient.getDataStore()!.externalize(
+        { queueName, jobId: 'child-1', kind: 'returnValue' },
+        { large: 'payload' },
+      );
+
+      const dataStore = taskClient.getDataStore()!;
+      jest.spyOn(dataStore, 'readJobMeta').mockRejectedValue(new Error('READONLY'));
+
+      const result = await cleanupOrphanedJobArtifacts(taskClient, { queueName, minArtifactAgeMs: 0 });
+
+      // An unreadable referrer must never be treated as "no referrer".
+      expect(result.removed).toBe(0);
+      expect(result.skipped).toBeGreaterThan(0);
+      expect(strings.has(`torotask:data:${queueName}:child-1:returnValue`)).toBe(true);
     });
 
     it('stops at maxDeletions and reports the sweep as truncated', async () => {
@@ -419,13 +482,13 @@ describe('jobArtifactCleanup', () => {
         });
       }
 
-      const result = await cleanupOrphanedJobArtifacts(taskClient, { queueName, maxDeletions: 2 });
+      const result = await cleanupOrphanedJobArtifacts(taskClient, { queueName, maxDeletions: 2, minArtifactAgeMs: 0 });
 
       expect(result.removed).toBe(2);
       expect(result.truncated).toBe(true);
 
       // Idempotent: the remainder is picked up by the next run.
-      const rest = await cleanupOrphanedJobArtifacts(taskClient, { queueName });
+      const rest = await cleanupOrphanedJobArtifacts(taskClient, { queueName, minArtifactAgeMs: 0 });
       expect(rest.removed).toBe(4);
     });
   });

@@ -8,8 +8,49 @@ import { DEFAULT_DATA_STORE_THRESHOLD_BYTES } from '../../types/data-store.js';
 function createMockRedis() {
   const strings = new Map<string, Buffer>();
   const sets = new Map<string, Set<string>>();
+  const hashes = new Map<string, Map<string, string>>();
+
+  const saddImpl = (key: string, member: string) => {
+    if (!sets.has(key)) {
+      sets.set(key, new Set());
+    }
+    sets.get(key)!.add(member);
+    return 1;
+  };
+
+  const hsetImpl = (key: string, field: string, value: string, nx = false) => {
+    if (!hashes.has(key)) {
+      hashes.set(key, new Map());
+    }
+    const hash = hashes.get(key)!;
+    if (nx && hash.has(field)) {
+      return 0;
+    }
+    hash.set(field, value);
+    return 1;
+  };
 
   const redis = {
+    multi: jest.fn(() => {
+      const queued: Array<() => unknown> = [];
+      const chain: any = {
+        sadd: (key: string, member: string) => {
+          queued.push(() => saddImpl(key, member));
+          return chain;
+        },
+        hset: (key: string, f: string, v: string) => {
+          queued.push(() => hsetImpl(key, f, v));
+          return chain;
+        },
+        hsetnx: (key: string, f: string, v: string) => {
+          queued.push(() => hsetImpl(key, f, v, true));
+          return chain;
+        },
+        exec: jest.fn(async () => queued.map(run => [null, run()] as [null, unknown])),
+      };
+      return chain;
+    }),
+    hgetall: jest.fn(async (key: string) => Object.fromEntries(hashes.get(key) ?? new Map())),
     set: jest.fn(async (key: string, value: Buffer) => {
       strings.set(key, value);
       return 'OK';
@@ -24,16 +65,13 @@ function createMockRedis() {
         if (sets.delete(key)) {
           removed++;
         }
+        if (hashes.delete(key)) {
+          removed++;
+        }
       }
       return removed;
     }),
-    sadd: jest.fn(async (key: string, member: string) => {
-      if (!sets.has(key)) {
-        sets.set(key, new Set());
-      }
-      sets.get(key)!.add(member);
-      return 1;
-    }),
+    sadd: jest.fn(async (key: string, member: string) => saddImpl(key, member)),
     smembers: jest.fn(async (key: string) => Array.from(sets.get(key) ?? [])),
     _strings: strings,
     _sets: sets,

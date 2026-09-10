@@ -1,5 +1,6 @@
 import type { Logger } from 'pino';
 import type { ToroTask } from '../client.js';
+import type { ToroTaskDataJobMeta } from '../types/data-store.js';
 
 const EXISTS_PIPELINE_CHUNK = 100;
 const SCAN_COUNT = 200;
@@ -8,6 +9,16 @@ const SCAN_COUNT = 200;
 export const DEFAULT_SWEEP_MAX_DELETIONS = 10_000;
 /** Default wall-clock cap for a sweep. */
 export const DEFAULT_SWEEP_MAX_DURATION_MS = 60_000;
+/**
+ * Default minimum age before an orphaned data blob may be deleted.
+ *
+ * BullMQ writes a job's externalized return-value ref into the queue's `completed`
+ * event stream as well as into any parent's `processed` hash. A `QueueEvents` consumer
+ * that is lagging, restarting, or resuming from an old stream id can still be holding
+ * a ref after both the job and its parent are gone, so blobs are retained for a window
+ * rather than deleted the moment they look unreferenced.
+ */
+export const DEFAULT_SWEEP_MIN_ARTIFACT_AGE_MS = 3_600_000;
 
 /**
  * Whether a job hash exists.
@@ -116,11 +127,18 @@ export async function jobPresence(
 
     chunk.forEach((key, index) => {
       const entry = results?.[index];
+      // Fail closed on anything we cannot read as a definite integer reply: a null
+      // pipeline, a short reply array, a per-command error, or a non-numeric value.
       if (!Array.isArray(entry) || entry[0]) {
         presence.set(key, 'unknown');
         return;
       }
-      presence.set(key, Number(entry[1]) > 0 ? 'present' : 'absent');
+      const count = Number(entry[1]);
+      if (!Number.isFinite(count)) {
+        presence.set(key, 'unknown');
+        return;
+      }
+      presence.set(key, count > 0 ? 'present' : 'absent');
     });
   }
 
@@ -155,14 +173,14 @@ export async function clearJobArtifacts(
     tasks.push(
       (async () => {
         if (options?.respectReferrer) {
-          const referrer = await dataStore.readJobReferrer(queueName, jobId);
-          if (referrer) {
+          const { referrerJobKey } = await dataStore.readJobMeta(queueName, jobId);
+          if (referrerJobKey) {
             const presence = (
-              await jobPresence(taskClient.redis as unknown as RedisCleanupClient, [referrer])
-            ).get(referrer);
+              await jobPresence(taskClient.redis as unknown as RedisCleanupClient, [referrerJobKey])
+            ).get(referrerJobKey);
             if (presence !== 'absent') {
               logger?.debug(
-                { queueName, jobId, referrer, presence },
+                { queueName, jobId, referrer: referrerJobKey, presence },
                 'Deferring data-store cleanup: referrer job still holds a ref',
               );
               return false;
@@ -196,6 +214,11 @@ export interface OrphanSweepOptions {
   maxDeletions?: number;
   /** Stop after this many milliseconds. @default 60000 */
   maxDurationMs?: number;
+  /**
+   * Retain data blobs younger than this, even when they look orphaned.
+   * @default 3600000
+   */
+  minArtifactAgeMs?: number;
   logger?: Logger;
 }
 
@@ -283,6 +306,7 @@ async function resolveQueuePrefix(
 interface SweepContext {
   taskClient: ToroTask;
   redis: RedisCleanupClient;
+  minArtifactAgeMs: number;
   queueName?: string;
   prefixCache: Map<string, string | undefined>;
   logger?: Logger;
@@ -379,19 +403,43 @@ async function sweepDataBlobs(ctx: SweepContext, budget: SweepBudget): Promise<v
       return;
     }
 
-    const referrers = await Promise.all(
-      absent.map(async entry => dataStore.readJobReferrer(entry.queueName, entry.jobId).catch(() => undefined)),
+    // A failed metadata read must not read as "no referrer": that would authorise
+    // deleting a blob whose parent is still holding the ref. Unreadable => defer.
+    const metas = await Promise.all(
+      absent.map(async (entry): Promise<{ ok: true; meta: ToroTaskDataJobMeta } | { ok: false; err: unknown }> => {
+        try {
+          return { ok: true, meta: await dataStore.readJobMeta(entry.queueName, entry.jobId) };
+        }
+        catch (err) {
+          return { ok: false, err };
+        }
+      }),
     );
     const referrerPresence = await jobPresence(
       ctx.redis,
-      referrers.filter((key): key is string => Boolean(key)),
+      metas.flatMap(result => (result.ok && result.meta.referrerJobKey ? [result.meta.referrerJobKey] : [])),
     );
 
     for (const [index, entry] of absent.entries()) {
-      const referrer = referrers[index];
-      if (referrer && referrerPresence.get(referrer) !== 'absent') {
+      const result = metas[index]!;
+      if (!result.ok) {
         budget.skipped++;
-        ctx.logger?.debug({ ...entry, referrer }, 'Deferring orphaned data blob: referrer still present');
+        ctx.logger?.warn({ err: result.err, ...entry }, 'Deferring orphaned data blob: metadata lookup failed');
+        continue;
+      }
+
+      const { referrerJobKey, createdAt } = result.meta;
+      // Retention window: BullMQ also puts the ref in the queue's `completed` event, so
+      // a lagging or resumed QueueEvents consumer can still be holding one. Keep blobs
+      // until they are older than the window, then treat the event as unconsumable.
+      if (createdAt !== undefined && Date.now() - createdAt < ctx.minArtifactAgeMs) {
+        budget.skipped++;
+        ctx.logger?.debug({ ...entry, createdAt }, 'Deferring orphaned data blob: within retention window');
+        continue;
+      }
+      if (referrerJobKey && referrerPresence.get(referrerJobKey) !== 'absent') {
+        budget.skipped++;
+        ctx.logger?.debug({ ...entry, referrer: referrerJobKey }, 'Deferring orphaned data blob: referrer present');
         continue;
       }
 
@@ -433,6 +481,7 @@ export async function cleanupOrphanedJobArtifacts(
   const ctx: SweepContext = {
     taskClient,
     redis: taskClient.redis as unknown as RedisCleanupClient,
+    minArtifactAgeMs: options?.minArtifactAgeMs ?? DEFAULT_SWEEP_MIN_ARTIFACT_AGE_MS,
     queueName: options?.queueName,
     prefixCache: new Map(),
     logger: options?.logger,

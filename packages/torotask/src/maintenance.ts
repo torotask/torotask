@@ -12,6 +12,7 @@ export interface OrphanCleanupPayload {
   queueName?: string;
   maxDeletions?: number;
   maxDurationMs?: number;
+  minArtifactAgeMs?: number;
 }
 
 /**
@@ -29,6 +30,7 @@ export function createOrphanCleanupTaskDefinition(options: {
   cron: string;
   maxDeletions: number;
   maxDurationMs: number;
+  minArtifactAgeMs: number;
 }): TaskDefinition<OrphanCleanupPayload, OrphanSweepResult> {
   return {
     triggers: [{ type: 'cron', name: 'orphan-cleanup', cron: options.cron }],
@@ -43,6 +45,7 @@ export function createOrphanCleanupTaskDefinition(options: {
         queueName: payload?.queueName,
         maxDeletions: payload?.maxDeletions ?? options.maxDeletions,
         maxDurationMs: payload?.maxDurationMs ?? options.maxDurationMs,
+        minArtifactAgeMs: payload?.minArtifactAgeMs ?? options.minArtifactAgeMs,
         logger,
       });
 

@@ -1,4 +1,5 @@
 import type { WorkerOptions } from 'bullmq';
+import type { TaskGroup } from './task-group.js';
 import type {
   TaskGroupDefinitionRegistry,
   TaskGroupRegistry,
@@ -6,6 +7,7 @@ import type {
   WorkerFilterGroups,
 } from './types/index.js';
 import { ToroTask } from './client.js';
+import { MAINTENANCE_GROUP_ID } from './maintenance.js';
 import { filterGroups } from './utils/filter-groups.js';
 import { isControlError } from './utils/is-control-error.js';
 
@@ -97,18 +99,29 @@ export class TaskServer<
     this.logger.info({ filter }, 'Stopping workers across task groups');
     const groupsToProcess = filterGroups(this, filter, 'stopping workers');
 
-    if (groupsToProcess.length === 0) {
-      this.logger.info('No groups to stop workers for based on the filter.');
-      return;
+    // start() starts maintenance regardless of the filter, so stop() must stop it the
+    // same way. Otherwise a filtered stop leaves the maintenance worker and its Redis
+    // connections running. Filtering it out of the list avoids stopping it twice.
+    const maintenanceGroup = (this.taskGroups as Record<string, TaskGroup<any, any> | undefined>)[
+      MAINTENANCE_GROUP_ID
+    ];
+    const userGroups = groupsToProcess.filter(group => group !== maintenanceGroup);
+
+    if (maintenanceGroup) {
+      await maintenanceGroup.stopWorkers();
     }
 
-    await Promise.allSettled(
-      groupsToProcess.map(async (group) => {
-        await group.stopWorkers();
-      }),
-    );
-
-    this.logger.info('Finished request to stop workers');
+    if (userGroups.length === 0) {
+      this.logger.info('No groups to stop workers for based on the filter.');
+    }
+    else {
+      await Promise.allSettled(
+        userGroups.map(async (group) => {
+          await group.stopWorkers();
+        }),
+      );
+      this.logger.info('Finished request to stop workers');
+    }
 
     // Detach global handlers if we attached them
     this.detachGlobalErrorHandlers();

@@ -157,7 +157,7 @@ describe('orphan cleanup integration', () => {
     const storageKeys = await redis.smembers(dataIndexKey);
     expect(storageKeys.length).toBeGreaterThan(0);
 
-    const result = await server.cleanupOrphanedJobArtifacts();
+    const result = await server.cleanupOrphanedJobArtifacts({ minArtifactAgeMs: 0 });
 
     expect(result.removed).toBeGreaterThan(0);
     expect(result.truncated).toBe(false);
@@ -168,7 +168,7 @@ describe('orphan cleanup integration', () => {
     }
 
     // Idempotent: a second sweep finds nothing left to do.
-    const second = await server.cleanupOrphanedJobArtifacts();
+    const second = await server.cleanupOrphanedJobArtifacts({ minArtifactAgeMs: 0 });
     expect(second.removed).toBe(0);
   });
 
@@ -216,7 +216,7 @@ describe('orphan cleanup integration', () => {
 
     // Sweeping mid-execution must not touch a running job's step state, or the
     // completed step would silently re-run.
-    const result = await server.cleanupOrphanedJobArtifacts();
+    const result = await server.cleanupOrphanedJobArtifacts({ minArtifactAgeMs: 0 });
 
     expect(result.removed).toBe(0);
     expect(await redis.exists(stepStateKey)).toBe(1);
@@ -252,7 +252,7 @@ describe('orphan cleanup integration', () => {
     const stepStateKey = `${server.prefix}:state:unknown.queue:job-1`;
     expect(await redis.exists(stepStateKey)).toBe(1);
 
-    const result = await server.cleanupOrphanedJobArtifacts();
+    const result = await server.cleanupOrphanedJobArtifacts({ minArtifactAgeMs: 0 });
 
     expect(result.removed).toBe(0);
     expect(result.skipped).toBeGreaterThan(0);
@@ -306,13 +306,13 @@ describe('orphan cleanup integration', () => {
     expect(childStorageKeys.length).toBeGreaterThan(0);
 
     // Referrer must have been recorded at write time; it cannot be discovered later.
-    const referrer = await server.getDataStore()!.readJobReferrer(childQueue, childId);
+    const { referrerJobKey: referrer } = await server.getDataStore()!.readJobMeta(childQueue, childId);
     expect(referrer).toBe(`${server.queuePrefix}:${parentQueue}:${parentJob.id}`);
 
     // Remove only the child job hash, mimicking a trim of the child.
     await redis.del(`${server.queuePrefix}:${childQueue}:${childId}`);
 
-    const deferred = await server.cleanupOrphanedJobArtifacts();
+    const deferred = await server.cleanupOrphanedJobArtifacts({ minArtifactAgeMs: 0 });
     expect(deferred.skipped).toBeGreaterThan(0);
     // The parent's `processed` hash still holds the ref, so the blob must survive.
     for (const storageKey of childStorageKeys) {
@@ -321,7 +321,7 @@ describe('orphan cleanup integration', () => {
 
     // Once the parent is gone the ref is unreachable and the blob is reclaimed.
     await redis.del(`${server.queuePrefix}:${parentQueue}:${parentJob.id}`);
-    const reclaimed = await server.cleanupOrphanedJobArtifacts();
+    const reclaimed = await server.cleanupOrphanedJobArtifacts({ minArtifactAgeMs: 0 });
     expect(reclaimed.removed).toBeGreaterThan(0);
     for (const storageKey of childStorageKeys) {
       expect(await redis.exists(storageKey)).toBe(0);
@@ -350,11 +350,19 @@ describe('orphan cleanup integration', () => {
     // never use.
     expect(server.getTaskGroup(MAINTENANCE_GROUP_ID)).toBeUndefined();
 
-    // Sharding workers by group filter must not leave the cluster with nobody sweeping.
-    await server.start({ cleanupDemo: false } as any);
+    // A filter that matches no user group must still leave the cluster with a sweeper.
+    await server.start({ groupsById: ['nonexistent'] } as any);
 
     const maintenance = server.getTaskGroup(MAINTENANCE_GROUP_ID);
     expect(maintenance).toBeDefined();
     expect(maintenance!.tasks[ORPHAN_CLEANUP_TASK_ID]).toBeDefined();
+
+    // stop() must be symmetric with start(): the same non-matching filter previously
+    // returned early, leaving the maintenance worker and its Redis connections running.
+    const stopWorkers = jest.spyOn(maintenance!, 'stopWorkers');
+    await server.stop({ groupsById: ['nonexistent'] } as any);
+    server = null;
+
+    expect(stopWorkers).toHaveBeenCalled();
   });
 });

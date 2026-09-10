@@ -224,8 +224,14 @@ export class TaskJob<
 
   /**
    * Removes the job from BullMQ and clears external step state.
+   *
+   * Order matters: BullMQ refuses to remove a locked (active) job, and previously we
+   * deleted the sidecars first, so a rejected removal left a live job without its
+   * payload or step state. Cleaning up only after removal is confirmed means the worst
+   * case is a leaked artifact, which the periodic sweep reclaims.
    */
   async remove(opts?: { removeChildren?: boolean }): Promise<void> {
+    await super.remove(opts);
     await this.clearStepState();
     if (this.taskClient && this.id) {
       // A parent's `processed` hash may still hold a ref to this job's return value,
@@ -235,7 +241,6 @@ export class TaskJob<
         respectReferrer: true,
       });
     }
-    await super.remove(opts);
   }
 
   private async stripLegacyStepStateFromJobData(): Promise<void> {

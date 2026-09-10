@@ -23,11 +23,15 @@ Cleanup is now a periodic sweep rather than inline work on the completion path.
   setting, returning `{ removed, scanned, skipped, truncated }`. Use it if you would rather drive
   cleanup from external ops tooling. Bounded by `maxDeletions` (default 10,000) and
   `maxDurationMs` (default 60,000); sweeps are idempotent, so a truncated run is resumed by the next one.
-- Data stores now record the referring parent job for externalized return values, via
-  `ToroTaskDataStoreContext.referrerJobKey` and `ToroTaskDataStore.readJobReferrer()`. BullMQ copies
+- Data stores now record the referring parent job and a creation timestamp for externalized values,
+  via `ToroTaskDataStoreContext.referrerJobKey` and `ToroTaskDataStore.readJobMeta()`. BullMQ copies
   a child's return value into the parent's `processed` hash, which outlives the child, so a blob is
   only reclaimed once its referrer is gone too. Custom data stores that do not implement
-  `readJobReferrer` keep the previous behaviour.
+  `readJobMeta` keep the previous behaviour.
+- `minArtifactAgeMs` (default 3,600,000) retains orphaned data blobs until they are older than the
+  window. BullMQ also writes the externalized return-value ref into the queue's `completed` event
+  stream, so a lagging or resuming `QueueEvents` consumer can still hold a ref after both the job
+  and its parent are gone. Set to `0` to reclaim as soon as a blob looks orphaned.
 
 **Changed**
 
@@ -35,6 +39,9 @@ Cleanup is now a periodic sweep rather than inline work on the completion path.
   normally reclaimed when the job record is removed, either explicitly or by the sweep.
 
 **Notes**
+
+- Cleanup fails closed throughout: unreadable `EXISTS` replies, failed referrer lookups, and
+  unconfirmed queue prefixes all defer deletion to a later sweep rather than guessing.
 
 - The sweep confirms each queue's key prefix via its `meta` key before deleting anything, and
   skips queues it cannot confirm, so queues created with a custom `prefix` are left alone.

@@ -134,6 +134,18 @@ export interface ToroTaskOrphanCleanupOptions {
    * @default 60000
    */
   maxDurationMs?: number;
+
+  /**
+   * Retain orphaned data blobs younger than this, even when nothing references them.
+   *
+   * BullMQ also writes a job's externalized return-value ref into the queue's
+   * `completed` event stream, so a lagging or resuming `QueueEvents` consumer can hold
+   * a ref after the job and any parent are gone. Set to `0` to delete as soon as a blob
+   * looks orphaned.
+   *
+   * @default 3600000
+   */
+  minArtifactAgeMs?: number;
 }
 
 export interface ResolvedToroTaskOrphanCleanupOptions {
@@ -141,11 +153,13 @@ export interface ResolvedToroTaskOrphanCleanupOptions {
   cron: string;
   maxDeletions: number;
   maxDurationMs: number;
+  minArtifactAgeMs: number;
 }
 
 export const DEFAULT_ORPHAN_CLEANUP_CRON = '17 * * * *';
 export const DEFAULT_ORPHAN_CLEANUP_MAX_DELETIONS = 10_000;
 export const DEFAULT_ORPHAN_CLEANUP_MAX_DURATION_MS = 60_000;
+export const DEFAULT_ORPHAN_CLEANUP_MIN_ARTIFACT_AGE_MS = 3_600_000;
 
 export function resolveOrphanCleanupOptions(
   options?: boolean | ToroTaskOrphanCleanupOptions,
@@ -156,6 +170,7 @@ export function resolveOrphanCleanupOptions(
     cron: resolved?.cron ?? DEFAULT_ORPHAN_CLEANUP_CRON,
     maxDeletions: Math.max(1, resolved?.maxDeletions ?? DEFAULT_ORPHAN_CLEANUP_MAX_DELETIONS),
     maxDurationMs: Math.max(1000, resolved?.maxDurationMs ?? DEFAULT_ORPHAN_CLEANUP_MAX_DURATION_MS),
+    minArtifactAgeMs: Math.max(0, resolved?.minArtifactAgeMs ?? DEFAULT_ORPHAN_CLEANUP_MIN_ARTIFACT_AGE_MS),
   };
 }
 

@@ -1,5 +1,6 @@
 import type {
   ResolvedToroTaskDataStoreOptions,
+  ToroTaskDataJobMeta,
   ToroTaskDataStoreContext,
   ToroTaskDataStoreOptions,
 } from '../types/data-store.js';
@@ -55,14 +56,15 @@ export abstract class ToroTaskDataStore extends ToroTaskStoreBase {
   ): Promise<void>;
 
   /**
-   * Job hash key of a still-live referrer recorded via {@link trackJobKey}, if any.
+   * Metadata recorded for a job's blobs by {@link trackJobKey}.
    *
-   * Orphan cleanup uses this to avoid deleting a blob that a surviving parent job
-   * still references. Backends that do not track referrers return `undefined`,
-   * which means "no known referrer" and allows cleanup to proceed.
+   * Orphan cleanup uses this to avoid deleting a blob a surviving parent still
+   * references, and to honour a retention window. Backends that record nothing return
+   * an empty object, which means "no known referrer and unknown age" and lets cleanup
+   * proceed on job-presence alone.
    */
-  async readJobReferrer(_queueName: string, _jobId: string): Promise<string | undefined> {
-    return undefined;
+  async readJobMeta(_queueName: string, _jobId: string): Promise<ToroTaskDataJobMeta> {
+    return {};
   }
 
   /** Removes all blobs tracked for a job. */
