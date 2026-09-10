@@ -167,6 +167,13 @@ function createMockTaskClient(redis: Redis): ToroTask {
     redis,
     getStepStateStore: () => stepStore,
     getDataStore: () => dataStore,
+    getOrphanCleanupOptions: () => ({
+      enabled: true,
+      cron: '17 * * * *',
+      maxDeletions: 10_000,
+      maxDurationMs: 60_000,
+      minArtifactAgeMs: 3_600_000,
+    }),
   } as unknown as ToroTask;
 }
 
@@ -201,6 +208,28 @@ describe('jobArtifactCleanup', () => {
 
       expect(presence.get('present-key')).toBe('present');
       expect(presence.get('missing-key')).toBe('absent');
+    });
+
+    it('treats non 0/1 EXISTS replies as unknown', async () => {
+      const { redis } = createMockRedis();
+      (redis as any).pipeline = () => ({
+        exists() {
+          return this;
+        },
+        exec: async () => [
+          [null, null],
+          [null, ''],
+          [null, false],
+          [null, -1],
+        ],
+      });
+
+      const presence = await jobPresence(redis as any, ['a', 'b', 'c', 'd']);
+
+      // Number(null|''|false) is 0 and would coerce to 'absent', authorising a delete.
+      for (const key of ['a', 'b', 'c', 'd']) {
+        expect(presence.get(key)).toBe('unknown');
+      }
     });
 
     it.each<[string, PipelineMode]>([
@@ -282,9 +311,27 @@ describe('jobArtifactCleanup', () => {
         { large: 'payload' },
       );
 
-      await clearJobArtifacts(taskClient, queueName, jobId, { respectReferrer: true });
+      await clearJobArtifacts(taskClient, queueName, jobId, { respectReferrer: true, minArtifactAgeMs: 0 });
 
       expect(strings.has(`torotask:data:${queueName}:${jobId}:returnValue`)).toBe(false);
+    });
+
+    it('applies the retention window to explicit removal, not just the sweep', async () => {
+      const { redis, strings } = createMockRedis();
+      const taskClient = createMockTaskClient(redis);
+      const jobId = 'child-1';
+
+      await taskClient.getDataStore()!.externalize(
+        { queueName, jobId, kind: 'returnValue' },
+        { large: 'payload' },
+      );
+
+      // No referrer and no job record, but the `completed` event may still be unread.
+      // job.remove() / queue.clean() must honour the same window the sweep does.
+      const cleared = await clearJobArtifacts(taskClient, queueName, jobId, { respectReferrer: true });
+
+      expect(cleared).toBe(1);
+      expect(strings.has(`torotask:data:${queueName}:${jobId}:returnValue`)).toBe(true);
     });
   });
 
@@ -468,6 +515,69 @@ describe('jobArtifactCleanup', () => {
       expect(result.removed).toBe(0);
       expect(result.skipped).toBeGreaterThan(0);
       expect(strings.has(`torotask:data:${queueName}:child-1:returnValue`)).toBe(true);
+    });
+
+    it('dates the retention window from the newest blob, not the earliest', async () => {
+      const { redis, strings } = createMockRedis();
+      const taskClient = createMockTaskClient(redis);
+      seedQueueMeta(strings);
+      const jobId = 'slow-job';
+      const dataStore = taskClient.getDataStore()!;
+      const metaKey = `torotask:data-index-meta:${queueName}:${jobId}`;
+
+      // Payload written at enqueue time.
+      await dataStore.externalize({ queueName, jobId, kind: 'payload' }, { large: 'payload' });
+      // ...the job then queued or ran for longer than the retention window.
+      await redis.hset(metaKey, 'createdAt', String(Date.now() - 7_200_000));
+      // ...and only now externalizes its return value, which the `completed` event refs.
+      await dataStore.externalize({ queueName, jobId, kind: 'returnValue' }, { large: 'result' });
+
+      const result = await cleanupOrphanedJobArtifacts(taskClient, {
+        queueName,
+        minArtifactAgeMs: 3_600_000,
+      });
+
+      // Keeping the earliest timestamp would date the return value from the payload and
+      // delete it immediately, which is precisely the blob that needs protecting.
+      expect(result.removed).toBe(0);
+      expect(result.skipped).toBeGreaterThan(0);
+      expect(strings.has(`torotask:data:${queueName}:${jobId}:returnValue`)).toBe(true);
+    });
+
+    it('gives blobs that predate metadata tracking one window of grace', async () => {
+      const { redis, strings, hashes } = createMockRedis();
+      const taskClient = createMockTaskClient(redis);
+      seedQueueMeta(strings);
+      const jobId = 'legacy-1';
+      const metaKey = `torotask:data-index-meta:${queueName}:${jobId}`;
+
+      await taskClient.getDataStore()!.externalize(
+        { queueName, jobId, kind: 'returnValue' },
+        { large: 'payload' },
+      );
+      // Simulate an index written before createdAt was tracked.
+      hashes.delete(metaKey);
+
+      const first = await cleanupOrphanedJobArtifacts(taskClient, {
+        queueName,
+        minArtifactAgeMs: 3_600_000,
+      });
+
+      expect(first.removed).toBe(0);
+      expect(first.skipped).toBeGreaterThan(0);
+      expect(strings.has(`torotask:data:${queueName}:${jobId}:returnValue`)).toBe(true);
+      // Stamped on first sight so it ages out normally instead of being stranded.
+      expect(hashes.get(metaKey)?.get('createdAt')).toBeDefined();
+
+      // Once the stamp is older than the window it is reclaimed.
+      hashes.get(metaKey)!.set('createdAt', String(Date.now() - 7_200_000));
+      const second = await cleanupOrphanedJobArtifacts(taskClient, {
+        queueName,
+        minArtifactAgeMs: 3_600_000,
+      });
+
+      expect(second.removed).toBe(1);
+      expect(strings.has(`torotask:data:${queueName}:${jobId}:returnValue`)).toBe(false);
     });
 
     it('stops at maxDeletions and reports the sweep as truncated', async () => {

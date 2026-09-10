@@ -67,6 +67,18 @@ export abstract class ToroTaskDataStore extends ToroTaskStoreBase {
     return {};
   }
 
+  /**
+   * Records a first-observation timestamp for a job whose metadata predates tracking.
+   *
+   * Called by orphan cleanup when {@link readJobMeta} reports no `createdAt`, so that
+   * artifacts written before this feature existed get one retention window of grace
+   * instead of being deleted on the first sweep after an upgrade. Backends that do not
+   * record metadata leave this as a no-op and are swept on job presence alone.
+   */
+  async markJobMetaSeen(_queueName: string, _jobId: string): Promise<void> {
+    // No-op by default.
+  }
+
   /** Removes all blobs tracked for a job. */
   abstract clearJob(queueName: string, jobId: string): Promise<void>;
 

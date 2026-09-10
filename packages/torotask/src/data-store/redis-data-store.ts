@@ -83,9 +83,14 @@ export class RedisDataStore extends ToroTaskDataStore {
 
     // `createdAt` is written on every blob, not just referenced ones: orphan cleanup
     // uses it as a retention window so a consumer that has not yet read the job's
-    // `completed` event still finds the ref resolvable. HSETNX keeps the first write,
-    // so a job's age is that of its earliest blob.
-    const multi = this.redis.multi().sadd(indexKey, storageKey).hsetnx(metaKey, CREATED_AT_FIELD, Date.now());
+    // `completed` event still finds the ref resolvable.
+    //
+    // Last write wins, deliberately. `clearJob` deletes a job's blobs as a unit, so the
+    // window has to be measured from the NEWEST blob. Keeping the first write instead
+    // would date a return value externalized at completion from the payload written at
+    // enqueue time, leaving any job that queued or ran for longer than the window with
+    // no protection at all on the one blob the `completed` event actually references.
+    const multi = this.redis.multi().sadd(indexKey, storageKey).hset(metaKey, CREATED_AT_FIELD, Date.now());
     if (referrerJobKey) {
       multi.hset(metaKey, REFERRER_FIELD, referrerJobKey);
     }
@@ -110,6 +115,18 @@ export class RedisDataStore extends ToroTaskDataStore {
       referrerJobKey: meta?.[REFERRER_FIELD] || undefined,
       createdAt: Number.isFinite(createdAt) && createdAt > 0 ? createdAt : undefined,
     };
+  }
+
+  /**
+   * Stamps `createdAt` on a job index that predates metadata tracking.
+   *
+   * Indexes written before this feature existed have no timestamp, and treating that as
+   * "infinitely old" would delete blobs whose `completed` event may still be unread at
+   * the moment of deployment. Stamping on first sight gives them exactly one retention
+   * window of grace and then lets them age out normally, rather than stranding them.
+   */
+  override async markJobMetaSeen(queueName: string, jobId: string): Promise<void> {
+    await this.redis.hsetnx(this.buildJobIndexMetaKey(queueName, jobId), CREATED_AT_FIELD, Date.now());
   }
 
   async clearJob(queueName: string, jobId: string): Promise<void> {

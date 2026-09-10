@@ -357,10 +357,19 @@ describe('orphan cleanup integration', () => {
     expect(maintenance).toBeDefined();
     expect(maintenance!.tasks[ORPHAN_CLEANUP_TASK_ID]).toBeDefined();
 
-    // stop() must be symmetric with start(): the same non-matching filter previously
-    // returned early, leaving the maintenance worker and its Redis connections running.
+    // A targeted stop is not a shutdown request. It must leave the sweeper, and the
+    // client's connections, alone: tearing the server down because a filter matched
+    // nothing would be a surprising side effect of asking to stop one group.
     const stopWorkers = jest.spyOn(maintenance!, 'stopWorkers');
     await server.stop({ groupsById: ['nonexistent'] } as any);
+
+    expect(stopWorkers).not.toHaveBeenCalled();
+    // Still up: a full shutdown would have closed this connection.
+    expect(server.redis.status).toBe('ready');
+
+    // An unfiltered stop is the full shutdown, and must stop maintenance even though
+    // start() registered it outside the filter.
+    await server.stop();
     server = null;
 
     expect(stopWorkers).toHaveBeenCalled();

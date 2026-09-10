@@ -232,14 +232,21 @@ export class TaskJob<
    */
   async remove(opts?: { removeChildren?: boolean }): Promise<void> {
     await super.remove(opts);
-    await this.clearStepState();
     if (this.taskClient && this.id) {
-      // A parent's `processed` hash may still hold a ref to this job's return value,
-      // so only drop the blobs once no live referrer remains.
+      // One fail-soft call clears both stores. Awaiting `clearStepState()` separately
+      // beforehand cleared step state twice on success, and on failure both skipped the
+      // data cleanup and rejected `remove()` for a job BullMQ had already deleted.
+      //
+      // A parent's `processed` hash, or an unread `completed` event, may still hold a
+      // ref to this job's return value, so blobs are only dropped once no live referrer
+      // remains and the retention window has passed; the sweep reclaims the rest.
       await clearJobArtifacts(this.taskClient, this.queueName, this.id, {
         logger: this.logger,
         respectReferrer: true,
       });
+    }
+    else {
+      await this.clearStepState();
     }
   }
 

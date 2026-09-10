@@ -1,5 +1,6 @@
 import type { Logger } from 'pino';
 import type { ToroTask } from '../client.js';
+import type { ToroTaskDataStore } from '../data-store/base-data-store.js';
 import type { ToroTaskDataJobMeta } from '../types/data-store.js';
 
 const EXISTS_PIPELINE_CHUNK = 100;
@@ -133,16 +134,73 @@ export async function jobPresence(
         presence.set(key, 'unknown');
         return;
       }
-      const count = Number(entry[1]);
-      if (!Number.isFinite(count)) {
+      // `EXISTS <one key>` is specified to reply with the integer 0 or 1. Coercing
+      // anything else would quietly turn null, '', false or a negative into `absent`
+      // and authorise a delete, so accept only the two replies the command can make.
+      const count = entry[1];
+      if (count !== 0 && count !== 1) {
         presence.set(key, 'unknown');
         return;
       }
-      presence.set(key, count > 0 ? 'present' : 'absent');
+      presence.set(key, count === 1 ? 'present' : 'absent');
     });
   }
 
   return presence;
+}
+
+/** Why a job's data blobs may not be dropped yet. */
+type BlobDecision = { allow: true } | { allow: false; reason: string; detail: Record<string, unknown> };
+
+/**
+ * Decides whether a job's data blobs can be deleted.
+ *
+ * Single source of truth for that question. Both the periodic sweep and the explicit
+ * removal paths route through here: when the two had their own copies of the rule they
+ * drifted, and the divergence was a data-loss bug each time.
+ *
+ * `meta` and `referrerPresence` may be supplied by a caller that has already batched
+ * those reads; otherwise they are fetched. A throw propagates, and every caller treats
+ * that as "defer", so an unreadable answer never authorises a delete.
+ */
+async function dataBlobDecision(args: {
+  redis: RedisCleanupClient;
+  dataStore: ToroTaskDataStore;
+  queueName: string;
+  jobId: string;
+  minArtifactAgeMs: number;
+  meta?: ToroTaskDataJobMeta;
+  referrerPresence?: Map<string, Presence>;
+}): Promise<BlobDecision> {
+  const { redis, dataStore, queueName, jobId, minArtifactAgeMs } = args;
+  const meta = args.meta ?? (await dataStore.readJobMeta(queueName, jobId));
+
+  // Written before metadata tracking existed. Stamp it now so it ages out on a later
+  // run rather than being deleted immediately on the first sweep after an upgrade,
+  // when its `completed` event may still be unread.
+  if (meta.createdAt === undefined && minArtifactAgeMs > 0) {
+    await dataStore.markJobMetaSeen(queueName, jobId);
+    return { allow: false, reason: 'metadata predates tracking; stamped for a later sweep', detail: {} };
+  }
+
+  // BullMQ also puts the externalized ref in the queue's `completed` event, so a lagging
+  // or resumed QueueEvents consumer can still hold one after the job and its parent are
+  // gone. Hold the blob until the event is old enough to be considered unconsumable.
+  if (meta.createdAt !== undefined && Date.now() - meta.createdAt < minArtifactAgeMs) {
+    return { allow: false, reason: 'within retention window', detail: { createdAt: meta.createdAt } };
+  }
+
+  // A parent's `processed` hash outlives the child that wrote into it.
+  if (meta.referrerJobKey) {
+    const presence
+      = args.referrerPresence?.get(meta.referrerJobKey)
+        ?? (await jobPresence(redis, [meta.referrerJobKey])).get(meta.referrerJobKey);
+    if (presence !== 'absent') {
+      return { allow: false, reason: 'referrer job still holds a ref', detail: { referrer: meta.referrerJobKey, presence } };
+    }
+  }
+
+  return { allow: true };
 }
 
 /**
@@ -157,7 +215,7 @@ export async function clearJobArtifacts(
   taskClient: ToroTask,
   queueName: string,
   jobId: string,
-  options?: { logger?: Logger; respectReferrer?: boolean },
+  options?: { logger?: Logger; respectReferrer?: boolean; minArtifactAgeMs?: number },
 ): Promise<number> {
   const logger = options?.logger;
   const dataStore = taskClient.getDataStore();
@@ -173,18 +231,19 @@ export async function clearJobArtifacts(
     tasks.push(
       (async () => {
         if (options?.respectReferrer) {
-          const { referrerJobKey } = await dataStore.readJobMeta(queueName, jobId);
-          if (referrerJobKey) {
-            const presence = (
-              await jobPresence(taskClient.redis as unknown as RedisCleanupClient, [referrerJobKey])
-            ).get(referrerJobKey);
-            if (presence !== 'absent') {
-              logger?.debug(
-                { queueName, jobId, referrer: referrerJobKey, presence },
-                'Deferring data-store cleanup: referrer job still holds a ref',
-              );
-              return false;
-            }
+          const decision = await dataBlobDecision({
+            redis: taskClient.redis as unknown as RedisCleanupClient,
+            dataStore,
+            queueName,
+            jobId,
+            // An explicit removal makes the job vanish, but it does not reach into the
+            // `completed` stream to retract the ref, so the same window applies here.
+            // The index survives, so the periodic sweep reclaims these once they age out.
+            minArtifactAgeMs: options.minArtifactAgeMs ?? taskClient.getOrphanCleanupOptions().minArtifactAgeMs,
+          });
+          if (!decision.allow) {
+            logger?.debug({ queueName, jobId, ...decision.detail }, `Deferring data-store cleanup: ${decision.reason}`);
+            return false;
           }
         }
         await dataStore.clearJob(queueName, jobId);
@@ -428,18 +487,27 @@ async function sweepDataBlobs(ctx: SweepContext, budget: SweepBudget): Promise<v
         continue;
       }
 
-      const { referrerJobKey, createdAt } = result.meta;
-      // Retention window: BullMQ also puts the ref in the queue's `completed` event, so
-      // a lagging or resumed QueueEvents consumer can still be holding one. Keep blobs
-      // until they are older than the window, then treat the event as unconsumable.
-      if (createdAt !== undefined && Date.now() - createdAt < ctx.minArtifactAgeMs) {
+      let decision: BlobDecision;
+      try {
+        decision = await dataBlobDecision({
+          redis: ctx.redis,
+          dataStore,
+          queueName: entry.queueName,
+          jobId: entry.jobId,
+          minArtifactAgeMs: ctx.minArtifactAgeMs,
+          meta: result.meta,
+          referrerPresence,
+        });
+      }
+      catch (err) {
         budget.skipped++;
-        ctx.logger?.debug({ ...entry, createdAt }, 'Deferring orphaned data blob: within retention window');
+        ctx.logger?.warn({ err, ...entry }, 'Deferring orphaned data blob: retention check failed');
         continue;
       }
-      if (referrerJobKey && referrerPresence.get(referrerJobKey) !== 'absent') {
+
+      if (!decision.allow) {
         budget.skipped++;
-        ctx.logger?.debug({ ...entry, referrer: referrerJobKey }, 'Deferring orphaned data blob: referrer present');
+        ctx.logger?.debug({ ...entry, ...decision.detail }, `Deferring orphaned data blob: ${decision.reason}`);
         continue;
       }
 

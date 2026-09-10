@@ -31,10 +31,18 @@ Cleanup is now a periodic sweep rather than inline work on the completion path.
 - `minArtifactAgeMs` (default 3,600,000) retains orphaned data blobs until they are older than the
   window. BullMQ also writes the externalized return-value ref into the queue's `completed` event
   stream, so a lagging or resuming `QueueEvents` consumer can still hold a ref after both the job
-  and its parent are gone. Set to `0` to reclaim as soon as a blob looks orphaned.
+  and its parent are gone. The window is measured from the job's most recently written blob, and
+  applies to explicit removal (`job.remove()`, `queue.clean()`) as well as the sweep, since neither
+  retracts a ref already published to the event stream. Set to `0` to reclaim immediately.
 
 **Changed**
 
+- `TaskServer.stop()` distinguishes a shutdown from a targeted stop. Called with no filter it stops
+  every group including maintenance, detaches global handlers and closes the client, as before.
+  Called with a group filter it now stops only those groups' workers and leaves the server, its
+  connections and the maintenance sweep running. Previously any filter that matched at least one
+  group also closed the whole client, and a filter that matched nothing silently did nothing at all.
+  Pass no filter to shut down.
 - `ToroTaskStepStateStoreOptions.orphanTtlSeconds` is now documented as a backstop. Step state is
   normally reclaimed when the job record is removed, either explicitly or by the sweep.
 
@@ -47,3 +55,6 @@ Cleanup is now a periodic sweep rather than inline work on the completion path.
   skips queues it cannot confirm, so queues created with a custom `prefix` are left alone.
 - Existing orphans are not removed until the first sweep runs. Call
   `cleanupOrphanedJobArtifacts()` to reclaim them immediately.
+- Data indexes written before this release carry no timestamp. The first sweep stamps them with the
+  time it saw them rather than treating them as infinitely old, so they get one retention window of
+  grace before being reclaimed.

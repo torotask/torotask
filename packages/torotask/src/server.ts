@@ -90,37 +90,47 @@ export class TaskServer<
   }
 
   /**
-   * Stops server and workers based on the provided filter.
+   * Stops workers, and shuts the server down when the stop is unfiltered.
    *
-   * @param filter Optional filter to target specific groups or tasks.
+   * Called with no filter (or an empty one) this is a full shutdown: every group's
+   * workers stop, including the built-in maintenance group that {@link start} starts
+   * outside the filter, then global handlers are detached and the client is closed.
+   *
+   * Called with a group filter it is targeted: only the matched groups' workers stop.
+   * The server, its connections and the maintenance sweep stay up, because a request to
+   * stop one group is not a request to shut the process down. A filter that matches
+   * nothing therefore stops nothing, rather than tearing down every other group.
+   *
+   * @param filter Optional filter to target specific groups.
    * @returns A promise that resolves when all targeted workers have been requested to stop.
    */
   async stop(filter?: WorkerFilterGroups<TGroups>): Promise<void> {
-    this.logger.info({ filter }, 'Stopping workers across task groups');
+    const isFullShutdown = !filter?.groupsById?.length;
+    this.logger.info({ filter, isFullShutdown }, 'Stopping workers across task groups');
     const groupsToProcess = filterGroups(this, filter, 'stopping workers');
 
-    // start() starts maintenance regardless of the filter, so stop() must stop it the
-    // same way. Otherwise a filtered stop leaves the maintenance worker and its Redis
-    // connections running. Filtering it out of the list avoids stopping it twice.
     const maintenanceGroup = (this.taskGroups as Record<string, TaskGroup<any, any> | undefined>)[
       MAINTENANCE_GROUP_ID
     ];
+    // start() starts maintenance regardless of the filter, so a full shutdown must stop
+    // it the same way or its worker and connections outlive the server. A targeted stop
+    // leaves it alone. Excluding it here keeps it from being stopped twice.
     const userGroups = groupsToProcess.filter(group => group !== maintenanceGroup);
-
-    if (maintenanceGroup) {
-      await maintenanceGroup.stopWorkers();
-    }
 
     if (userGroups.length === 0) {
       this.logger.info('No groups to stop workers for based on the filter.');
     }
     else {
-      await Promise.allSettled(
-        userGroups.map(async (group) => {
-          await group.stopWorkers();
-        }),
-      );
+      await Promise.allSettled(userGroups.map(async group => group.stopWorkers()));
       this.logger.info('Finished request to stop workers');
+    }
+
+    if (!isFullShutdown) {
+      return;
+    }
+
+    if (maintenanceGroup) {
+      await maintenanceGroup.stopWorkers();
     }
 
     // Detach global handlers if we attached them
