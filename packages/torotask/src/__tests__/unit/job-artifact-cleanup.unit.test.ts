@@ -11,8 +11,9 @@ import {
 
 type PipelineMode = 'ok' | 'commandError' | 'nullReply' | 'throws';
 
-function createMockRedis(options?: { pipelineMode?: PipelineMode }) {
+function createMockRedis(options?: { pipelineMode?: PipelineMode; pipelineReplyValue?: unknown }) {
   const mode: PipelineMode = options?.pipelineMode ?? 'ok';
+  const hasPipelineReplyValue = options && Object.hasOwn(options, 'pipelineReplyValue');
   const strings = new Map<string, string>();
   const hashes = new Map<string, Map<string, string>>();
   const sets = new Map<string, Set<string>>();
@@ -114,7 +115,7 @@ function createMockRedis(options?: { pipelineMode?: PipelineMode }) {
             case 'commandError':
               return queued.map(() => [new Error('READONLY'), null] as [Error, null]);
             default:
-              return queued.map(run => [null, run()] as [null, unknown]);
+              return queued.map(run => [null, hasPipelineReplyValue ? options.pipelineReplyValue : run()] as [null, unknown]);
           }
         }),
       };
@@ -242,6 +243,14 @@ describe('jobArtifactCleanup', () => {
       const presence = await jobPresence(redis as any, ['some-key']);
 
       // Never 'absent': an unreadable reply must not authorise a delete.
+      expect(presence.get('some-key')).toBe('unknown');
+    });
+
+    it.each([null, false, '', -1, 0.5, 2, 'not-a-number'])('fails closed on malformed EXISTS value %p', async (value) => {
+      const { redis } = createMockRedis({ pipelineReplyValue: value });
+
+      const presence = await jobPresence(redis as any, ['some-key']);
+
       expect(presence.get('some-key')).toBe('unknown');
     });
   });
@@ -494,6 +503,63 @@ describe('jobArtifactCleanup', () => {
 
       expect(expired.removed).toBe(1);
       expect(strings.has(`torotask:data:${queueName}:fresh-1:returnValue`)).toBe(false);
+    });
+
+    it('starts completed-event retention when the latest blob is written', async () => {
+      const { redis, strings } = createMockRedis();
+      const taskClient = createMockTaskClient(redis);
+      seedQueueMeta(strings);
+      const now = jest.spyOn(Date, 'now');
+
+      try {
+        now.mockReturnValue(1_700_000_000_000);
+        await taskClient.getDataStore()!.externalize(
+          { queueName, jobId: 'slow-1', kind: 'payload' },
+          { large: 'payload' },
+        );
+
+        // The job spends two hours queued/running before publishing its completed
+        // event. That fresh event ref needs a full retention window of its own.
+        now.mockReturnValue(1_700_007_200_000);
+        await taskClient.getDataStore()!.externalize(
+          { queueName, jobId: 'slow-1', kind: 'returnValue' },
+          { large: 'result' },
+        );
+
+        const result = await cleanupOrphanedJobArtifacts(taskClient, {
+          queueName,
+          minArtifactAgeMs: 60 * 60 * 1000,
+        });
+
+        expect(result.removed).toBe(0);
+        expect(strings.has(`torotask:data:${queueName}:slow-1:returnValue`)).toBe(true);
+      }
+      finally {
+        now.mockRestore();
+      }
+    });
+
+    it('gives legacy indexes with no creation timestamp a retention window', async () => {
+      const { redis, hashes, strings } = createMockRedis();
+      const taskClient = createMockTaskClient(redis);
+      seedQueueMeta(strings);
+      const jobId = 'legacy-1';
+
+      await taskClient.getDataStore()!.externalize(
+        { queueName, jobId, kind: 'returnValue' },
+        { large: 'result' },
+      );
+      hashes.delete(`torotask:data-index-meta:${queueName}:${jobId}`);
+
+      const result = await cleanupOrphanedJobArtifacts(taskClient, {
+        queueName,
+        minArtifactAgeMs: 60_000,
+      });
+
+      // Existing indexes predate createdAt metadata. Treating unknown age as old
+      // would invalidate recently emitted refs on the first sweep after upgrade.
+      expect(result.removed).toBe(0);
+      expect(strings.has(`torotask:data:${queueName}:${jobId}:returnValue`)).toBe(true);
     });
 
     it('retains orphaned blobs when the referrer lookup fails', async () => {

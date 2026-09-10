@@ -5,7 +5,10 @@ import { isToroTaskDataRef } from '../../data-store/data-ref.js';
 import { RedisDataStore } from '../../data-store/redis-data-store.js';
 import { DEFAULT_DATA_STORE_THRESHOLD_BYTES } from '../../types/data-store.js';
 
-function createMockRedis() {
+type MultiExecMode = 'createdAtError' | 'nullReply' | 'ok' | 'referrerError';
+
+function createMockRedis(options?: { multiExecMode?: MultiExecMode }) {
+  const multiExecMode = options?.multiExecMode ?? 'ok';
   const strings = new Map<string, Buffer>();
   const sets = new Map<string, Set<string>>();
   const hashes = new Map<string, Map<string, string>>();
@@ -46,7 +49,19 @@ function createMockRedis() {
           queued.push(() => hsetImpl(key, f, v, true));
           return chain;
         },
-        exec: jest.fn(async () => queued.map(run => [null, run()] as [null, unknown])),
+        exec: jest.fn(async () => {
+          if (multiExecMode === 'nullReply') {
+            return null;
+          }
+          return queued.map((run, index) => {
+            const failedCommand = (multiExecMode === 'createdAtError' && index === 1)
+              || (multiExecMode === 'referrerError' && index === 2);
+            if (failedCommand) {
+              return [new Error('WRONGTYPE'), null] as [Error, null];
+            }
+            return [null, run()] as [null, unknown];
+          });
+        }),
       };
       return chain;
     }),
@@ -156,6 +171,43 @@ describe('redisDataStore', () => {
     expect(resolved.createdAt).toBeInstanceOf(Date);
     expect((resolved.createdAt as Date).toISOString()).toBe(createdAt.toISOString());
   });
+
+  it('records creation time and parent referrer metadata', async () => {
+    const { redis } = createMockRedis();
+    const store = new RedisDataStore(redis, prefix, { enabled: true, mode: 'all', compress: false });
+    const referrerJobKey = 'torotask:tasks:parent:1';
+    const now = jest.spyOn(Date, 'now').mockReturnValue(1_700_000_000_000);
+
+    try {
+      await store.externalize(
+        { queueName, jobId, kind: 'returnValue', referrerJobKey },
+        { embedding: 'x'.repeat(200) },
+      );
+
+      await expect(store.readJobMeta(queueName, jobId)).resolves.toEqual({
+        createdAt: 1_700_000_000_000,
+        referrerJobKey,
+      });
+    }
+    finally {
+      now.mockRestore();
+    }
+  });
+
+  it.each<MultiExecMode>(['createdAtError', 'referrerError', 'nullReply'])(
+    'rejects externalization when MULTI/EXEC returns %s',
+    async (multiExecMode) => {
+      const { redis } = createMockRedis({ multiExecMode });
+      const store = new RedisDataStore(redis, prefix, { enabled: true, mode: 'all', compress: false });
+
+      await expect(
+        store.externalize(
+          { queueName, jobId, kind: 'returnValue', referrerJobKey: 'torotask:tasks:parent:1' },
+          { embedding: 'x'.repeat(200) },
+        ),
+      ).rejects.toThrow(`Failed to track data-store job key for ${queueName}:${jobId}`);
+    },
+  );
 
   it('resolves refs nested in objects', async () => {
     const { redis } = createMockRedis();

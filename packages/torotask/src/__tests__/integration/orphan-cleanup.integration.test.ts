@@ -7,6 +7,7 @@
  */
 
 import pino from 'pino';
+import { isToroTaskDataRef } from '../../data-store/data-ref.js';
 import { defineTask, defineTaskGroup, defineTaskGroupRegistry } from '../../functions.js';
 import { MAINTENANCE_GROUP_ID, ORPHAN_CLEANUP_TASK_ID } from '../../maintenance.js';
 import { TaskServer } from '../../server.js';
@@ -172,6 +173,63 @@ describe('orphan cleanup integration', () => {
     expect(second.removed).toBe(0);
   });
 
+  it('retains a recent completed result after explicit job removal', async () => {
+    if (!redisServer) {
+      return;
+    }
+
+    const expectedResult = { embedding: createLargeEmbedding() };
+    const cleanupGroup = defineTaskGroup({
+      tasks: {
+        retainedResultTask: defineTask({
+          id: 'retained-result-task',
+          handler: async () => expectedResult,
+        }),
+      } as const,
+    });
+
+    server = await createServer(defineTaskGroupRegistry({ cleanupGroup }));
+    const task = server.taskGroups.cleanupGroup.tasks.retainedResultTask;
+    const job = await task.run({});
+    await job.waitUntilFinished(task.queue.queueEvents);
+
+    const redis = await redisServer.getRedisClient();
+    const queueName = 'cleanupGroup.retainedResultTask';
+    const dataIndexKey = `${server.prefix}:data-index:${queueName}:${job.id}`;
+    const storageKeys = await redis.smembers(dataIndexKey);
+    expect(storageKeys.length).toBeGreaterThan(0);
+
+    const eventsKey = `${server.queuePrefix}:${queueName}:events`;
+    const entries = await redis.xrevrange(eventsKey, '+', '-', 'COUNT', 20);
+    const completedEntry = entries.find(([, fields]) => {
+      const event = Object.fromEntries(
+        Array.from({ length: fields.length / 2 }, (_, index) => [fields[index * 2], fields[index * 2 + 1]]),
+      );
+      return event.event === 'completed' && event.jobId === job.id;
+    });
+    expect(completedEntry).toBeDefined();
+
+    const completedFields = completedEntry![1];
+    const completedEvent = Object.fromEntries(
+      Array.from(
+        { length: completedFields.length / 2 },
+        (_, index) => [completedFields[index * 2], completedFields[index * 2 + 1]],
+      ),
+    );
+    const eventResultRef: unknown = JSON.parse(completedEvent.returnvalue);
+    expect(isToroTaskDataRef(eventResultRef)).toBe(true);
+
+    // BullMQ leaves the completed event in its stream after explicit removal. Its
+    // external result ref must therefore remain resolvable for minArtifactAgeMs.
+    await job.remove();
+
+    await expect(server.getDataStore()!.resolve(eventResultRef)).resolves.toEqual(expectedResult);
+    expect(await redis.exists(dataIndexKey)).toBe(1);
+    for (const storageKey of storageKeys) {
+      expect(await redis.exists(storageKey)).toBe(1);
+    }
+  });
+
   it('leaves artifacts belonging to a live job untouched', async () => {
     if (!redisServer) {
       return;
@@ -222,6 +280,61 @@ describe('orphan cleanup integration', () => {
     expect(await redis.exists(stepStateKey)).toBe(1);
 
     release!();
+  });
+
+  it('preserves artifacts for a locked active job when removal is rejected', async () => {
+    if (!redisServer) {
+      return;
+    }
+
+    let release: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let started: () => void;
+    const running = new Promise<void>((resolve) => {
+      started = resolve;
+    });
+
+    const cleanupGroup = defineTaskGroup({
+      tasks: {
+        lockedTask: defineTask({
+          id: 'locked-task',
+          handler: async (_options, context) => {
+            await context.step.do('persist-state', async () => ({ embedding: createLargeEmbedding() }));
+            started();
+            await gate;
+            return 'ok';
+          },
+        }),
+      } as const,
+    });
+
+    server = await createServer(defineTaskGroupRegistry({ cleanupGroup }));
+    const task = server.taskGroups.cleanupGroup.tasks.lockedTask;
+    const job = await task.run({ embedding: createLargeEmbedding() });
+    await running;
+
+    const redis = await redisServer.getRedisClient();
+    const queueName = 'cleanupGroup.lockedTask';
+    const jobHash = `${server.queuePrefix}:${queueName}:${job.id}`;
+    const stepStateKey = `${server.prefix}:state:${queueName}:${job.id}`;
+    const dataIndexKey = `${server.prefix}:data-index:${queueName}:${job.id}`;
+    const storageKeys = await redis.smembers(dataIndexKey);
+
+    try {
+      await expect(job.remove()).rejects.toThrow(/locked/);
+      expect(await redis.exists(jobHash)).toBe(1);
+      expect(await redis.exists(stepStateKey)).toBe(1);
+      expect(await redis.exists(dataIndexKey)).toBe(1);
+      for (const storageKey of storageKeys) {
+        expect(await redis.exists(storageKey)).toBe(1);
+      }
+    }
+    finally {
+      release!();
+      await job.waitUntilFinished(task.queue.queueEvents);
+    }
   });
 
   it('refuses to sweep a queue whose prefix cannot be confirmed', async () => {
