@@ -85,7 +85,94 @@ export type ToroTaskOptions = Partial<BullMQConnectionOptions> & {
    * events — reducing memory use for child-job processed sets and completed events.
    */
   dataStore?: ToroTaskDataStoreOptions | ToroTaskDataStore;
+
+  /**
+   * Built-in maintenance work registered as ordinary scheduled tasks.
+   */
+  maintenance?: ToroTaskMaintenanceOptions;
 };
+
+export interface ToroTaskMaintenanceOptions {
+  /**
+   * Periodic sweep that removes step-state and data-store keys whose BullMQ job
+   * record is gone. Needed because `removeOnComplete` / `removeOnFail` trim jobs
+   * inside Lua without emitting a `removed` event, so nothing else observes them.
+   *
+   * Registered as a BullMQ job scheduler, which is idempotent across processes — it
+   * therefore runs once per cluster per interval, not once per worker. Set to `false`
+   * and drive {@link ToroTask.cleanupOrphanedJobArtifacts} externally if you would
+   * rather control when `SCAN` load hits Redis.
+   *
+   * @default true
+   */
+  orphanCleanup?: boolean | ToroTaskOrphanCleanupOptions;
+}
+
+export interface ToroTaskOrphanCleanupOptions {
+  /** @default true */
+  enabled?: boolean;
+
+  /**
+   * Cron expression for the sweep. Defaults to hourly at 17 minutes past, offset
+   * from the hour so it does not pile onto the usual `0 * * * *` herd.
+   *
+   * @default '17 * * * *'
+   */
+  cron?: string;
+
+  /**
+   * Maximum artifacts removed per run. The sweep is idempotent, so anything left
+   * over is picked up by the next run.
+   *
+   * @default 10000
+   */
+  maxDeletions?: number;
+
+  /**
+   * Maximum wall-clock time for a single run.
+   *
+   * @default 60000
+   */
+  maxDurationMs?: number;
+
+  /**
+   * Retain orphaned data blobs younger than this, even when nothing references them.
+   *
+   * BullMQ also writes a job's externalized return-value ref into the queue's
+   * `completed` event stream, so a lagging or resuming `QueueEvents` consumer can hold
+   * a ref after the job and any parent are gone. Set to `0` to delete as soon as a blob
+   * looks orphaned.
+   *
+   * @default 3600000
+   */
+  minArtifactAgeMs?: number;
+}
+
+export interface ResolvedToroTaskOrphanCleanupOptions {
+  enabled: boolean;
+  cron: string;
+  maxDeletions: number;
+  maxDurationMs: number;
+  minArtifactAgeMs: number;
+}
+
+export const DEFAULT_ORPHAN_CLEANUP_CRON = '17 * * * *';
+export const DEFAULT_ORPHAN_CLEANUP_MAX_DELETIONS = 10_000;
+export const DEFAULT_ORPHAN_CLEANUP_MAX_DURATION_MS = 60_000;
+export const DEFAULT_ORPHAN_CLEANUP_MIN_ARTIFACT_AGE_MS = 3_600_000;
+
+export function resolveOrphanCleanupOptions(
+  options?: boolean | ToroTaskOrphanCleanupOptions,
+): ResolvedToroTaskOrphanCleanupOptions {
+  const resolved = typeof options === 'boolean' ? { enabled: options } : options;
+  return {
+    enabled: resolved?.enabled ?? true,
+    cron: resolved?.cron ?? DEFAULT_ORPHAN_CLEANUP_CRON,
+    maxDeletions: Math.max(1, resolved?.maxDeletions ?? DEFAULT_ORPHAN_CLEANUP_MAX_DELETIONS),
+    maxDurationMs: Math.max(1000, resolved?.maxDurationMs ?? DEFAULT_ORPHAN_CLEANUP_MAX_DURATION_MS),
+    minArtifactAgeMs: Math.max(0, resolved?.minArtifactAgeMs ?? DEFAULT_ORPHAN_CLEANUP_MIN_ARTIFACT_AGE_MS),
+  };
+}
 
 /**
  * Connection types used by BullMQ queues

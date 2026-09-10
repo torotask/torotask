@@ -1,5 +1,6 @@
 import type {
   ResolvedToroTaskDataStoreOptions,
+  ToroTaskDataJobMeta,
   ToroTaskDataStoreContext,
   ToroTaskDataStoreOptions,
 } from '../types/data-store.js';
@@ -27,6 +28,16 @@ export abstract class ToroTaskDataStore extends ToroTaskStoreBase {
     return this.options.enabled;
   }
 
+  /** Prefix for all per-job index keys, e.g. `torotask:data-index:`. */
+  indexKeysPrefix(): string {
+    return `${this.prefix}:${this.namespace}-index:`;
+  }
+
+  /** Prefix for per-job index keys in a queue, excluding the job id (trailing `:`). */
+  jobIndexKeysPrefix(queueName: string): string {
+    return `${this.indexKeysPrefix()}${queueName}:`;
+  }
+
   /** Builds the backend-specific storage key for a logical ref key. */
   protected abstract buildStorageKey(refKey: string): string;
 
@@ -41,7 +52,32 @@ export abstract class ToroTaskDataStore extends ToroTaskStoreBase {
     queueName: string,
     jobId: string,
     storageKey: string,
+    referrerJobKey?: string,
   ): Promise<void>;
+
+  /**
+   * Metadata recorded for a job's blobs by {@link trackJobKey}.
+   *
+   * Orphan cleanup uses this to avoid deleting a blob a surviving parent still
+   * references, and to honour a retention window. Backends that record nothing return
+   * an empty object, which means "no known referrer and unknown age" and lets cleanup
+   * proceed on job-presence alone.
+   */
+  async readJobMeta(_queueName: string, _jobId: string): Promise<ToroTaskDataJobMeta> {
+    return {};
+  }
+
+  /**
+   * Records a first-observation timestamp for a job whose metadata predates tracking.
+   *
+   * Called by orphan cleanup when {@link readJobMeta} reports no `createdAt`, so that
+   * artifacts written before this feature existed get one retention window of grace
+   * instead of being deleted on the first sweep after an upgrade. Backends that do not
+   * record metadata leave this as a no-op and are swept on job presence alone.
+   */
+  async markJobMetaSeen(_queueName: string, _jobId: string): Promise<void> {
+    // No-op by default.
+  }
 
   /** Removes all blobs tracked for a job. */
   abstract clearJob(queueName: string, jobId: string): Promise<void>;
@@ -110,7 +146,7 @@ export abstract class ToroTaskDataStore extends ToroTaskStoreBase {
     const { buffer, compressed } = this.prepareBuffer(json, byteLength);
 
     await this.putRaw(storageKey, buffer);
-    await this.trackJobKey(context.queueName, context.jobId, storageKey);
+    await this.trackJobKey(context.queueName, context.jobId, storageKey, context.referrerJobKey);
 
     return createToroTaskDataRef(refKey, compressed, byteLength);
   }

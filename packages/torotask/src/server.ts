@@ -1,4 +1,5 @@
 import type { WorkerOptions } from 'bullmq';
+import type { TaskGroup } from './task-group.js';
 import type {
   TaskGroupDefinitionRegistry,
   TaskGroupRegistry,
@@ -6,6 +7,7 @@ import type {
   WorkerFilterGroups,
 } from './types/index.js';
 import { ToroTask } from './client.js';
+import { MAINTENANCE_GROUP_ID } from './maintenance.js';
 import { filterGroups } from './utils/filter-groups.js';
 import { isControlError } from './utils/is-control-error.js';
 
@@ -58,16 +60,25 @@ export class TaskServer<
 
     const groupsToProcess = filterGroups(this, filter, 'starting workers');
 
-    if (groupsToProcess.length === 0) {
-      this.logger.info('No groups to start workers for based on the filter.');
-      return;
-    }
-
     const mergedOptions: WorkerOptions = {
       prefix: this.queuePrefix,
       connection: this.connectionOptions,
       ...workerOptions,
     };
+
+    // Registered after the filter is resolved, and started regardless of it: deployments
+    // commonly shard workers by group, and that must not leave the cluster with nobody
+    // reclaiming orphaned artifacts. The underlying cron scheduler is idempotent across
+    // processes, so the sweep still runs once per cluster per interval.
+    const maintenanceGroup = this.registerMaintenanceTasks();
+    if (maintenanceGroup) {
+      await maintenanceGroup.startWorkers(undefined, mergedOptions);
+    }
+
+    if (groupsToProcess.length === 0) {
+      this.logger.info('No groups to start workers for based on the filter.');
+      return;
+    }
 
     await Promise.allSettled(
       groupsToProcess.map(async (group) => {
@@ -79,27 +90,48 @@ export class TaskServer<
   }
 
   /**
-   * Stops server and workers based on the provided filter.
+   * Stops workers, and shuts the server down when the stop is unfiltered.
    *
-   * @param filter Optional filter to target specific groups or tasks.
+   * Called with no filter (or an empty one) this is a full shutdown: every group's
+   * workers stop, including the built-in maintenance group that {@link start} starts
+   * outside the filter, then global handlers are detached and the client is closed.
+   *
+   * Called with a group filter it is targeted: only the matched groups' workers stop.
+   * The server, its connections and the maintenance sweep stay up, because a request to
+   * stop one group is not a request to shut the process down. A filter that matches
+   * nothing therefore stops nothing, rather than tearing down every other group.
+   *
+   * @param filter Optional filter to target specific groups.
    * @returns A promise that resolves when all targeted workers have been requested to stop.
    */
   async stop(filter?: WorkerFilterGroups<TGroups>): Promise<void> {
-    this.logger.info({ filter }, 'Stopping workers across task groups');
+    const isFullShutdown = !filter?.groupsById?.length;
+    this.logger.info({ filter, isFullShutdown }, 'Stopping workers across task groups');
     const groupsToProcess = filterGroups(this, filter, 'stopping workers');
 
-    if (groupsToProcess.length === 0) {
+    const maintenanceGroup = (this.taskGroups as Record<string, TaskGroup<any, any> | undefined>)[
+      MAINTENANCE_GROUP_ID
+    ];
+    // start() starts maintenance regardless of the filter, so a full shutdown must stop
+    // it the same way or its worker and connections outlive the server. A targeted stop
+    // leaves it alone. Excluding it here keeps it from being stopped twice.
+    const userGroups = groupsToProcess.filter(group => group !== maintenanceGroup);
+
+    if (userGroups.length === 0) {
       this.logger.info('No groups to stop workers for based on the filter.');
+    }
+    else {
+      await Promise.allSettled(userGroups.map(async group => group.stopWorkers()));
+      this.logger.info('Finished request to stop workers');
+    }
+
+    if (!isFullShutdown) {
       return;
     }
 
-    await Promise.allSettled(
-      groupsToProcess.map(async (group) => {
-        await group.stopWorkers();
-      }),
-    );
-
-    this.logger.info('Finished request to stop workers');
+    if (maintenanceGroup) {
+      await maintenanceGroup.stopWorkers();
+    }
 
     // Detach global handlers if we attached them
     this.detachGlobalErrorHandlers();

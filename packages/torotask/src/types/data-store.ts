@@ -24,6 +24,25 @@ export interface ToroTaskDataStoreContext {
   kind: ToroTaskDataKind;
   /** Required when kind is `stepData`. */
   stepId?: string;
+  /**
+   * Job hash key (`<prefix>:<queueName>:<jobId>`) of another job that will retain a
+   * ref to this value after this job's own record is gone.
+   *
+   * BullMQ copies a child's return value into `<parentKey>:processed`, so a parent
+   * outlives its child's ref. Recording the referrer here lets orphan cleanup defer
+   * deleting the blob until the referrer is gone too.
+   */
+  referrerJobKey?: string;
+}
+
+/**
+ * Metadata recorded alongside a job's externalized blobs, used by orphan cleanup.
+ */
+export interface ToroTaskDataJobMeta {
+  /** Job hash key of another job still holding a ref to these blobs, if recorded. */
+  referrerJobKey?: string;
+  /** Epoch ms when the blobs were first tracked, if recorded. */
+  createdAt?: number;
 }
 
 export type ToroTaskDataStoreMode = 'large' | 'all';

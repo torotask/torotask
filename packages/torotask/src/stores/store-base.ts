@@ -13,6 +13,16 @@ export abstract class ToroTaskStoreBase {
     return `${this.prefix}:${this.namespace}:${suffix}`;
   }
 
+  /** Prefix for all keys in this store, e.g. `torotask:state:`. */
+  keysPrefix(): string {
+    return `${this.prefix}:${this.namespace}:`;
+  }
+
+  /** Prefix for per-job keys in a queue, excluding the job id (trailing `:`). */
+  jobKeysPrefix(queueName: string): string {
+    return `${this.keysPrefix()}${queueName}:`;
+  }
+
   /** Removes all store data for a job. */
   abstract clearJob(queueName: string, jobId: string): Promise<void>;
 }

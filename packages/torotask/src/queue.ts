@@ -5,6 +5,7 @@ import type { BulkJob, TaskJobData, TaskJobOptions, TaskJobState, TaskQueueOptio
 import { Queue } from 'bullmq'; // Import JobsOptions
 import { TaskJob } from './job.js';
 import { convertJobOptions } from './utils/convert-job-options.js';
+import { setupJobArtifactCleanupListeners } from './utils/job-artifact-cleanup.js';
 
 export class TaskQueue<
   PayloadType = any,
@@ -41,29 +42,13 @@ export class TaskQueue<
   }
 
   /**
-   * Clears external step-state when BullMQ removes jobs (manual delete, queue.remove, clean).
+   * Clears external step-state and data blobs when BullMQ removes jobs.
+   * Note: `removeOnComplete` / `removeOnFail` trimming does not emit Queue `removed`;
+   * completion-time cleanup in {@link TaskJob} handles that path.
    */
   private setupStepStateCleanupListeners(): void {
-    const clearForJobId = (jobId: string) => {
-      this.taskClient.getStepStateStore().clear(this.name, jobId).catch((err) => {
-        this.logger.warn({ err, jobId }, 'Failed to clear step state after job removal');
-      });
-      this.taskClient.getDataStore()?.clearJob(this.name, jobId).catch((err) => {
-        this.logger.warn({ err, jobId }, 'Failed to clear external job data after job removal');
-      });
-    };
-
-    this.on('removed', (jobOrId: string | Job) => {
-      const jobId = typeof jobOrId === 'string' ? jobOrId : jobOrId.id;
-      if (jobId) {
-        clearForJobId(jobId);
-      }
-    });
-
-    this.on('cleaned', (jobIds: string[]) => {
-      for (const jobId of jobIds) {
-        clearForJobId(jobId);
-      }
+    setupJobArtifactCleanupListeners(this.taskClient, this.name, this.logger, {
+      queue: this,
     });
   }
 

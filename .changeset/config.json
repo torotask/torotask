@@ -6,6 +6,9 @@
   "linked": [],
   "access": "public",
   "baseBranch": "main",
+  "___experimentalUnsafeOptions_WILL_CHANGE_IN_PATCH": {
+    "onlyUpdatePeerDependentsWhenOutOfRange": true
+  },
   "privatePackages": {
     "version": false,
     "tag": false

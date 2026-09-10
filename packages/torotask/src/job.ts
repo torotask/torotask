@@ -6,6 +6,7 @@ import type { StepResult } from './types/step.js';
 import { Job, UnrecoverableError } from 'bullmq';
 import { TaskQueue } from './queue.js';
 import { convertJobOptions } from './utils/convert-job-options.js';
+import { clearJobArtifacts } from './utils/job-artifact-cleanup.js';
 
 export class TaskJob<
   PayloadType = any,
@@ -223,13 +224,30 @@ export class TaskJob<
 
   /**
    * Removes the job from BullMQ and clears external step state.
+   *
+   * Order matters: BullMQ refuses to remove a locked (active) job, and previously we
+   * deleted the sidecars first, so a rejected removal left a live job without its
+   * payload or step state. Cleaning up only after removal is confirmed means the worst
+   * case is a leaked artifact, which the periodic sweep reclaims.
    */
   async remove(opts?: { removeChildren?: boolean }): Promise<void> {
-    await this.clearStepState();
-    if (this.taskClient && this.id) {
-      await this.taskClient.getDataStore()?.clearJob(this.queueName, this.id);
-    }
     await super.remove(opts);
+    if (this.taskClient && this.id) {
+      // One fail-soft call clears both stores. Awaiting `clearStepState()` separately
+      // beforehand cleared step state twice on success, and on failure both skipped the
+      // data cleanup and rejected `remove()` for a job BullMQ had already deleted.
+      //
+      // A parent's `processed` hash, or an unread `completed` event, may still hold a
+      // ref to this job's return value, so blobs are only dropped once no live referrer
+      // remains and the retention window has passed; the sweep reclaims the rest.
+      await clearJobArtifacts(this.taskClient, this.queueName, this.id, {
+        logger: this.logger,
+        respectReferrer: true,
+      });
+    }
+    else {
+      await this.clearStepState();
+    }
   }
 
   private async stripLegacyStepStateFromJobData(): Promise<void> {
@@ -403,7 +421,15 @@ export class TaskJob<
     const store = this.taskClient?.getDataStore();
     if (store && this.id) {
       storedReturnValue = await store.externalize(
-        { queueName: this.queueName, jobId: this.id, kind: 'returnValue' },
+        {
+          queueName: this.queueName,
+          jobId: this.id,
+          kind: 'returnValue',
+          // BullMQ copies a child's return value into `<parentKey>:processed`, which
+          // outlives this job's own hash. Record the parent so orphan cleanup defers
+          // deleting the blob until the parent is gone too.
+          referrerJobKey: this.parentKey,
+        },
         returnValue,
       ) as ReturnType;
     }

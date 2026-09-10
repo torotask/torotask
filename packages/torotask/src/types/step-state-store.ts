@@ -9,7 +9,11 @@ export interface ToroTaskStepStateStoreOptions {
 
   /**
    * Optional orphan TTL (seconds) when a worker crashes mid-job.
-   * When unset, keys persist until the job record is removed from BullMQ.
+   *
+   * Acts as a backstop only. Step state is normally removed when the job record is
+   * deleted, either explicitly or by the periodic orphan sweep
+   * ({@link ToroTask.cleanupOrphanedJobArtifacts}).
+   *
    * Sleeping steps always extend expiry to their wake time plus a one-day buffer.
    */
   orphanTtlSeconds?: number;
