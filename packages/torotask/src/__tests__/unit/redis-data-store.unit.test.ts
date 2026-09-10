@@ -104,6 +104,23 @@ describe('redisDataStore', () => {
   const queueName = 'exampleGroup.embed';
   const jobId = 'job-456';
 
+  it('leaves undefined return values inline without encoding', async () => {
+    const { redis, strings } = createMockRedis();
+    const store = new RedisDataStore(redis, prefix, {
+      enabled: true,
+      mode: 'all',
+      compress: false,
+    });
+
+    await expect(
+      store.externalize({ queueName, jobId, kind: 'returnValue' }, undefined),
+    ).resolves.toBeUndefined();
+    expect(strings.size).toBe(0);
+    expect(store.encodeValue(undefined)).toBeUndefined();
+    expect(store.encodeValue(() => undefined)).toBeUndefined();
+    expect(store.encodeValue(Symbol('skip'))).toBeUndefined();
+  });
+
   it('keeps small values inline when mode is large', async () => {
     const { redis } = createMockRedis();
     const store = new RedisDataStore(redis, prefix, {
