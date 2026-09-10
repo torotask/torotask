@@ -1,5 +1,13 @@
 # torotask
 
+## 0.18.1
+
+### Patch Changes
+
+- Fix job completion crashing when the data store is enabled and the processor returns `undefined` ([#43](https://github.com/torotask/torotask/pull/43)) ([`a083412`](https://github.com/torotask/torotask/commit/a083412749e0465a631ef04503d3f832ede627e6))
+
+`JSON.stringify(undefined)` is `undefined`, and `Buffer.byteLength` then threw `ERR_INVALID_ARG_TYPE`. Completing a job with no return value is now a no-op for externalization.
+
 ## 0.18.0
 
 ### Minor Changes
