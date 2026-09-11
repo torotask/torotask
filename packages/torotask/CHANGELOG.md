@@ -1,5 +1,11 @@
 # torotask
 
+## 0.18.2
+
+### Patch Changes
+
+- Preserve dotted task IDs in `getTaskByPath` and `runTaskByPath` lookups. ([#45](https://github.com/torotask/torotask/pull/45)) ([`664ab2b`](https://github.com/torotask/torotask/commit/664ab2b5bb040581b1b1157bce447e099f7deef2))
+
 ## 0.18.1
 
 ### Patch Changes
