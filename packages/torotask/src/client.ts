@@ -44,6 +44,11 @@ const LOGGER_NAME = 'ToroTask';
 const BASE_PREFIX = 'torotask';
 const QUEUE_PREFIX = 'tasks';
 
+function parseTaskPath(taskPath: `${string}.${string}`): [groupId: string, taskId: string] {
+  const separator = taskPath.indexOf('.');
+  return [taskPath.slice(0, separator), taskPath.slice(separator + 1)];
+}
+
 /**
  * A client class to manage BullMQ connection settings, TaskGroups, and an EventDispatcher.
  */
@@ -437,7 +442,7 @@ export class ToroTask<
   public getTaskByPath<PayloadType = any, ResultType = unknown>(
     taskPath: `${string}.${string}`,
   ): Task<PayloadType, ResultType, SchemaHandler> | undefined {
-    const [groupId, taskId] = taskPath.split('.');
+    const [groupId, taskId] = parseTaskPath(taskPath);
     return this._getTask<PayloadType, ResultType>(groupId, taskId);
   }
 
@@ -590,7 +595,7 @@ export class ToroTask<
    * @returns A promise that resolves to the Job instance.
    */
   async runTaskByPath<PayloadType = any, ResultType = any>(taskPath: `${string}.${string}`, payload: PayloadType) {
-    const [groupId, taskId] = taskPath.split('.');
+    const [groupId, taskId] = parseTaskPath(taskPath);
     return this._runTask<PayloadType, ResultType>(groupId, taskId, payload);
   }
 
